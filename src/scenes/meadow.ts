@@ -25,7 +25,7 @@ const smooth = (a: number, b: number, x: number) => { const t = Math.min(Math.ma
 
 /** The land before the stream is cut and the pads levelled. */
 function rolling(x: number, z: number) {
-  return 0.9 * noise2(x * 0.045, z * 0.045) + 0.35 * noise2(x * 0.11 + 5, z * 0.11 - 3) + 0.012 * x;
+  return 0.9 * noise2(x * 0.045, z * 0.045) + 0.2 * noise2(x * 0.11 + 5, z * 0.11 - 3) + 0.012 * x;
 }
 const waterLevel = (z: number) => rolling(streamX(z), z) - 0.34;
 
@@ -56,7 +56,7 @@ function normalAt(x: number, z: number) {
 // Palette (sRGB). Greens span yellow-green to teal, as the reference's meadows do.
 const C = {
   lime: srgb(0xa6c45a), meadow: srgb(0x6aa04a), emerald: srgb(0x40885a), teal: srgb(0x3b806e),
-  moss: srgb(0x4f8040), mud: srgb(0x7a6244), bed: srgb(0x3e5a52), water: srgb(0x1e5862),
+  moss: srgb(0x4f8040), mud: srgb(0x7a6244), bed: srgb(0x3e5a52), water: srgb(0x2c6e74),
   soil: srgb(0x8a5634), timber: srgb(0xc58f55), ceramic: srgb(0xeee6d2), brass: srgb(0xc08a48), glass: srgb(0x1d4fa0),
   bark: srgb(0x6e4a3e), leaf: srgb(0x4e9a3a), leafLight: srgb(0x8cc44a), fruitLeaf: srgb(0x5aa03e), cypress: srgb(0x2e6e57),
   fruit: srgb(0xf06a2c), wheatRoot: srgb(0x8a9a3a), wheatTip: srgb(0xf0c45a),
@@ -84,15 +84,23 @@ function terrain(r: BrushRenderer) {
     const d = streamDistance(x, z);
     // Colour follows the land's form, as a painter would: rises catch the light yellow-green, hollows sink to emerald and
     // teal. Broad patches drift on top.
-    const curve = y - (height(x + 2.5, z) + height(x - 2.5, z) + height(x, z + 2.5) + height(x, z - 2.5)) / 4;
+    const curve = 0.4 * (y - (height(x + 2.5, z) + height(x - 2.5, z) + height(x, z + 2.5) + height(x, z - 2.5)) / 4)
+      + 0.6 * (y - (height(x + 6, z) + height(x - 6, z) + height(x, z + 6) + height(x, z - 6)) / 4);
     const m = noise2(x * 0.07 + 11, z * 0.07 - 4) * 0.5 + 0.5, k = noise2(x * 0.19 - 7, z * 0.19 + 2) * 0.5 + 0.5;
-    c.copy(C.meadow).lerp(C.lime, smooth(0.0, 0.18, curve) * 0.75 + smooth(0.6, 0.9, m) * 0.25)
-      .lerp(C.emerald, smooth(0.0, 0.2, -curve) * 0.7 + smooth(0.65, 0.95, 1 - m) * 0.3)
-      .lerp(C.teal, smooth(0.15, 0.35, -curve) * 0.4 + smooth(0.75, 1, k) * 0.2);
+    c.copy(C.meadow).lerp(C.lime, smooth(0.0, 0.18, curve) * 0.6 + smooth(0.6, 0.9, m) * 0.2)
+      .lerp(C.emerald, smooth(0.0, 0.2, -curve) * 0.55 + smooth(0.65, 0.95, 1 - m) * 0.25)
+      .lerp(C.teal, smooth(0.15, 0.35, -curve) * 0.35 + smooth(0.75, 1, k) * 0.15);
     // Banks: moss, then wet earth, then the stream bed.
     c.lerp(C.moss, 1 - smooth(1.6, 3.2, d)).lerp(C.mud, (1 - smooth(1.0, 1.7, d)) * 0.8).lerp(C.bed, 1 - smooth(0.6, 1.2, d));
+    // Brushwork shows where the land does something (banks, the edges of the field and the panel's pad, the turns of the
+    // slopes, round the trees) and fades to quiet colour on the open lawn, its border broken by noise.
+    const [pw] = pad(x, z);
+    const detail = Math.min(1, Math.max(0.12,
+      Math.max(1 - smooth(1.4, 4.2, d), 4 * pw * (1 - pw) * 0.9, smooth(0.06, 0.2, Math.abs(curve)) * 0.7,
+        ...TREES.map((t) => (1 - smooth(1.5, 3.8, Math.hypot(x - t.x, z - t.z))) * 0.8))
+      + noise2(x * 0.21 + 3, z * 0.21 - 9) * 0.22 + 0.1));
     const angle = 0.7 + noise2(x * 0.05, z * 0.05) * 0.9;
-    const paint: Paint = [1.0, 2.0, angle, 0];
+    const paint: Paint = [detail, 2.0, angle, 0];
     b.vertex({ x, y, z }, normalAt(x, z), c, paint);
   }
   for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) {
@@ -140,14 +148,14 @@ function field(r: BrushRenderer) {
   const up = new THREE.Vector3(0, 1, 0);
   const soilTop = y0 + 0.16;
   for (let tx = 0; tx < 3; tx++) for (let tz = 0; tz < 3; tz++) {
-    for (let k = 0; k < 64; k++) {
+    for (let k = 0; k < 90; k++) {
       const x = x0 + 0.12 + tx + rand() * 0.86, z = z0 + 0.12 + tz + rand() * 0.86;
       const h = 0.55 + rand() * 0.18, lean = (rand() - 0.5) * 0.1, seed = rand();
       const dir = rand() * Math.PI;
       const ox = Math.cos(dir) * 0.018, oz = Math.sin(dir) * 0.018;
       const paint: Paint = [0.5, 1.4, 0.4, 0.8];
       const tip = new THREE.Vector3(x + lean, soilTop + h, z + lean * 0.5);
-      const root = C.wheatRoot.clone(), gold = C.wheatTip.clone().offsetHSL((rand() - 0.5) * 0.03, 0, (rand() - 0.5) * 0.06);
+      const root = C.wheatRoot.clone(), gold = C.wheatTip.clone().lerp(C.wheatRoot, rand() * rand() * 0.6).offsetHSL((rand() - 0.5) * 0.03, 0, (rand() - 0.5) * 0.06);
       // Stalk.
       const a = g.vertex({ x: x - ox, y: soilTop, z: z - oz }, up, root, paint, [0, 0], [0, seed]);
       const b = g.vertex({ x: x + ox, y: soilTop, z: z + oz }, up, root, paint, [0, 0], [0, seed]);
@@ -155,16 +163,20 @@ function field(r: BrushRenderer) {
       const d2 = g.vertex({ x: tip.x - ox * 0.6, y: tip.y - 0.16, z: tip.z - oz * 0.6 }, up, root.clone().lerp(gold, 0.7), paint, [0, 0], [0.8, seed]);
       g.quad(a, b, c2, d2);
       // Ear: a fat diamond.
-      const e1 = g.vertex({ x: tip.x - ox * 3.4, y: tip.y - 0.08, z: tip.z - oz * 3.4 }, up, gold, paint, [0, 0], [0.9, seed]);
-      const e2 = g.vertex({ x: tip.x + ox * 3.4, y: tip.y - 0.08, z: tip.z + oz * 3.4 }, up, gold, paint, [0, 0], [0.9, seed]);
-      const e3 = g.vertex({ x: tip.x, y: tip.y + 0.09, z: tip.z }, up, gold, paint, [0, 0], [1, seed]);
+      const e1 = g.vertex({ x: tip.x - ox * 2.2, y: tip.y - 0.06, z: tip.z - oz * 2.2 }, up, gold, paint, [0, 0], [0.9, seed]);
+      const e2 = g.vertex({ x: tip.x + ox * 2.2, y: tip.y - 0.06, z: tip.z + oz * 2.2 }, up, gold, paint, [0, 0], [0.9, seed]);
+      const e3 = g.vertex({ x: tip.x + lean * 0.3, y: tip.y + 0.12, z: tip.z }, up, gold, paint, [0, 0], [1, seed]);
       g.tri(d2, c2, e2); g.tri(d2, e2, e3); g.tri(d2, e3, e1);
     }
   }
   r.add(g.build(), 'grass', false);
 }
 
-/** Trees: a trunk with a few boughs, and a crown of clumps covered in leafy dabs whose normals are the crown's. */
+/**
+ * Trees, built the way a painter blocks one in: a few unequal branch masses, each lit as its own lump on the crown's form,
+ * then covered in leafy strokes, smaller and looser at the edges. Normals are a blend of the crown's and the mass's, so the
+ * light falls in a few soft patches rather than over each stroke.
+ */
 function trees(r: BrushRenderer) {
   const wood = new MeshBuilder('paint');
   const leaves = new MeshBuilder('foliage');
@@ -175,63 +187,71 @@ function trees(r: BrushRenderer) {
     const cypress = t.kind === 'cypress';
     const trunkH = cypress ? 1.2 : 1.9, crownY = cypress ? 3.1 : 3.0, crownR = cypress ? 1.25 : 1.85;
     const crown = base.clone().add(new THREE.Vector3(0, crownY, 0));
-    // Trunk.
     const trunk = new THREE.CylinderGeometry(cypress ? 0.1 : 0.12, cypress ? 0.16 : 0.2, trunkH + 0.4, 9, 1);
     wood.addGeometry(trunk, new THREE.Matrix4().makeTranslation(t.x, y0 + (trunkH + 0.4) / 2, t.z), C.bark, [0.4, 2.5, 1.57, 0]);
-    // Clumps.
-    const clumps: { c: THREE.Vector3; r: number }[] = [];
+    // Branch masses: unequal, off-centre, a big one high on one side.
+    const masses: { c: THREE.Vector3; r: number; tone: number }[] = [];
     if (cypress) {
-      for (let i = 0; i < 7; i++) {
-        const f = i / 6, y = 1.3 + f * 4.6;
-        const rr = (1 - f * 0.75) * 0.95 * Math.sin(Math.min(1, 0.35 + f * 2.2) * Math.PI / 2);
-        clumps.push({ c: base.clone().add(new THREE.Vector3((rand() - 0.5) * 0.2, y, (rand() - 0.5) * 0.2)), r: Math.max(rr, 0.3) });
+      // A flame: widest a third of the way up, drawn to a point.
+      for (let i = 0; i < 9; i++) {
+        const f = i / 8, y = 1.2 + f * 5.0;
+        const rr = 0.25 + 0.75 * Math.sin(Math.min(1, 0.25 + f * 2.6) * Math.PI / 2) * (1 - f * 0.82);
+        masses.push({ c: base.clone().add(new THREE.Vector3((rand() - 0.5) * 0.25, y, (rand() - 0.5) * 0.25)), r: rr, tone: rand() });
       }
     } else {
-      clumps.push({ c: crown.clone().add(new THREE.Vector3(0, 0.55, 0)), r: 1.05 });
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2 + rand() * 0.6, rr = 0.75 + rand() * 0.35;
-        const off = new THREE.Vector3(Math.cos(a) * crownR * 0.62, (rand() - 0.6) * 0.7, Math.sin(a) * crownR * 0.62);
-        clumps.push({ c: crown.clone().add(off), r: rr });
+      const lean = rand() * Math.PI * 2;
+      masses.push({ c: crown.clone().add(new THREE.Vector3(Math.cos(lean) * 0.35, 0.7, Math.sin(lean) * 0.35)), r: 1.15, tone: rand() });
+      const n = 5 + Math.floor(rand() * 2);
+      for (let i = 0; i < n; i++) {
+        const a = lean + Math.PI * 0.4 + (i / n) * Math.PI * 2 + (rand() - 0.5) * 0.8;
+        const out = crownR * (0.5 + rand() * 0.3), rr = 0.55 + rand() * 0.6;
+        const off = new THREE.Vector3(Math.cos(a) * out, (rand() - 0.65) * 0.9, Math.sin(a) * out);
+        masses.push({ c: crown.clone().add(off), r: rr, tone: rand() });
       }
-      // Boughs from the trunk top to the lower clumps.
-      for (const k of clumps.slice(1, 5)) {
-        const from = base.clone().add(new THREE.Vector3(0, trunkH, 0)), to = k.c.clone().lerp(crown, 0.35);
+      // Boughs from the trunk top to the lower masses, so the gaps show wood.
+      for (const k of masses.slice(1)) {
+        if (k.c.y > crown.y + 0.2) continue;
+        const from = base.clone().add(new THREE.Vector3(0, trunkH * 0.9, 0)), to = k.c.clone().lerp(crown, 0.3);
         const len = from.distanceTo(to);
-        const g = new THREE.CylinderGeometry(0.05, 0.09, len, 6, 1);
+        const g = new THREE.CylinderGeometry(0.045, 0.085, len, 6, 1);
         const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
-        const mat = new THREE.Matrix4().compose(from.clone().lerp(to, 0.5), q, new THREE.Vector3(1, 1, 1));
-        wood.addGeometry(g, mat, C.bark, [0.4, 2.5, 1.57, 0]);
+        wood.addGeometry(g, new THREE.Matrix4().compose(from.clone().lerp(to, 0.5), q, new THREE.Vector3(1, 1, 1)), C.bark, [0.4, 2.5, 1.57, 0]);
       }
     }
-    const crownCenter = cypress ? base.clone().add(new THREE.Vector3(0, 3.4, 0)) : crown;
-    const stretch = cypress ? new THREE.Vector3(1, 0.35, 1) : new THREE.Vector3(1, 1.15, 1);
-    for (const k of clumps) {
-      const count = Math.round(70 * k.r * k.r * (cypress ? 1.4 : 1));
+    const crownCenter = cypress ? base.clone().add(new THREE.Vector3(0, 3.4, 0)) : crown.clone().add(new THREE.Vector3(0, 0.3, 0));
+    const stretch = cypress ? new THREE.Vector3(1, 0.3, 1) : new THREE.Vector3(1, 1.2, 1);
+    const leafColor = cypress ? C.cypress : t.kind === 'fruit' ? C.fruitLeaf : C.leaf;
+    for (const k of masses) {
+      // Each mass its own shade of the tree's green: one warmer, one cooler.
+      const massColor = leafColor.clone().offsetHSL((k.tone - 0.5) * 0.04, 0, (k.tone - 0.5) * 0.06);
+      const count = Math.round((cypress ? 150 : 115) * k.r * k.r);
       for (let i = 0; i < count; i++) {
-        // A point on (or just inside) the clump's surface, biased to its outside.
-        const u = rand() * 2 - 1, phi = rand() * Math.PI * 2, s = Math.sqrt(1 - u * u);
-        const dir = new THREE.Vector3(s * Math.cos(phi), u, s * Math.sin(phi));
-        const p = k.c.clone().addScaledVector(dir, k.r * (0.62 + rand() * 0.38));
-        // Sphere-pushed normal: mostly the crown's shape, some of the clump's, so the bands fall in soft blobs.
+        const u = rand() * 2 - 1, phi = rand() * Math.PI * 2, s2 = Math.sqrt(1 - u * u);
+        const dir = new THREE.Vector3(s2 * Math.cos(phi), u, s2 * Math.sin(phi));
+        // Most strokes on the mass's skin; some loose ones just outside it break the silhouette.
+        const loose = rand() < 0.14;
+        const depth = loose ? 1.02 + rand() * 0.14 : 0.6 + rand() * 0.4;
+        const p = k.c.clone().addScaledVector(dir, k.r * depth);
         const toCrown = p.clone().sub(crownCenter).multiply(stretch).normalize();
-        const nrm = toCrown.multiplyScalar(0.62).addScaledVector(dir, 0.38).normalize();
-        let col = (cypress ? C.cypress : t.kind === 'fruit' ? C.fruitLeaf : C.leaf).clone();
-        // Top dabs a little yellower, lower ones bluer.
-        col = col.lerp(cypress ? C.teal : C.leafLight, Math.max(0, nrm.y) * 0.35 * rand());
-        col.offsetHSL((rand() - 0.5) * 0.03, (rand() - 0.5) * 0.1, (rand() - 0.5) * 0.05);
-        const size = (cypress ? 0.36 : 0.42) + rand() * 0.22;
-        addDab(leaves, p, nrm, col, size, rand(), [0.7, 1.2, rand() * 3, 0.9]);
+        const nrm = toCrown.multiplyScalar(cypress ? 0.6 : 0.45).addScaledVector(dir, cypress ? 0.4 : 0.55).normalize();
+        let col = massColor.clone().lerp(cypress ? C.teal : C.leafLight, Math.max(0, nrm.y) * 0.3 * rand());
+        // Strokes deeper in the mass sit in its shade.
+        col.multiplyScalar(0.72 + 0.28 * Math.min(1, (depth - 0.6) / 0.4));
+        col.offsetHSL((rand() - 0.5) * 0.025, (rand() - 0.5) * 0.08, (rand() - 0.5) * 0.04);
+        const size = cypress ? 0.26 + rand() * 0.2 : loose ? 0.16 + rand() * 0.1 : 0.28 + rand() * 0.22;
+        const aspect = cypress ? 0.38 + rand() * 0.15 : 0.45 + rand() * 0.35;
+        addDab(leaves, p, nrm, col, size, rand(), [0.7, aspect, cypress ? Math.PI / 2 : -1, cypress ? 0.35 : 0.7]);
       }
     }
     // Fruit: bright dabs on the outer, sunward side.
     if (t.kind === 'fruit') {
       for (let i = 0; i < 26; i++) {
-        const k = clumps[1 + Math.floor(rand() * (clumps.length - 1))];
-        const u = rand() * 0.9 - 0.2, phi = rand() * Math.PI * 2, s = Math.sqrt(1 - u * u);
-        const dir = new THREE.Vector3(s * Math.cos(phi), u, s * Math.sin(phi));
+        const k = masses[Math.floor(rand() * masses.length)];
+        const u = rand() * 0.9 - 0.2, phi = rand() * Math.PI * 2, s2 = Math.sqrt(1 - u * u);
+        const dir = new THREE.Vector3(s2 * Math.cos(phi), u, s2 * Math.sin(phi));
         const p = k.c.clone().addScaledVector(dir, k.r * 1.0);
         const fc = C.fruit.clone().offsetHSL((rand() - 0.5) * 0.04, 0, (rand() - 0.5) * 0.08);
-        addDab(leaves, p, dir, fc, 0.1 + rand() * 0.04, rand(), [0.2, 1, 0, 0.5]);
+        addDab(leaves, p, dir, fc, 0.1 + rand() * 0.04, rand(), [0.2, 1, -1, 0.5]);
       }
     }
   }
@@ -277,8 +297,9 @@ function grass(r: BrushRenderer) {
     placed++;
     const y = height(x, z), n = normalAt(x, z);
     const base = tuftColor(x, z);
-    const root = base.clone().lerp(C.teal, 0.5).multiplyScalar(0.75);
-    const tip = base.clone().lerp(C.lime, 0.2);
+    // Blades sit in the ground's own colour, a little deeper at the root: the grass is part of the meadow's paint.
+    const root = base.clone().lerp(C.teal, 0.35).multiplyScalar(0.82);
+    const tip = base.clone().lerp(C.lime, 0.1);
     const blades = 4 + Math.floor(rand() * 4), tall = 0.18 + lush * 0.32;
     for (let k = 0; k < blades; k++) {
       const a = rand() * Math.PI * 2, h = tall * (0.6 + rand() * 0.6), w = 0.035 + rand() * 0.02;
@@ -308,7 +329,7 @@ function grass(r: BrushRenderer) {
       if (blocked(x, z) || Math.abs(x) > half || Math.abs(z) > half) continue;
       const y = height(x, z) + 0.18 + rand() * 0.22;
       addDab(flowers, new THREE.Vector3(x, y, z), new THREE.Vector3(0, 1, 0), col.clone().offsetHSL(0, 0, (rand() - 0.5) * 0.08),
-        0.055 + rand() * 0.035, rand(), [0.2, 1, 0, 0.3]);
+        0.055 + rand() * 0.035, rand(), [0.2, 1, -1, 0.3]);
     }
   }
   r.add(g.build(), 'grass', false);

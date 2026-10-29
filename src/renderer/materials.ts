@@ -64,8 +64,10 @@ void main() {
 
 /**
  * Foliage dabs: each card is a quad centred on `position`, turned to face whichever camera draws it (the view or the sun),
- * so the sun's shadow map sees the same clumps the eye does. `normal` is the canopy's, so a whole crown shades as one form.
- * aCard: the corner (-1..1), the dab size in metres, and a seed.
+ * so the sun's shadow map sees the same clumps the eye does. `normal` is the canopy's (the crown's form and the branch
+ * mass's), so a whole crown shades as a few lumps rather than as many pads.
+ * aCard: the corner (-1..1), the dab size in metres, and a seed. aPaint.y: the dab's width over its length (1 round, less
+ * a leafy stroke); aPaint.z: the stroke's turn on screen in radians (below zero: any way).
  */
 const FOLIAGE_VERT = /* glsl */ `
 ${HEAD}
@@ -76,7 +78,7 @@ void main() {
   vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
   vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
   vec3 toCam = vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
-  float a = aCard.w * 6.2831853;
+  float a = aPaint.z >= 0.0 ? aPaint.z + (aCard.w - 0.5) * 0.7 : aCard.w * 6.2831853;
   vec2 c = mat2(cos(a), sin(a), -sin(a), cos(a)) * aCard.xy;
   vec4 wc = modelMatrix * vec4(position, 1.0);
   // Wind: the whole crown leans gently, each dab flutters a little on its own.
@@ -85,11 +87,11 @@ void main() {
   vec3 world = wc.xyz + (right * c.x + up * c.y) * aCard.z;
   vWorldPos = world;
   vNormal = normalize(mat3(modelMatrix) * normal);
-  // Each dab bulges towards the viewer a little, so a clump reads as many leafy pads, not one smooth ball.
+  // Each dab bulges towards the viewer a little; kept faint, so turning the camera doesn't relight the crown.
   vDabNormal = normalize(right * c.x * 0.55 + up * c.y * 0.55 + toCam * 0.45);
   vColor = color;
   vPaint = aPaint;
-  vCard = vec4(aCard.xy, aCard.z, aCard.w);
+  vCard = aCard;
   vec4 vp = viewMatrix * vec4(world, 1.0);
   vViewDepth = -vp.z;
   gl_Position = projectionMatrix * vp;
@@ -142,12 +144,12 @@ vec2 brushPlane(vec3 p, vec3 n) {
   return vec2(dot(p.xz, t), p.y);
 }
 
-// The surface's own colour, drifting in hue and value across the world: one meadow runs yellow-green to emerald to teal.
+// The surface's own colour, drifting in hue and value across the world (one meadow runs yellow-green to emerald to teal),
+// by 'amount'; 'dab' is the brush mark's own shift, already as strong as the surface wants it.
 vec3 driftColor(vec3 base, vec3 p, float amount, float dab) {
   float v1 = fbm2(p.xz * 0.06 + 3.1);
   vec3 lab = linToOklab(base);
-  lab = lchShift(lab, (v1 * 0.02 + dab * 0.05) * amount, 1.0 + (v1 * 0.05 + dab * 0.08) * amount,
-                 (v1 * 0.12 + dab * 0.13) * amount);
+  lab = lchShift(lab, v1 * 0.02 * amount + dab * 0.05, 1.0 + v1 * 0.05 * amount + dab * 0.08, v1 * 0.12 * amount + dab * 0.13);
   return oklabToLin(lab);
 }
 
@@ -165,42 +167,68 @@ void main() {
   vec3 p = vWorldPos;
   vec2 bp = brushPlane(p, n);
   float angle = abs(n.y) > 0.6 ? contourAngle(n, vPaint.z) : vPaint.z;
-  float dab = paintDabs(bp, vPaint.y, angle);
+  // aPaint.x is how much brushwork shows here: a painter works the banks, edges and turns of the land and leaves the
+  // open lawn as quiet colour.
+  float detail = vPaint.x;
+  float dab = paintDabs(bp, vPaint.y, angle) * detail;
   float br = paintStrokes(bp * vPaint.y * 0.6, angle);
-  vec3 base = driftColor(vColor, p, vPaint.x, dab);
+  vec3 base = driftColor(vColor, p, 1.0, dab);
   float vis = sunVisibility(p, n, br);
   // Cast shadows on the ground fall to half-tone rather than deep shade: the land stays light and calm.
-  float light = sunLight(n, 0.3) * mix(abs(n.y) > 0.6 ? 0.3 : 0.18, 1.0, vis) + dab * 0.07 + br * 0.04;
+  float light = sunLight(n, 0.3) * mix(abs(n.y) > 0.6 ? 0.3 : 0.18, 1.0, vis) + dab * 0.07 + br * 0.04 * detail;
+  // A fine, faint layer of strokes everywhere, so close up even the quiet lawn is paint, not airbrush. It fades out (its
+  // contrast, not its place) as the camera pulls back and the strokes get too small to read.
+  vec2 fp = bp * vPaint.y * 3.5;
+  float fine = paintStrokes(fp, angle) * (1.0 - smoothstep(0.08, 0.3, length(fwidth(fp))));
+  light += fine * 0.035;
   vec3 col = paintBands(base, light, 0.05, n.y * 0.5 + 0.5);
   col += uRimColor * rimLight(n, vPaint.w);
   writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
 }
 `;
 
+/** A dab's shape in its card (c in -1..1): an ellipse 'aspect' wide, pointed at the ends like a leaf, its edge broken. Above zero inside. */
+const DAB_SHAPE = /* glsl */ `
+float dabShape(vec2 c, float seed, float aspect) {
+  vec2 q = vec2(c.x, c.y / max(aspect, 0.2));
+  float ang = atan(q.y, q.x);
+  float lobes = sin(ang * 5.0 + seed) * 0.07 + sin(ang * 9.0 + seed * 1.7) * 0.04;
+  // Pointed ends along the stroke: the sides pull in as |x| grows.
+  float taper = (1.0 - aspect) * 0.35 * c.x * c.x;
+  return 1.0 - length(q) - taper + lobes * aspect + snoise(c * 2.4 + seed) * 0.12;
+}
+`;
+
 const FOLIAGE_FRAG = /* glsl */ `
 ${FRAG_HEAD}
+${DAB_SHAPE}
 varying vec4 vCard;
 varying vec3 vDabNormal;
 void main() {
   vec2 c = vCard.xy;
-  // A dab: a rough round pad with a leafy, broken edge.
   float seed = vCard.w * 91.0;
-  float ang = atan(c.y, c.x);
-  float lobes = sin(ang * 5.0 + seed) * 0.08 + sin(ang * 9.0 + seed * 1.7) * 0.05;
-  float edge = 1.0 - length(c) + lobes + snoise(c * 2.4 + seed) * 0.12;
+  float edge = dabShape(c, seed, vPaint.y);
   float alpha = clamp(edge / max(fwidth(edge), 1e-4) + 0.5, 0.0, 1.0);
   if (alpha < 0.02) discard;
-  vec3 n = normalize(normalize(vNormal) * 1.0 + vDabNormal * 0.55);
+  vec3 nCanopy = normalize(vNormal);
+  vec3 n = normalize(nCanopy + vDabNormal * 0.2);
   vec3 p = vWorldPos;
-  // Strokes follow the dab, so each pad carries a couple of brush marks.
+  // Strokes follow the dab, so each one carries a couple of brush marks.
   float br = strokes(c * 1.6 + seed, seed);
-  vec3 base = driftColor(vColor, p, vPaint.x, br * 0.5);
-  float vis = sunVisibility(p, normalize(vNormal), br);
-  float light = sunLight(n, 0.25) * mix(0.15, 1.0, vis) + br * 0.09;
-  // Inner pads sit in the crown's own shade: darker towards the dab's lower side.
-  light -= (1.0 - smoothstep(-1.0, 0.6, c.y)) * 0.08;
-  vec3 col = paintBands(base, light, 0.06, 0.6);
-  col += uRimColor * rimLight(normalize(vNormal), vPaint.w) * vis * 0.45;
+  vec3 base = driftColor(vColor, p, vPaint.x, br * 0.35 * vPaint.x);
+  float vis = sunVisibility(p, nCanopy, br);
+  // In the crown's own shadow the lumps still read: the shadow lowers the light rather than flattening it.
+  float lit = sunLight(n, 0.35);
+  float light = lit * mix(0.32, 1.0, vis) + br * 0.08;
+  // A dab is a touch darker at its lower edge, where it tucks under the next.
+  light -= (1.0 - smoothstep(-1.0, 0.6, c.y)) * 0.06;
+  vec3 col = paintBands(base, light, 0.07, nCanopy.y * 0.5 + 0.5);
+  col += uRimColor * rimLight(nCanopy, vPaint.w) * vis * 0.15;
+  // Against the sun the crown's edges glow, light coming through the leaves.
+  float behind = smoothstep(0.0, 0.7, dot(-toCamera(), uSunDir));
+  // Light through a leaf takes the leaf's colour: a warm yellow-green, not the sun's orange.
+  float side = pow(1.0 - abs(dot(nCanopy, toCamera())), 3.0);
+  col += uRimColor * tintOf(base, 0.75) * behind * side * vPaint.w * 0.7 * mix(0.4, 1.0, vis);
   writeGBuffer(col, n, vViewDepth, 0.0, alpha);
 }
 `;
@@ -213,13 +241,13 @@ void main() {
   vec3 n = normalize(vNormal);
   vec3 p = vWorldPos;
   float angle = contourAngle(n, vPaint.z);
-  float dab = paintDabs(p.xz, vPaint.y, angle);
+  float dab = paintDabs(p.xz, vPaint.y, angle) * 0.6;
   float br = paintStrokes(p.xz * vPaint.y * 0.6, angle);
   vec3 base = driftColor(vColor, p, vPaint.x, dab);
   float vis = sunVisibility(p, n, br);
   float light = sunLight(n, 0.3) * mix(0.18, 1.0, vis) + dab * 0.07 + br * 0.04;
   // Tips catch a little more light than roots.
-  light += (vBlade.x - 0.5) * 0.18;
+  light += (vBlade.x - 0.5) * 0.1;
   vec3 col = paintBands(base, light, 0.06, 0.8);
   col += uRimColor * vPaint.w * vBlade.x * vBlade.x * vis * 0.25;
   writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
@@ -268,10 +296,11 @@ void main() {
 }
 `;
 
-/** Painted water: a teal-blue body, sky in the shallows of the glance, flowing strokes, foam along the banks, glints. vUv.y: across (0..1). */
 /**
- * Painted water: a deep teal body, sky caught in long strokes that drift with the flow, broken foam where it meets the
- * bank, and sparks of sun. vUv.y runs across the stream (0..1); aPaint.z is the flow's direction.
+ * Painted water, built from value masses the way a painter lays it: mostly the sky, pale; broad cloud shapes caught in it;
+ * the banks and their greenery reflected dark along either edge; a quiet blue-green body showing through mid-stream; thin
+ * ripples drifting with the flow and a few sparks of sun. Reflections stay where they are (they belong to the world), only
+ * the ripples move. vUv.y runs across the stream (0..1); aPaint.z is the flow's direction.
  */
 const WATER_FRAG = /* glsl */ `
 ${FRAG_HEAD}
@@ -283,23 +312,32 @@ void main() {
   vec2 dir = vec2(cos(flowA), sin(flowA));
   vec2 q = p.xz - dir * uTime * 0.35;
   float across = abs(vUv.y - 0.5) * 2.0;
-  vec3 lab = linToOklab(vColor);
-  vec3 deep = oklabToLin(lchShift(lab, -0.05, 1.1, 0.0));
-  vec3 shallow = oklabToLin(lchShift(lab, 0.06, 0.95, 0.4));
-  float st = strokes(q * 0.9, flowA);
-  vec3 col = mix(deep, shallow, smoothstep(0.45, 1.0, across) * 0.7 + st * 0.08);
-  // Sky caught in the water: long pale strokes along the flow.
-  float refl = smoothstep(0.45, 0.8, strokes(q * vec2(0.6, 0.6) + 3.0, flowA) * 0.5 + 0.5 - across * 0.15);
-  vec3 skyCol = oklabToLin(lchShift(linToOklab(uSkyColor), 0.0, 0.8, 0.0)) * 0.75;
-  col = mix(col, skyCol, refl * 0.5);
+  float st = paintStrokes(p.xz * 0.9, flowA);
+  // The body: the stream's own blue-green, a little deeper mid-stream.
+  vec3 body = oklabToLin(lchShift(linToOklab(vColor), 0.06 - (1.0 - across) * 0.05, 1.0, 0.0));
+  // The sky, lifted towards white: it's what most of the water shows from above.
+  vec3 skyLab = linToOklab(uSkyColor);
+  vec3 sky = oklabToLin(vec3(skyLab.x - 0.06, skyLab.yz * 1.7));
+  vec3 col = mix(body, sky, 0.5 + st * 0.06);
+  // Clouds in the water: a few pale shapes, their edges dragged along the flow by the brush.
+  float cloud = fbm2(p.xz * 0.13 + vec2(uTime * 0.004, 0.0)) + st * 0.2;
+  col = mix(col, mix(sky, vec3(1.0), 0.6), smoothstep(0.3, 0.45, cloud) * 0.8);
+  // The banks reflected: a dark band of their greenery along each edge, ragged and wider in places.
+  float reach = 0.42 + snoise(p.xz * 0.35 + 4.0) * 0.2 + st * 0.1;
+  float bank = smoothstep(reach, reach + 0.2, across);
+  vec3 green = oklabToLin(vec3(0.34, -0.07, 0.03));
+  col = mix(col, green, bank * 0.85);
+  // Ripples: thin lighter strokes moving with the flow, low contrast.
+  float rip = strokes(q * vec2(1.6), flowA);
+  col = mix(col, mix(sky, vec3(1.0), 0.4), smoothstep(0.55, 0.85, rip) * 0.22 * (1.0 - bank));
   float vis = sunVisibility(p, n, st);
-  col *= mix(0.7, 1.0, vis) * mix(skyTint(), sunTint(), 0.6);
-  // Foam: broken white where the water meets the bank.
-  float foam = smoothstep(0.86, 0.98, across + snoise(q * vec2(3.0, 1.2)) * 0.1);
-  col = mix(col, vec3(0.88, 0.95, 0.98) * sunTint(), foam * 0.6);
-  // Sparks of sun.
+  col *= mix(0.72, 1.0, vis) * mix(skyTint(), sunTint(), 0.5);
+  // Where the water meets the bank: a dark wet edge, broken.
+  float wet = smoothstep(0.88, 0.97, across + snoise(p.xz * 2.5) * 0.04);
+  col *= 1.0 - wet * 0.35;
+  // A few sparks of sun, mostly in the open water.
   float g = snoise(p.xz * 5.0 + vec2(uTime * 0.7, -uTime * 0.5)) * snoise(p.xz * 3.7 - uTime * 0.4);
-  col += sunTint() * smoothstep(0.55, 0.72, g) * vis * 0.8;
+  col += sunTint() * smoothstep(0.66, 0.8, g) * vis * (1.0 - bank) * 0.9;
   writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
 }
 `;
@@ -310,13 +348,11 @@ void main() { gl_FragColor = vec4(1.0); }
 
 const FOLIAGE_DEPTH_FRAG = /* glsl */ `
 ${NOISE}
+${DAB_SHAPE}
 varying vec4 vCard;
+varying vec4 vPaint;
 void main() {
-  vec2 c = vCard.xy;
-  float seed = vCard.w * 91.0;
-  float ang = atan(c.y, c.x);
-  float lobes = sin(ang * 5.0 + seed) * 0.08 + sin(ang * 9.0 + seed * 1.7) * 0.05;
-  if (1.0 - length(c) + lobes + snoise(c * 2.4 + seed) * 0.12 < 0.0) discard;
+  if (dabShape(vCard.xy, vCard.w * 91.0, vPaint.y) < 0.0) discard;
   gl_FragColor = vec4(1.0);
 }
 `;

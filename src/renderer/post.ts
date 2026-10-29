@@ -18,6 +18,7 @@ uniform float uTargetDepth;
 uniform vec3 uHazeColor;
 uniform float uHazeDensity;
 uniform float uHazeMax;
+uniform float uHazeFloor;
 uniform vec3 uSkyTop;
 uniform vec3 uSkyBottom;
 uniform float uExposure;
@@ -63,17 +64,17 @@ void main() {
     edge *= aux.w;
   }
 
-  // Haze: the land fades towards the haze colour with distance past the camera's target.
+  // Haze: the hour's air over everything, thickening with distance past the camera's target.
   if (!sky) {
     float far = max(d - uTargetDepth, 0.0);
-    float haze = (1.0 - exp(-far * uHazeDensity)) * uHazeMax;
+    float haze = max((1.0 - exp(-far * uHazeDensity)) * uHazeMax, uHazeFloor);
     c = mix(c, uHazeColor, haze);
   }
 
   if (edge > 0.0) {
     vec3 lab = linToOklab(c);
     vec3 ink = hueToward(lchShift(lab, -0.45 * lab.x, 1.25, 0.0), uShadeHue, 0.25);
-    c = mix(c, oklabToLin(ink), edge * 0.9);
+    c = mix(c, oklabToLinFit(ink), edge * 0.9);
   }
 
   // Grade: exposure, a soft shoulder instead of a hard clip, richer chroma.
@@ -81,7 +82,7 @@ void main() {
   c = c / (1.0 + max(c - 0.8, 0.0) * 0.9);
   vec3 lab = linToOklab(c);
   lab.yz *= uSaturation;
-  c = oklabToLin(lab);
+  c = oklabToLinFit(lab);
 
   vec3 o = toSrgb(c);
   // A faint canvas tooth, and a gentle vignette.

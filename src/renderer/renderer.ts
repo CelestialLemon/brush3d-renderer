@@ -64,7 +64,7 @@ export class BrushRenderer {
         tColor: { value: this.gbuffer.textures[0] }, tAux: { value: this.gbuffer.textures[1] },
         uResolution: { value: new THREE.Vector2(1, 1) }, uLineWidth: { value: 1.5 }, uLines: { value: 1 },
         uTargetDepth: { value: CAMERA_DISTANCE }, uHazeColor: { value: new THREE.Color() }, uHazeDensity: { value: 0.02 },
-        uHazeMax: { value: 0.4 }, uSkyTop: { value: new THREE.Color() }, uSkyBottom: { value: new THREE.Color() },
+        uHazeMax: { value: 0.4 }, uHazeFloor: { value: 0 }, uSkyTop: { value: new THREE.Color() }, uSkyBottom: { value: new THREE.Color() },
         uExposure: { value: 1 }, uSaturation: { value: 1 }, uShadeHue: { value: 0 }, uGrain: { value: 0.012 },
       },
     });
@@ -111,7 +111,7 @@ export class BrushRenderer {
     s.uShadeHue.value = rad(look.shadeHue); s.uShadeLean.value = look.shadeLean; s.uShadeDepth.value = look.shadeDepth;
     s.uLitHue.value = rad(look.litHue); s.uLitLean.value = look.litLean;
     const u = this.post.uniforms;
-    u.uHazeColor.value.copy(look.hazeColor); u.uHazeDensity.value = look.hazeDensity; u.uHazeMax.value = look.hazeMax;
+    u.uHazeColor.value.copy(look.hazeColor); u.uHazeDensity.value = look.hazeDensity; u.uHazeMax.value = look.hazeMax; u.uHazeFloor.value = look.hazeFloor;
     u.uSkyTop.value.copy(look.skyTop); u.uSkyBottom.value.copy(look.skyBottom);
     u.uExposure.value = look.exposure; u.uSaturation.value = look.saturation; u.uShadeHue.value = rad(look.shadeHue);
     this.updateSunCamera();

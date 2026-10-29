@@ -99,14 +99,28 @@ vec3 linToOklab(vec3 c) {
               1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
               0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s);
 }
-vec3 oklabToLin(vec3 c) {
+vec3 oklabToLinRaw(vec3 c) {
   float l = c.x + 0.3963377774 * c.y + 0.2158037573 * c.z;
   float m = c.x - 0.1055613458 * c.y - 0.0638541728 * c.z;
   float s = c.x - 0.0894841775 * c.y - 1.2914855480 * c.z;
   l = l * l * l; m = m * m * m; s = s * s * s;
-  return max(vec3(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-                 -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-                 -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s), 0.0);
+  return vec3(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+              -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+              -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s);
+}
+vec3 oklabToLin(vec3 c) { return max(oklabToLinRaw(c), 0.0); }
+// To linear sRGB, keeping the hue and lightness and giving up chroma when the colour is out of gamut, as a painter's pigment
+// would (clipping the channels instead turns a deep green shade neon).
+vec3 oklabToLinFit(vec3 lab) {
+  vec3 c = oklabToLinRaw(lab);
+  if (min(c.r, min(c.g, c.b)) >= 0.0) return c;
+  float lo = 0.0, hi = 1.0;
+  for (int i = 0; i < 6; i++) {
+    float m = (lo + hi) * 0.5;
+    vec3 t = oklabToLinRaw(vec3(lab.x, lab.yz * m));
+    if (min(t.r, min(t.g, t.b)) >= 0.0) lo = m; else hi = m;
+  }
+  return max(oklabToLinRaw(vec3(lab.x, lab.yz * lo)), 0.0);
 }
 // Rotates a colour's hue by 'turn' radians, scales its chroma and shifts its lightness, in OKLCh.
 vec3 lchShift(vec3 lab, float dL, float cMul, float turn) {
@@ -198,7 +212,7 @@ vec3 paintBands(vec3 base, float light, float soft, float upness) {
   vec3 lit = lchShift(lab, 0.02, 1.05, 0.0) + vec3(0.0, cos(uLitHue), sin(uLitHue)) * uLitLean * 0.09;
   float t1 = smoothstep(0.30 - soft, 0.30 + soft, light);
   float t2 = smoothstep(0.62 - soft, 0.62 + soft, light);
-  vec3 col = oklabToLin(mix(mix(shade, half_, t1), lit, t2));
+  vec3 col = oklabToLinFit(mix(mix(shade, half_, t1), lit, t2));
   // The sky fills the shade from above; the sun tints the lit band.
   vec3 sky = skyTint() * (0.8 + 0.2 * upness);
   return mix(col * sky, col * sunTint(), t2 * 0.85 + t1 * 0.15);

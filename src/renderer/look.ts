@@ -11,8 +11,9 @@ export interface Look {
   sunColor: THREE.Color; skyColor: THREE.Color; rimColor: THREE.Color; hazeColor: THREE.Color;
   skyTop: THREE.Color; skyBottom: THREE.Color;
   shadeHue: number; shadeLean: number; shadeDepth: number; litHue: number; litLean: number;
-  /** Haze: how quickly it thickens with distance (per metre) and its strongest share. */
-  hazeDensity: number; hazeMax: number;
+  /** Haze: how quickly it thickens with distance (per metre), its strongest share, and the share it has even up close (the
+   * hour's air: peach in the evening, lavender at dusk). */
+  hazeDensity: number; hazeMax: number; hazeFloor: number;
   exposure: number; saturation: number;
 }
 
@@ -24,22 +25,22 @@ interface Key extends Omit<Look, 'sunColor' | 'skyColor' | 'rimColor' | 'hazeCol
 const KEYS: Key[] = [
   { hour: 5, sunAz: 80, sunEl: -6, sunColor: 0x5d6aa8, skyColor: 0x7c86c8, rimColor: 0x8c7ec8, hazeColor: 0x6d74b0,
     skyTop: 0x2c3570, skyBottom: 0x8a7fb8, shadeHue: 285, shadeLean: 0.55, shadeDepth: 0.42, litHue: 280, litLean: 0.2,
-    hazeDensity: 0.03, hazeMax: 0.55, exposure: 0.75, saturation: 0.9 },
+    hazeDensity: 0.03, hazeFloor: 0.14, hazeMax: 0.55, exposure: 0.75, saturation: 0.9 },
   { hour: 7, sunAz: 95, sunEl: 10, sunColor: 0xffc58f, skyColor: 0xa9b8e6, rimColor: 0xffb070, hazeColor: 0xc8c3dc,
     skyTop: 0x6f95d6, skyBottom: 0xf3c9a6, shadeHue: 270, shadeLean: 0.45, shadeDepth: 0.36, litHue: 70, litLean: 0.18,
-    hazeDensity: 0.03, hazeMax: 0.5, exposure: 1.0, saturation: 1.05 },
+    hazeDensity: 0.03, hazeFloor: 0.1, hazeMax: 0.5, exposure: 1.0, saturation: 1.05 },
   { hour: 12, sunAz: 115, sunEl: 58, sunColor: 0xfff4dc, skyColor: 0xb4d4f2, rimColor: 0xffe08a, hazeColor: 0xbfdcef,
     skyTop: 0x4f95e0, skyBottom: 0xcfe6f4, shadeHue: 215, shadeLean: 0.4, shadeDepth: 0.3, litHue: 95, litLean: 0.05,
-    hazeDensity: 0.022, hazeMax: 0.45, exposure: 1.0, saturation: 1.0 },
-  { hour: 17.5, sunAz: 215, sunEl: 16, sunColor: 0xffc77a, skyColor: 0x9fb2e4, rimColor: 0xffa648, hazeColor: 0xe9cdb0,
-    skyTop: 0x6c8fd6, skyBottom: 0xf6caa0, shadeHue: 270, shadeLean: 0.45, shadeDepth: 0.34, litHue: 60, litLean: 0.12,
-    hazeDensity: 0.026, hazeMax: 0.5, exposure: 1.0, saturation: 1.0 },
+    hazeDensity: 0.022, hazeFloor: 0.03, hazeMax: 0.45, exposure: 1.0, saturation: 1.0 },
+  { hour: 17.5, sunAz: 215, sunEl: 16, sunColor: 0xffb468, skyColor: 0xa8a8e0, rimColor: 0xffa648, hazeColor: 0xf2c2a2,
+    skyTop: 0x6c8fd6, skyBottom: 0xf6caa0, shadeHue: 275, shadeLean: 0.6, shadeDepth: 0.34, litHue: 60, litLean: 0.2,
+    hazeDensity: 0.026, hazeFloor: 0.12, hazeMax: 0.5, exposure: 1.0, saturation: 1.0 },
   { hour: 19.5, sunAz: 240, sunEl: 2, sunColor: 0xff8f6a, skyColor: 0x8f86c8, rimColor: 0xff7a5a, hazeColor: 0xd79fa8,
     skyTop: 0x4b5aa8, skyBottom: 0xf5a088, shadeHue: 295, shadeLean: 0.55, shadeDepth: 0.4, litHue: 45, litLean: 0.35,
-    hazeDensity: 0.03, hazeMax: 0.55, exposure: 0.9, saturation: 1.1 },
-  { hour: 22, sunAz: 260, sunEl: 35, sunColor: 0x6f84c8, skyColor: 0x4d5a9a, rimColor: 0x7d9ae0, hazeColor: 0x3a4478,
-    skyTop: 0x141a3c, skyBottom: 0x2f3a72, shadeHue: 275, shadeLean: 0.6, shadeDepth: 0.45, litHue: 255, litLean: 0.35,
-    hazeDensity: 0.03, hazeMax: 0.5, exposure: 0.62, saturation: 0.85 },
+    hazeDensity: 0.03, hazeFloor: 0.16, hazeMax: 0.55, exposure: 0.9, saturation: 1.1 },
+  { hour: 22, sunAz: 260, sunEl: 35, sunColor: 0xb4c2e6, skyColor: 0x4d5a9a, rimColor: 0x7d9ae0, hazeColor: 0x3a4478,
+    skyTop: 0x141a3c, skyBottom: 0x2f3a72, shadeHue: 275, shadeLean: 0.6, shadeDepth: 0.5, litHue: 255, litLean: 0.2,
+    hazeDensity: 0.03, hazeFloor: 0.14, hazeMax: 0.5, exposure: 0.55, saturation: 0.7 },
 ];
 
 /** Named hours for the demo's buttons. */
@@ -63,6 +64,7 @@ export function lookAt(hour: number): Look {
     shadeHue: lerpAngle(a.shadeHue, b.shadeHue, t), shadeLean: lerp(a.shadeLean, b.shadeLean, t),
     shadeDepth: lerp(a.shadeDepth, b.shadeDepth, t), litHue: lerpAngle(a.litHue, b.litHue, t), litLean: lerp(a.litLean, b.litLean, t),
     hazeDensity: lerp(a.hazeDensity, b.hazeDensity, t), hazeMax: lerp(a.hazeMax, b.hazeMax, t),
+    hazeFloor: lerp(a.hazeFloor, b.hazeFloor, t),
     exposure: lerp(a.exposure, b.exposure, t), saturation: lerp(a.saturation, b.saturation, t),
   };
 }
