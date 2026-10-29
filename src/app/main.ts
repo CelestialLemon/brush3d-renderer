@@ -3,6 +3,7 @@ import { BrushRenderer } from '../renderer/renderer';
 import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
+import type { MaterialKind } from '../renderer/materials';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
 //   view=0..3  zoom=16..96 (screen px per metre)  hour=0..24  x, z (camera target)  t (seconds: freeze the clock there)
@@ -75,13 +76,23 @@ function hud() {
 }
 hud();
 
-// Shot mode (tools/shot.ts): no loop; the tool asks for a frame and gets the canvas back.
+// Shot mode (tools/): no loop; the tools ask for frames. __shot draws one and returns it as a PNG; __draw puts the camera
+// somewhere (a fractional view turns part way), leaves some kinds out, and draws, leaving the frame on the canvas.
 if (params.has('shot')) {
-  (window as unknown as { __shot: () => string }).__shot = () => {
+  const draw = (cam?: { x: number; z: number; zoom: number; view: number }, options: { hide?: MaterialKind[]; grain?: boolean; time?: number } = {}) => {
+    if (cam) { view.target.set(cam.x, 0, cam.z); view.zoom = cam.zoom; view.view = cam.view; view.update(0, true); }
+    const kinds: MaterialKind[] = ['paint', 'ink', 'water', 'foliage', 'grass'];
+    for (const k of kinds) renderer.setVisible(k, !options.hide?.includes(k));
+    const grain = renderer.settings.grain;
+    if (options.grain === false) renderer.settings.grain = 0;
     renderer.setLook(lookAt(hour));
-    for (let i = 0; i < 2; i++) renderer.render(frozen ?? 0);
-    return canvas.toDataURL('image/png');
+    for (let i = 0; i < 2; i++) renderer.render(options.time ?? frozen ?? 0);
+    renderer.settings.grain = grain;
   };
+  Object.assign(window, {
+    __draw: draw,
+    __shot: () => { draw(); return canvas.toDataURL('image/png'); },
+  });
 } else requestAnimationFrame(frame);
 
 const start = performance.now();

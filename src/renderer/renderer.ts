@@ -112,6 +112,11 @@ export class BrushRenderer {
     return mesh;
   }
 
+  /** Shows or hides every mesh of a kind (for A/B comparisons). */
+  setVisible(kind: MaterialKind, visible: boolean) {
+    for (const o of this.scene.children) if (o.userData.kind === kind) o.visible = visible;
+  }
+
   /** The height of the water's surface, the plane it mirrors the scene in. */
   setWaterLevel(y: number) { this.shared.uMirrorY.value = y; }
 
@@ -178,6 +183,7 @@ export class BrushRenderer {
     if (!this.look) throw new Error('setLook before render');
     this.shared.uTime.value = time;
     this.view.apply(this.width, this.height);
+    this.shared.uViewBack.value.copy(this.view.backward());
     const gl = this.gl;
 
     // The sun's shadow map: redrawn every frame, because foliage and grass move in the wind.

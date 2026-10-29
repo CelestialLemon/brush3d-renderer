@@ -1,0 +1,66 @@
+// Records the camera moving as a video, to judge motion by eye: crawl, shimmer and popping show only in moving pictures.
+//   node tools/video.ts [out-dir] [move ...]      moves: pan, pan-wide, pan-up, turn, zoom, wind (default: all)
+// Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
+// <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5"). See tools/browser.ts for the rest.
+import { execFileSync } from 'node:child_process';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { launch, open } from './browser.ts';
+
+const FPS = 30;
+const PITCH = (30 * Math.PI) / 180;
+interface Cam { x: number; z: number; zoom: number; view: number }
+/** A move: how long it lasts and where the camera is at time t (seconds). */
+const MOVES: Record<string, { seconds: number; at: (t: number) => Cam }> = {
+  // A slow drag to the right and a little up, at an everyday zoom: 60 px a second.
+  pan: { seconds: 5, at: (t) => pan({ x: 0, z: 0, zoom: 40, view: 0 }, 60 * t, 15 * t) },
+  // Zoomed out, faster.
+  'pan-wide': { seconds: 5, at: (t) => pan({ x: 0, z: 0, zoom: 24, view: 0 }, 110 * t, 0) },
+  // Straight up the screen: things travel from near to far, through the haze.
+  'pan-up': { seconds: 5, at: (t) => pan({ x: 0, z: 0, zoom: 32, view: 0 }, 0, 70 * t) },
+  // A quarter turn, eased as the demo eases it, then held.
+  turn: { seconds: 3, at: (t) => ({ x: 0, z: 0, zoom: 32, view: 1 - Math.exp(-Math.max(0, t - 0.3) * 9) }) },
+  // Zoom from wide to close and back, smoothly.
+  zoom: { seconds: 6, at: (t) => ({ x: -1, z: 4, zoom: 24 * Math.pow(64 / 24, 0.5 - 0.5 * Math.cos((t / 6) * 2 * Math.PI)), view: 0 }) },
+  // The camera still, the wind moving.
+  wind: { seconds: 5, at: () => ({ x: -1, z: 4, zoom: 48, view: 0 }) },
+};
+
+/** The camera moved by screen pixels (right, up), as dragging does. */
+function pan(c: Cam, right: number, up: number): Cam {
+  const yaw = ((45 + 90 * c.view) * Math.PI) / 180;
+  return {
+    ...c,
+    x: c.x + (Math.cos(yaw) * right - (Math.sin(yaw) * up) / Math.sin(PITCH)) / c.zoom,
+    z: c.z + (-Math.sin(yaw) * right - (Math.cos(yaw) * up) / Math.sin(PITCH)) / c.zoom,
+  };
+}
+
+const [out = 'out', ...names] = process.argv.slice(2);
+await mkdir(out, { recursive: true });
+const { browser, page } = await launch();
+try {
+  await open(page, process.env.QUERY ?? '');
+  for (const name of names.length ? names : Object.keys(MOVES)) {
+    const move = MOVES[name];
+    if (!move) throw new Error(`No move ${name}: ${Object.keys(MOVES).join(', ')}`);
+    const dir = await mkdtemp(join(tmpdir(), `brush3d-${name}-`));
+    const frames = Math.round(move.seconds * FPS);
+    for (let i = 0; i < frames; i++) {
+      const t = i / FPS;
+      const png = await page.evaluate((cam, time) => {
+        (window as any).__draw(cam, { time });
+        return document.querySelector('canvas')!.toDataURL('image/png');
+      }, move.at(t), 3 + t);
+      await writeFile(join(dir, `${String(i).padStart(4, '0')}.png`), Buffer.from(png.split(',')[1], 'base64'));
+    }
+    const file = join(out, `${name}.mp4`);
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', join(dir, '%04d.png'),
+      '-c:v', 'libx264', '-crf', '16', '-pix_fmt', 'yuv420p', file]);
+    await rm(dir, { recursive: true });
+    console.log(`${file}  (${frames} frames)`);
+  }
+} finally {
+  await browser.close();
+}
