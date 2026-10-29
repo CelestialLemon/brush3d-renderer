@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { BrushRenderer } from '../renderer/renderer';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
 
 // The first slice: a corner of a farm in a meadow. A stream, a field of wheat, three trees (two broadleaf, one with fruit,
@@ -27,7 +28,20 @@ const smooth = (a: number, b: number, x: number) => { const t = Math.min(Math.ma
 function rolling(x: number, z: number) {
   return 0.9 * noise2(x * 0.045, z * 0.045) + 0.2 * noise2(x * 0.11 + 5, z * 0.11 - 3) + 0.012 * x;
 }
-const waterLevel = (z: number) => rolling(streamX(z), z) - 0.34;
+/**
+ * The stream lies at one level, as a brook does over a short reach, in a shallow valley: near it the land eases down to a
+ * floodplain a little above the water. One level also makes its reflection exact (one mirror plane).
+ */
+export const WATER_Y = (() => {
+  let sum = 0;
+  for (let z = -32; z <= 32; z++) sum += rolling(streamX(z), z);
+  return sum / 65 - 0.3;
+})();
+/** The land with the valley eased in, before the pads are levelled and the stream cut. */
+function land(x: number, z: number) {
+  const h = rolling(x, z);
+  return h + (WATER_Y + 0.28 - h) * (1 - smooth(2.2, 9, streamDistance(x, z)));
+}
 
 /** Levelled pads under the field and the panel: how much of the pad applies, and its height. */
 function pad(x: number, z: number): [number, number] {
@@ -35,17 +49,17 @@ function pad(x: number, z: number): [number, number] {
   const fw = 1 - smooth(0, 1.5, Math.hypot(fx, fz));
   const px = Math.max(Math.abs(x - PANEL.x) - 1.2, 0), pz = Math.max(Math.abs(z - PANEL.z) - 0.8, 0);
   const pw = 1 - smooth(0, 1.2, Math.hypot(px, pz));
-  if (fw >= pw) return [fw, rolling((FIELD.x0 + FIELD.x1) / 2, (FIELD.z0 + FIELD.z1) / 2)];
-  return [pw, rolling(PANEL.x, PANEL.z)];
+  if (fw >= pw) return [fw, land((FIELD.x0 + FIELD.x1) / 2, (FIELD.z0 + FIELD.z1) / 2)];
+  return [pw, land(PANEL.x, PANEL.z)];
 }
 
 export function height(x: number, z: number) {
-  let h = rolling(x, z);
+  let h = land(x, z);
   const [w, ph] = pad(x, z);
   h += (ph - h) * w;
-  const d = streamDistance(x, z);
-  const bed = waterLevel(z) - 0.32;
-  return bed + (h - bed) * smooth(0.7, 2.6, d);
+  // The stream's channel: a bed 0.8 m under the water, its banks meeting the water about 1.5 m from the middle.
+  const bed = WATER_Y - 0.8;
+  return bed + (h - bed) * smooth(0.3, 2.3, streamDistance(x, z));
 }
 
 function normalAt(x: number, z: number) {
@@ -56,13 +70,14 @@ function normalAt(x: number, z: number) {
 // Palette (sRGB). Greens span yellow-green to teal, as the reference's meadows do.
 const C = {
   lime: srgb(0xa6c45a), meadow: srgb(0x6aa04a), emerald: srgb(0x40885a), teal: srgb(0x3b806e),
-  moss: srgb(0x4f8040), mud: srgb(0x7a6244), bed: srgb(0x3e5a52), water: srgb(0x2c6e74),
+  moss: srgb(0x4f8040), mud: srgb(0x6a5238), bed: srgb(0x9a8660), water: srgb(0x2c6e74),
+  stone: srgb(0x9a9184), reed: srgb(0x6f8a3a),
   soil: srgb(0x8a5634), timber: srgb(0xc58f55), ceramic: srgb(0xeee6d2), brass: srgb(0xc08a48), glass: srgb(0x1d4fa0),
   bark: srgb(0x6e4a3e), leaf: srgb(0x4e9a3a), leafLight: srgb(0x8cc44a), fruitLeaf: srgb(0x5aa03e), cypress: srgb(0x2e6e57),
   fruit: srgb(0xf06a2c), wheatRoot: srgb(0x8a9a3a), wheatTip: srgb(0xf0c45a),
 };
 
-export interface Meadow { center: THREE.Vector3; radius: number; }
+export interface Meadow { center: THREE.Vector3; radius: number; waterLevel: number; }
 
 export function buildMeadow(r: BrushRenderer): Meadow {
   terrain(r);
@@ -71,7 +86,9 @@ export function buildMeadow(r: BrushRenderer): Meadow {
   trees(r);
   grass(r);
   solarPanel(r);
-  return { center: new THREE.Vector3(0, 0, 0), radius: 34 };
+  stones(r);
+  reeds(r);
+  return { center: new THREE.Vector3(0, 0, 0), radius: 34, waterLevel: WATER_Y };
 }
 
 function terrain(r: BrushRenderer) {
@@ -91,7 +108,7 @@ function terrain(r: BrushRenderer) {
       .lerp(C.emerald, smooth(0.0, 0.2, -curve) * 0.55 + smooth(0.65, 0.95, 1 - m) * 0.25)
       .lerp(C.teal, smooth(0.15, 0.35, -curve) * 0.35 + smooth(0.75, 1, k) * 0.15);
     // Banks: moss, then wet earth, then the stream bed.
-    c.lerp(C.moss, 1 - smooth(1.6, 3.2, d)).lerp(C.mud, (1 - smooth(1.0, 1.7, d)) * 0.8).lerp(C.bed, 1 - smooth(0.6, 1.2, d));
+    c.lerp(C.moss, 1 - smooth(1.8, 3.4, d)).lerp(C.mud, (1 - smooth(1.45, 1.9, d)) * 0.8).lerp(C.bed, 1 - smooth(1.1, 1.5, d));
     // Brushwork shows where the land does something (banks, the edges of the field and the panel's pad, the turns of the
     // slopes, round the trees) and fades to quiet colour on the open lawn, its border broken by noise.
     const [pw] = pad(x, z);
@@ -107,24 +124,25 @@ function terrain(r: BrushRenderer) {
     const a = j * n + i;
     b.quad(a, a + n, a + n + 1, a + 1);
   }
-  r.add(b.build(), 'paint');
+  r.add(b.build(), 'paint', { under: true });
 }
 
 function water(r: BrushRenderer) {
   const b = new MeshBuilder('water');
-  const half = SIZE / 2, rows = Math.round(SIZE / STEP) + 1, width = 1.45;
+  const half = SIZE / 2, rows = Math.round(SIZE / STEP) + 1, width = 2.0;
   const up = new THREE.Vector3(0, 1, 0);
   for (let j = 0; j < rows; j++) {
     const z = -half + j * STEP, x = streamX(z), s = streamSlope(z);
     // Flowing towards -z: the direction in xz is (-s, -1).
     const flow = Math.atan2(-1, -s);
     const nx = 1 / Math.sqrt(1 + s * s);
-    const y = waterLevel(z);
+    const y = WATER_Y;
     b.vertex({ x: x - width * nx, y, z: z + width * s * nx }, up, C.water, [0, 1, flow, 0], [z * 0.1, 0]);
     b.vertex({ x: x + width * nx, y, z: z - width * s * nx }, up, C.water, [0, 1, flow, 0], [z * 0.1, 1]);
   }
   for (let j = 0; j < rows - 1; j++) { const a = j * 2; b.quad(a, a + 2, a + 3, a + 1); }
-  r.add(b.build(), 'water', false);
+  // Wide enough that its edges tuck under the banks: where the water meets the land is where it thins to nothing.
+  r.add(b.build(), 'water');
 }
 
 /** The field: an inked raised bed of soil in a timber frame; the wheat in it is painted. */
@@ -174,7 +192,7 @@ function field(r: BrushRenderer) {
       g.tri(d2, c2, e2); g.tri(d2, e2, e3); g.tri(d2, e3, e1);
     }
   }
-  r.add(g.build(), 'grass', false);
+  r.add(g.build(), 'grass', { castShadow: false });
 }
 
 /**
@@ -287,7 +305,7 @@ function grass(r: BrushRenderer) {
   const half = SIZE / 2 - 1;
   const blocked = (x: number, z: number) =>
     (x > FIELD.x0 - 0.35 && x < FIELD.x1 + 0.35 && z > FIELD.z0 - 0.35 && z < FIELD.z1 + 0.35) ||
-    (Math.abs(x - PANEL.x) < 1.25 && Math.abs(z - PANEL.z) < 0.85) || streamDistance(x, z) < 1.45 ||
+    (Math.abs(x - PANEL.x) < 1.25 && Math.abs(z - PANEL.z) < 0.85) || streamDistance(x, z) < 1.6 ||
     TREES.some((t) => Math.hypot(x - t.x, z - t.z) < 0.35);
   const tuftColor = (x: number, z: number) => {
     const m = noise2(x * 0.07 + 11, z * 0.07 - 4) * 0.5 + 0.5;
@@ -344,8 +362,8 @@ function grass(r: BrushRenderer) {
         0.055 + rand() * 0.035, rand(), [0.2, 1, -1, 0.3]);
     }
   }
-  r.add(g.build(), 'grass', false);
-  r.add(flowers.build(), 'foliage', false);
+  r.add(g.build(), 'grass', { castShadow: false });
+  r.add(flowers.build(), 'foliage', { castShadow: false });
 }
 
 /** One solar panel on brass legs: white ceramic frame, blue cells. Inked. */
@@ -376,4 +394,77 @@ function solarPanel(r: BrushRenderer) {
   // A ceramic footing.
   b.addGeometry(new THREE.BoxGeometry(2.0, 0.12, 1.1), new THREE.Matrix4().makeTranslation(PANEL.x, y0 + 0.02, PANEL.z), C.ceramic, [0, 1, 0, 0]);
   r.add(b.build(), 'ink');
+}
+
+/** Stones: pebbles over the stream bed, seen through the water, and a few rocks on the banks, mossy on top. */
+function stones(r: BrushRenderer) {
+  const b = new MeshBuilder('paint');
+  const rand = rng(91);
+  const place = (x: number, z: number, size: number, sink: number) => {
+    const g = mergeVertices(new THREE.IcosahedronGeometry(1, 2).deleteAttribute('normal').deleteAttribute('uv'));
+    const p = g.getAttribute('position') as THREE.BufferAttribute;
+    const seed = rand() * 100, flat = 0.5 + rand() * 0.25, turn = rand() * Math.PI;
+    for (let i = 0; i < p.count; i++) {
+      const v = new THREE.Vector3().fromBufferAttribute(p, i);
+      const k = 1 + noise2(v.x * 1.3 + seed, v.z * 1.3 + v.y) * 0.18;
+      v.multiplyScalar(k).multiply(new THREE.Vector3(1.15, flat, 0.9)).applyAxisAngle(new THREE.Vector3(0, 1, 0), turn);
+      p.setXYZ(i, v.x, v.y, v.z);
+    }
+    g.computeVertexNormals();
+    const y = height(x, z) + size * flat * (1 - 2 * sink);
+    const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion(), new THREE.Vector3(size, size, size));
+    const n = g.getAttribute('normal'), w = new THREE.Vector3(), q = new THREE.Vector3();
+    const base = C.stone.clone().offsetHSL((rand() - 0.5) * 0.04, (rand() - 0.5) * 0.1, (rand() - 0.5) * 0.12);
+    const i0 = b.vertexCount;
+    for (let i = 0; i < p.count; i++) {
+      w.fromBufferAttribute(p, i).applyMatrix4(m);
+      q.fromBufferAttribute(n, i);
+      // Moss on the tops of the dry ones.
+      const moss = y > WATER_Y + 0.05 ? Math.max(0, q.y - 0.35) * 1.2 : 0;
+      b.vertex(w, q, base.clone().lerp(C.moss, Math.min(moss, 0.8)), [0.6, 3, 0.8, 0]);
+    }
+    const idx = g.getIndex()!;
+    for (let i = 0; i < idx.count; i += 3) b.tri(i0 + idx.getX(i), i0 + idx.getX(i + 1), i0 + idx.getX(i + 2));
+  };
+  const along = () => {
+    const z = (rand() * 2 - 1) * (SIZE / 2 - 2);
+    return { z, x: streamX(z), s: streamSlope(z) };
+  };
+  for (let i = 0; i < 70; i++) {
+    const { x, z, s } = along(), off = (rand() * 2 - 1) * 1.5, nx = 1 / Math.sqrt(1 + s * s);
+    place(x + off * nx, z - off * s * nx, 0.07 + rand() * 0.13, 0.4);
+  }
+  for (let c = 0; c < 9; c++) {
+    const { x, z, s } = along(), side = rand() < 0.5 ? -1 : 1, nx = 1 / Math.sqrt(1 + s * s);
+    for (let k = 0, n = 1 + Math.floor(rand() * 3); k < n; k++) {
+      const off = side * (1.35 + rand() * 0.8), dz = (rand() - 0.5) * 1.2;
+      place(x + off * nx, z + dz - off * s * nx, 0.18 + rand() * 0.28, 0.35);
+    }
+  }
+  r.add(b.build(), 'paint', { under: true });
+}
+
+/** Reeds in clumps along the water's edge. */
+function reeds(r: BrushRenderer) {
+  const g = new MeshBuilder('grass');
+  const rand = rng(53);
+  for (let c = 0; c < 34; c++) {
+    const z0 = (rand() * 2 - 1) * (SIZE / 2 - 2), s = streamSlope(z0), nx = 1 / Math.sqrt(1 + s * s);
+    const off = (rand() < 0.5 ? -1 : 1) * (1.45 + rand() * 0.5);
+    const cx = streamX(z0) + off * nx, cz = z0 - off * s * nx;
+    if (TREES.some((t) => Math.hypot(cx - t.x, cz - t.z) < 1)) continue;
+    const blades = 8 + Math.floor(rand() * 10), tall = 0.5 + rand() * 0.45;
+    for (let k = 0; k < blades; k++) {
+      const x = cx + (rand() - 0.5) * 0.45, z = cz + (rand() - 0.5) * 0.45, y = height(x, z) - 0.03;
+      const nrm = normalAt(x, z), a = rand() * Math.PI, w = 0.018 + rand() * 0.012, h = tall * (0.6 + rand() * 0.5);
+      const px = Math.cos(a) * w, pz = Math.sin(a) * w, lean = (rand() - 0.5) * 0.25, seed = rand();
+      const root = C.reed.clone().lerp(C.teal, 0.4).multiplyScalar(0.75), tip = C.reed.clone().lerp(C.lime, 0.25 * rand());
+      const paint: Paint = [0.6, 0.85, 1.4, 0.5];
+      const v0 = g.vertex({ x: x - px, y, z: z - pz }, nrm, root, paint, [0, 0], [0, seed]);
+      const v1 = g.vertex({ x: x + px, y, z: z + pz }, nrm, root, paint, [0, 0], [0, seed]);
+      const v2 = g.vertex({ x: x + lean * h, y: y + h, z: z + lean * h * 0.5 }, nrm, tip, paint, [0, 0], [1, seed]);
+      g.tri(v0, v1, v2);
+    }
+  }
+  r.add(g.build(), 'grass', { castShadow: false });
 }

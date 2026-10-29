@@ -154,6 +154,8 @@ uniform float uWind;
 uniform sampler2D uShadowMap;
 uniform mat4 uShadowMatrix;  // world -> shadow-map uv and depth
 uniform vec2 uShadowTexel;
+uniform float uMirror;       // 1 while drawing the water's reflection: the scene mirrored in the plane y = uMirrorY
+uniform float uMirrorY;
 `;
 
 /** Sun visibility from the shadow map, softened by a small rotated disc of taps and nudged by the brush, in 0..1. */
@@ -224,6 +226,8 @@ export const GBUFFER_OUT = /* glsl */ `
 layout(location = 0) out vec4 gColor;
 layout(location = 1) out vec4 gAux;   // view normal xy, view depth, ink (1 inked, 0 painted)
 void writeGBuffer(vec3 color, vec3 worldNormal, float viewDepth, float ink, float alpha) {
+  // In the reflection, what's under the water isn't reflected.
+  if (uMirror > 0.5 && vWorldPos.y < uMirrorY - 0.01) discard;
   vec3 vn = normalize((viewMatrix * vec4(worldNormal, 0.0)).xyz);
   gColor = vec4(color, alpha);
   gAux = vec4(vn.xy, viewDepth, ink);

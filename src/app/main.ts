@@ -12,6 +12,7 @@ const num = (k: string, d: number) => (params.has(k) ? Number(params.get(k)) : d
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const renderer = new BrushRenderer(canvas, { shadowRadius: 34, pixelRatio: params.has('dpr') ? num('dpr', 1) : undefined });
 const meadow = buildMeadow(renderer);
+renderer.setWaterLevel(meadow.waterLevel);
 const view = renderer.view;
 view.view = num('view', 0); view.zoom = num('zoom', 40);
 view.target.set(num('x', -1), 0, num('z', 0));

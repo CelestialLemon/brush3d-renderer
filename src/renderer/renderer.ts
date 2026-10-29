@@ -4,8 +4,9 @@ import type { Look } from './look';
 import { createSharedUniforms, depthMaterial, sceneMaterial, type MaterialKind, type SharedUniforms } from './materials';
 import { POST_FRAG, POST_VERT } from './post';
 
-// The renderer: a sun shadow map, a multisampled G-buffer (colour plus view normal, depth and ink), and a post pass that
-// inks the lines, hazes the distance and grades. It draws at the screen's own resolution: no art-pixel grid.
+// The renderer: a sun shadow map; for the water, the bed drawn without it and the scene mirrored in it (both at half size);
+// a multisampled G-buffer (colour plus view normal, depth and ink); and a post pass that inks the lines, hazes the distance
+// and grades. It draws at the screen's own resolution: no art-pixel grid.
 
 export interface RendererOptions {
   /** Shadow-map size in texels. */
@@ -20,6 +21,16 @@ export interface RendererOptions {
 }
 
 export interface Settings { lines: boolean; shadows: boolean; grain: number; }
+
+/** How a mesh takes part in the passes. */
+export interface MeshOptions {
+  /** Casts a shadow from the sun. */
+  castShadow?: boolean;
+  /** Is seen through the water (the ground, the stones in the stream bed). */
+  under?: boolean;
+  /** Is mirrored in the water. */
+  reflect?: boolean;
+}
 
 export class BrushRenderer {
   readonly gl: THREE.WebGLRenderer;
@@ -39,6 +50,8 @@ export class BrushRenderer {
   private postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private materials = new Map<MaterialKind, { main: THREE.ShaderMaterial; depth: THREE.ShaderMaterial }>();
   private casters: THREE.Mesh[] = [];
+  private underTarget: THREE.WebGLRenderTarget;
+  private reflectTarget: THREE.WebGLRenderTarget;
   private look: Look | null = null;
 
   constructor(readonly canvas: HTMLCanvasElement, options: RendererOptions = {}) {
@@ -57,6 +70,15 @@ export class BrushRenderer {
     this.shared.uShadowTexel.value.set(1 / size, 1 / size);
     this.shadowCenter = options.shadowCenter?.clone() ?? new THREE.Vector3();
     this.shadowRadius = options.shadowRadius ?? 30;
+    const half = () => new THREE.WebGLRenderTarget(1, 1, {
+      count: 2, type: THREE.HalfFloatType, format: THREE.RGBAFormat, depthBuffer: true,
+      minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+    });
+    this.underTarget = half();
+    this.reflectTarget = half();
+    this.shared.uUnder.value = this.underTarget.textures[0];
+    this.shared.uUnderAux.value = this.underTarget.textures[1];
+    this.shared.uReflect.value = this.reflectTarget.textures[0];
 
     this.post = new THREE.ShaderMaterial({
       vertexShader: POST_VERT, fragmentShader: POST_FRAG, depthTest: false, depthWrite: false,
@@ -78,15 +100,20 @@ export class BrushRenderer {
     return m.main;
   }
 
-  /** Adds a mesh of a kind; `castShadow` puts it in the sun's shadow map. */
-  add(geometry: THREE.BufferGeometry, kind: MaterialKind, castShadow = true) {
+  /** Adds a mesh of a kind. By default it casts a shadow and is mirrored in the water (water itself is neither). */
+  add(geometry: THREE.BufferGeometry, kind: MaterialKind, options: MeshOptions = {}) {
     const mesh = new THREE.Mesh(geometry, this.material(kind));
     mesh.frustumCulled = false;
     mesh.userData.kind = kind;
+    mesh.userData.under = options.under ?? false;
+    mesh.userData.reflect = options.reflect ?? kind !== 'water';
     this.scene.add(mesh);
-    if (castShadow) this.casters.push(mesh);
+    if (options.castShadow ?? kind !== 'water') this.casters.push(mesh);
     return mesh;
   }
+
+  /** The height of the water's surface, the plane it mirrors the scene in. */
+  setWaterLevel(y: number) { this.shared.uMirrorY.value = y; }
 
   resize(cssWidth: number, cssHeight: number) {
     this.gl.setPixelRatio(this.pixelRatio);
@@ -94,6 +121,10 @@ export class BrushRenderer {
     this.width = Math.round(cssWidth * this.pixelRatio);
     this.height = Math.round(cssHeight * this.pixelRatio);
     this.gbuffer.setSize(this.width, this.height);
+    const hw = Math.max(1, Math.round(this.width / 2)), hh = Math.max(1, Math.round(this.height / 2));
+    this.underTarget.setSize(hw, hh);
+    this.reflectTarget.setSize(hw, hh);
+    this.shared.uScreen.value.set(this.width, this.height);
     (this.post.uniforms.uResolution.value as THREE.Vector2).set(this.width, this.height);
   }
 
@@ -113,6 +144,7 @@ export class BrushRenderer {
     const u = this.post.uniforms;
     u.uHazeColor.value.copy(look.hazeColor); u.uHazeDensity.value = look.hazeDensity; u.uHazeMax.value = look.hazeMax; u.uHazeFloor.value = look.hazeFloor;
     u.uSkyTop.value.copy(look.skyTop); u.uSkyBottom.value.copy(look.skyBottom);
+    s.uSkyTop.value.copy(look.skyTop); s.uSkyBottom.value.copy(look.skyBottom);
     u.uExposure.value = look.exposure; u.uSaturation.value = look.saturation; u.uShadeHue.value = rad(look.shadeHue);
     this.updateSunCamera();
   }
@@ -131,6 +163,16 @@ export class BrushRenderer {
     this.shadowDirty = true;
   }
   private shadowDirty = true;
+
+  /** Draws only the meshes `keep` picks into a target, from the view camera. */
+  private drawOnly(target: THREE.WebGLRenderTarget, keep: (m: THREE.Object3D) => boolean) {
+    const hidden: THREE.Object3D[] = [];
+    for (const o of this.scene.children) if (o.visible && !keep(o)) { o.visible = false; hidden.push(o); }
+    this.gl.setRenderTarget(target);
+    this.gl.clear(true, true, false);
+    this.gl.render(this.scene, this.view.camera);
+    for (const o of hidden) o.visible = true;
+  }
 
   render(time: number) {
     if (!this.look) throw new Error('setLook before render');
@@ -153,8 +195,18 @@ export class BrushRenderer {
     }
     this.shadowDirty = false;
 
-    gl.setRenderTarget(this.gbuffer);
+    // What the water shows: the bed without it, and the scene mirrored in it.
     gl.setClearColor(0x000000, 0);
+    this.drawOnly(this.underTarget, (m) => m.userData.under);
+    this.shared.uMirror.value = 1;
+    // Mirroring flips the winding, so one-sided surfaces show their back faces.
+    const flipped = [...this.materials.values()].map((m) => m.main).filter((m) => m.side === THREE.FrontSide);
+    for (const m of flipped) m.side = THREE.BackSide;
+    this.drawOnly(this.reflectTarget, (m) => m.userData.reflect);
+    for (const m of flipped) m.side = THREE.FrontSide;
+    this.shared.uMirror.value = 0;
+
+    gl.setRenderTarget(this.gbuffer);
     gl.clear(true, true, false);
     gl.render(this.scene, this.view.camera);
 

@@ -25,6 +25,16 @@ export function createSharedUniforms() {
     uShadowMap: { value: null as THREE.Texture | null },
     uShadowMatrix: { value: new THREE.Matrix4() },
     uShadowTexel: { value: new THREE.Vector2(1 / 2048, 1 / 2048) },
+    uMirror: { value: 0 },
+    uMirrorY: { value: 0 },
+    // For the water: the bed drawn without it (colour, and the G-buffer's aux for its depth), the scene mirrored in it, the
+    // screen size in pixels, and the sky it reflects where nothing else is.
+    uUnder: { value: null as THREE.Texture | null },
+    uUnderAux: { value: null as THREE.Texture | null },
+    uReflect: { value: null as THREE.Texture | null },
+    uScreen: { value: new THREE.Vector2(1, 1) },
+    uSkyTop: { value: new THREE.Color() },
+    uSkyBottom: { value: new THREE.Color() },
   };
 }
 export type SharedUniforms = ReturnType<typeof createSharedUniforms>;
@@ -44,6 +54,14 @@ varying vec3 vNormal;
 varying vec3 vColor;
 varying vec4 vPaint;
 varying float vViewDepth;
+// Puts a world position on screen, mirrored in the water when drawing its reflection. The surface is still lit where it
+// really is (vWorldPos and the normal stay unmirrored), so a tree in the water shows its shaded underside.
+void place(vec3 world) {
+  if (uMirror > 0.5) world.y = 2.0 * uMirrorY - world.y;
+  vec4 vp = viewMatrix * vec4(world, 1.0);
+  vViewDepth = -vp.z;
+  gl_Position = projectionMatrix * vp;
+}
 `;
 
 const STATIC_VERT = /* glsl */ `
@@ -56,9 +74,7 @@ void main() {
   vColor = color;
   vPaint = aPaint;
   vUv = uv;
-  vec4 vp = viewMatrix * wp;
-  vViewDepth = -vp.z;
-  gl_Position = projectionMatrix * vp;
+  place(wp.xyz);
 }
 `;
 
@@ -92,9 +108,7 @@ void main() {
   vColor = color;
   vPaint = aPaint;
   vCard = aCard;
-  vec4 vp = viewMatrix * vec4(world, 1.0);
-  vViewDepth = -vp.z;
-  gl_Position = projectionMatrix * vp;
+  place(world);
 }
 `;
 
@@ -114,9 +128,7 @@ void main() {
   vColor = color;
   vPaint = aPaint;
   vBlade = aBlade;
-  vec4 vp = viewMatrix * wp;
-  vViewDepth = -vp.z;
-  gl_Position = projectionMatrix * vp;
+  place(wp.xyz);
 }
 `;
 
@@ -268,7 +280,8 @@ vec3 skyReflect(vec3 r) {
 }
 void main() {
   vec3 n = normalize(vNormal);
-  if (!gl_FrontFacing) n = -n;
+  // Mirroring flips which side faces the camera.
+  if (gl_FrontFacing == (uMirror > 0.5)) n = -n;
   vec3 p = vWorldPos;
   float finish = vPaint.x;
   vec3 base = vColor;
@@ -298,13 +311,22 @@ void main() {
 `;
 
 /**
- * Painted water, built from value masses the way a painter lays it: mostly the sky, pale; broad cloud shapes caught in it;
- * the banks and their greenery reflected dark along either edge; a quiet blue-green body showing through mid-stream; thin
- * ripples drifting with the flow and a few sparks of sun. Reflections stay where they are (they belong to the world), only
- * the ripples move. vUv.y runs across the stream (0..1); aPaint.z is the flow's direction.
+ * Water: what's under it, tinted by how much water the eye looks through, and what's around it, mirrored.
+ *   The bed: the ground and stones drawn without the water (uUnder), nudged by the ripples. The light that reaches it is
+ *   absorbed along the path through the water, red first, so the shallows show the bed in clear green-gold and the middle
+ *   deepens to blue-green, the water's own colour scattered back.
+ *   The reflection: the scene mirrored in the water (uReflect), the sky where there's nothing, more of it where the water
+ *   is deep and dark, broken along the flow by ripples.
+ * Ripples drift with the flow; the reflection and the bed stay put. aPaint.z is the flow's direction.
  */
 const WATER_FRAG = /* glsl */ `
 ${FRAG_HEAD}
+uniform sampler2D uUnder;
+uniform sampler2D uUnderAux;
+uniform sampler2D uReflect;
+uniform vec2 uScreen;
+uniform vec3 uSkyTop;
+uniform vec3 uSkyBottom;
 varying vec2 vUv;
 void main() {
   vec3 n = vec3(0.0, 1.0, 0.0);
@@ -312,33 +334,38 @@ void main() {
   float flowA = vPaint.z;
   vec2 dir = vec2(cos(flowA), sin(flowA));
   vec2 q = p.xz - dir * uTime * 0.35;
-  float across = abs(vUv.y - 0.5) * 2.0;
-  float st = paintStrokes(p.xz * 0.9, flowA);
-  // The body: the stream's own blue-green, a little deeper mid-stream.
-  vec3 body = oklabToLin(lchShift(linToOklab(vColor), 0.06 - (1.0 - across) * 0.05, 1.0, 0.0));
-  // The sky, lifted towards white: it's what most of the water shows from above.
-  vec3 skyLab = linToOklab(uSkyColor);
-  vec3 sky = oklabToLin(vec3(skyLab.x - 0.06, skyLab.yz * 1.7));
-  vec3 col = mix(body, sky, 0.5 + st * 0.06);
-  // Clouds in the water: a few pale shapes, their edges dragged along the flow by the brush.
-  float cloud = fbm2(p.xz * 0.13 + vec2(uTime * 0.004, 0.0)) + st * 0.2;
-  col = mix(col, mix(sky, vec3(1.0), 0.6), smoothstep(0.3, 0.45, cloud) * 0.8);
-  // The banks reflected: a dark band of their greenery along each edge, ragged and wider in places.
-  float reach = 0.42 + snoise(p.xz * 0.35 + 4.0) * 0.2 + st * 0.1;
-  float bank = smoothstep(reach, reach + 0.2, across);
-  vec3 green = oklabToLin(vec3(0.34, -0.07, 0.03));
-  col = mix(col, green, bank * 0.85);
-  // Ripples: thin lighter strokes moving with the flow, low contrast.
-  float rip = strokes(q * vec2(1.6), flowA);
-  col = mix(col, mix(sky, vec3(1.0), 0.4), smoothstep(0.55, 0.85, rip) * 0.22 * (1.0 - bank));
-  float vis = sunVisibility(p, n, st);
-  col *= mix(0.72, 1.0, vis) * mix(skyTint(), sunTint(), 0.5);
-  // Where the water meets the bank: a dark wet edge, broken.
-  float wet = smoothstep(0.88, 0.97, across + snoise(p.xz * 2.5) * 0.04);
-  col *= 1.0 - wet * 0.35;
-  // A few sparks of sun, mostly in the open water.
+  vec2 uv = gl_FragCoord.xy / uScreen;
+  // Ripples: long, soft swells along the flow, and their screen-space nudge.
+  float r1 = strokes(q * 1.3, flowA), r2 = strokes(q * 2.9 + 7.0, flowA + 0.3);
+  float ripple = r1 * 0.65 + r2 * 0.35;
+  vec2 nudge = vec2(snoise(q * 1.7), snoise(q * 1.7 + 19.0)) * 0.0035;
+
+  // Under the water.
+  vec2 uvBed = uv + nudge;
+  vec3 bed = texture(uUnder, uvBed).rgb;
+  float bedDepth = texture(uUnderAux, uvBed).z;
+  float path = bedDepth > 0.0 ? max(bedDepth - vViewDepth, 0.0) : 3.0;
+  vec3 waterLab = linToOklab(vColor);
+  vec3 scatter = oklabToLin(lchShift(waterLab, 0.06, 1.35, 0.0));
+  vec3 absorb = vec3(1.9, 0.75, 0.6);
+  vec3 through = exp(-absorb * path);
+  float vis = sunVisibility(p, n, ripple);
+  // The body of the water is lit from above by the sky; the sun shows in its sparks.
+  scatter *= skyTint() * mix(0.75, 1.0, vis);
+  vec3 under = bed * through + scatter * (1.0 - through);
+
+  // The reflection, and the sky where nothing is reflected: looking down at 30 degrees, the water mirrors the sky 30 degrees up.
+  vec4 refl = texture(uReflect, uv + nudge * 1.6);
+  // The upper sky, and on the ripples' crests, which tilt towards the horizon, the glow low in it: a mean of the two would be grey.
+  vec3 sky = mix(uSkyTop, uSkyBottom, 0.25);
+  vec3 mirrored = mix(sky, refl.rgb, refl.a);
+  float depthy = 1.0 - (through.g * 0.5 + through.b * 0.5);
+  float fres = clamp(0.08 + depthy * 0.22 + ripple * 0.1, 0.0, 0.5);
+  vec3 col = mix(under, mirrored, fres);
+  col = mix(col, mix(uSkyBottom, vec3(1.0), 0.25), smoothstep(0.5, 0.9, ripple) * 0.25 * depthy);
+  // A few sparks of sun.
   float g = snoise(p.xz * 5.0 + vec2(uTime * 0.7, -uTime * 0.5)) * snoise(p.xz * 3.7 - uTime * 0.4);
-  col += sunTint() * smoothstep(0.66, 0.8, g) * vis * (1.0 - bank) * 0.9;
+  col += sunTint() * smoothstep(0.68, 0.82, g) * vis * depthy * 0.9;
   writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
 }
 `;
