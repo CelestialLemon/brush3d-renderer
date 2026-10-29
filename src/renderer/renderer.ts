@@ -106,7 +106,7 @@ export class BrushRenderer {
     mesh.frustumCulled = false;
     mesh.userData.kind = kind;
     mesh.userData.under = options.under ?? false;
-    mesh.userData.reflect = options.reflect ?? kind !== 'water';
+    mesh.userData.reflect = options.reflect ?? (kind !== 'water' && kind !== 'grass');
     this.scene.add(mesh);
     if (options.castShadow ?? kind !== 'water') this.casters.push(mesh);
     return mesh;

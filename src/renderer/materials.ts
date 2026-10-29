@@ -299,6 +299,11 @@ void main() {
   // A dab is a touch darker at its lower edge, where it tucks under the next.
   light -= (1.0 - smoothstep(-1.0, 0.6, c.y)) * 0.06;
   vec3 col = paintBands(base, light, 0.07, nCanopy.y * 0.5 + 0.5);
+  // A crown's shade goes deeper than the ground's, and cooler: the dark under a tree is what makes it a mass.
+  vec3 lab = linToOklab(col);
+  float shade = 1.0 - smoothstep(0.25, 0.6, light);
+  lab.x *= 1.0 - 0.22 * shade;
+  col = oklabToLinFit(hueToward(lab, uShadeHue, 0.08 * shade));
   col += uRimColor * rimLight(nCanopy, vPaint.w) * vis * 0.15;
   // Against the sun the crown's edges glow, light coming through the leaves.
   float behind = smoothstep(0.0, 0.7, dot(-toCamera(), uSunDir));
@@ -336,11 +341,9 @@ void main() {
  */
 const INK_FRAG = /* glsl */ `
 ${FRAG_HEAD}
+uniform vec3 uSkyTop;
+uniform vec3 uSkyBottom;
 varying vec2 vUv;
-vec3 skyReflect(vec3 r) {
-  float t = clamp(r.y * 0.5 + 0.5, 0.0, 1.0);
-  return mix(vec3(0.05, 0.12, 0.35), vec3(0.55, 0.78, 1.0), smoothstep(0.35, 0.95, t));
-}
 void main() {
   vec3 n = normalize(vNormal);
   // Mirroring flips which side faces the camera.
@@ -357,19 +360,24 @@ void main() {
   }
   vec3 col = paintBands(base, light, 0.02, n.y * 0.5 + 0.5);
   if (finish > 0.5 && finish < 1.5) {
-    // Solar glass: deep blue cells under a sky reflection, bright diagonal sheen, thin pale gridlines.
+    // Solar glass: deep blue cells under the sky's reflection. Light drifts across the whole array (one sky over all of
+    // it, the way the water's is), brightest where the glass turns towards the horizon, with a sheen where the sun is.
     vec2 cells = vUv * vPaint.yz;
     // Lines a pixel's worth antialiased, and fading out as the cells shrink to a few pixels, so they don't crawl.
     vec2 fw = max(fwidth(cells), 1e-4);
-    vec2 line = clamp((0.045 - (0.5 - abs(fract(cells) - 0.5))) / fw + 0.5, 0.0, 1.0);
+    vec2 line = clamp((0.03 - (0.5 - abs(fract(cells) - 0.5))) / fw + 0.5, 0.0, 1.0);
     float grid = max(line.x, line.y) * (1.0 - smoothstep(0.12, 0.3, max(fw.x, fw.y)));
     vec3 v = toCamera();
     vec3 r = reflect(-v, n);
-    float fres = 0.25 + 0.75 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 3.0);
-    float sheen = smoothstep(0.1, 0.0, abs(fract(vUv.x * 0.8 + vUv.y * 0.9 - uTime * 0.0) - 0.55) - 0.12);
-    vec3 glass = mix(col, skyReflect(r) * sunTint(), fres * 0.7);
-    glass = mix(glass, vec3(0.75, 0.92, 1.0) * sunTint(), sheen * 0.45 * vis);
-    col = mix(glass, glass * 1.6 + 0.05, grid * 0.6);
+    float fres = 0.2 + 0.5 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 2.0);
+    // Mostly the deep upper sky, with pale cloud-light drifting through and long glints across the rows.
+    float drift = smoothstep(0.1, 0.8, fbm2(p.xz * 0.06 + 11.0));
+    float glint = smoothstep(0.75, 1.0, sin(dot(p.xz, vec2(0.55, 0.35)) + fbm2(p.xz * 0.1) * 1.5));
+    vec3 sky = mix(uSkyTop, mix(uSkyBottom, vec3(1.0), 0.5), clamp(drift * 0.75 + glint * 0.6, 0.0, 1.0));
+    vec3 glass = mix(col, sky * sunTint(), clamp(fres + drift * 0.3 + glint * 0.4, 0.0, 1.0));
+    float sun = pow(max(dot(r, uSunDir), 0.0), 6.0);
+    glass = mix(glass, vec3(1.0) * sunTint(), sun * 0.6 * vis);
+    col = mix(glass, glass * 1.3 + 0.04, grid * 0.35);
   }
   writeGBuffer(col, n, vViewDepth, 1.0, 1.0);
 }
@@ -420,17 +428,30 @@ void main() {
   vec3 under = bed * through + scatter * (1.0 - through);
 
   // The reflection, and the sky where nothing is reflected: looking down at 30 degrees, the water mirrors the sky 30 degrees up.
-  vec4 refl = texture(uReflect, uv + nudge * 1.6);
-  // The upper sky, and on the ripples' crests, which tilt towards the horizon, the glow low in it: a mean of the two would be grey.
-  vec3 sky = mix(uSkyTop, uSkyBottom, 0.25);
-  vec3 mirrored = mix(sky, refl.rgb, refl.a);
+  // Taken through a small blur: the reflection is drawn at half size, and with this much sky in the water its thin bright
+  // things (grass blades above all) would flicker as the camera moves.
+  vec2 rt = 3.0 / uScreen;
+  vec2 ruv = uv + nudge * 1.6;
+  vec4 refl = (texture(uReflect, ruv) * 2.0 + texture(uReflect, ruv + vec2(rt.x, 0.0)) + texture(uReflect, ruv - vec2(rt.x, 0.0))
+    + texture(uReflect, ruv + vec2(0.0, rt.y)) + texture(uReflect, ruv - vec2(0.0, rt.y))) / 6.0;
+  // A painter keeps open water light: mostly the sky low and pale, with soft drifts where clouds would be reflected.
+  vec3 sky = mix(uSkyTop, uSkyBottom, 0.6);
+  float drift = smoothstep(0.1, 0.7, fbm2(p.xz * vec2(0.09, 0.05) + 3.0));
+  sky = mix(sky, mix(uSkyBottom, vec3(1.0), 0.6), drift * 0.75);
+  vec3 mirrored = sky * (1.0 - refl.a) + refl.rgb;
   float depthy = 1.0 - (through.g * 0.5 + through.b * 0.5);
-  float fres = clamp(0.08 + depthy * 0.22 + ripple * 0.1, 0.0, 0.5);
+  float fres = clamp(0.5 + depthy * 0.35 + ripple * 0.1, 0.0, 0.9);
   vec3 col = mix(under, mirrored, fres);
-  col = mix(col, mix(uSkyBottom, vec3(1.0), 0.25), smoothstep(0.5, 0.9, ripple) * 0.25 * depthy);
-  // A few sparks of sun.
-  float g = snoise(p.xz * 5.0 + vec2(uTime * 0.7, -uTime * 0.5)) * snoise(p.xz * 3.7 - uTime * 0.4);
-  col += sunTint() * smoothstep(0.68, 0.82, g) * vis * depthy * 0.9;
+  col = mix(col, mix(uSkyBottom, vec3(1.0), 0.4), smoothstep(0.45, 0.9, ripple) * 0.35 * depthy);
+  // Sparkle: glints of sun on the ripples' crests, little dashes lying across the flow, carried along by it, each winking
+  // in and out on its own beat.
+  vec2 fq = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x))) * vec2(3.5, 1.6);
+  vec2 cell = floor(fq), f = fract(fq) - 0.5 - (hash22(cell) - 0.5) * 0.5;
+  float h = hash12(cell + 7.3);
+  float wink = max(0.0, sin(uTime * (2.0 + h * 3.0) + h * 40.0));
+  float crest = smoothstep(-0.15, 0.35, ripple);
+  float spark = (1.0 - smoothstep(0.5, 1.0, length(f / vec2(0.15, 0.3)))) * step(0.5, h) * wink * crest;
+  col = mix(col, vec3(1.0) * mix(vec3(1.0), sunTint(), 0.5) * 1.3, spark * vis * (0.4 + depthy * 0.6));
   writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
 }
 `;

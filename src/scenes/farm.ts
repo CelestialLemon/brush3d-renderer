@@ -21,6 +21,10 @@ const M = (x: number, z: number): [number, number] => [(x - z) * SQ, (-x - z) * 
 const line = (pts: [number, number][]) => new MapLine(pts.map(([u, v]) => W(u, v)));
 
 const STREAM = line([[-38, -1], [-29, -4], [-23, -9], [-19.5, -15], [-17, -21], [-14, -27], [-12, -38]]);
+// How much wider the stream is than the kit's brook: distances from it are measured in brook-widths, so its bed, banks and
+// floodplain all widen together.
+const WIDE = 1.6;
+const streamDistance = (x: number, z: number) => STREAM.distance(x, z) / WIDE;
 const TRACK = line([[-38, 7], [-24, 5.5], [-10, 4], [4, 4.5], [16, 6], [26, 8], [38, 8.5]]);
 const LANE = line([[-38, -25], [-27, -20.5], [-18, -18.5], [-6, -16.5], [6, -14.5], [16, -11.5]]);
 const FORK_UP = line([[16, -11.5], [20, -5], [22.5, 1.5], [24.5, 7.5]]);
@@ -69,7 +73,14 @@ const TREES: Tree[] = [
   tree('fruit', -12.5, -8, 1.05, 400),
 ];
 
-const CRATES: [number, number, number][] = [[-9.2, -13.6, 0.3], [-7.6, -14.1, -0.2], [-8.4, -12.6, 0.9]];
+// Crates of apples by the orchard ([u, v, turn]), and empty ones stacked two high.
+const CRATES: [number, number, number][] = [[-9.4, -13.8, 0.3], [-7.4, -14.4, -0.2], [-8.6, -12.2, 0.9]];
+const EMPTY_CRATES: [number, number, number][] = [[-11.2, -12.4, 0.1], [-11.0, -13.6, -0.15]];
+const BASKETS: [number, number][] = [[-6.4, -12.6], [-5.8, -13.4], [-10.2, -10.9]];
+const BARROW: [number, number, number] = [-4.6, -10.8, 1.1];
+const HIVES: [number, number][] = [[20.5, -7.6], [22, -7.9], [23.5, -8.2], [25, -8.5]];
+const BALES: [number, number, number][] = [[-24, 9.6, 0.3], [-22.2, 10.8, 1.2], [-26, 11, 2.2]];
+const BARRELS: [number, number][] = [[12.9, -6.2], [13.5, -6.9]];
 const TABLE: [number, number] = [11, -7.5];
 const SHRUBS: [number, number][] = [[-4, -21], [8, -19], [-30, -10], [-33, -20], [-24, -30], [30, -3], [2, -27], [-31, 3]];
 const WALL = line([[19.5, -13.5], [24, -12], [28.5, -11]]);
@@ -94,7 +105,7 @@ const pathDistance = (x: number, z: number) => Math.min(...PATHS.map((p) => p.di
 
 function height(x: number, z: number) {
   const [u, v] = M(x, z);
-  const ds = STREAM.distance(x, z);
+  const ds = streamDistance(x, z);
   let h = rolling(u, v);
   // A floodplain eases down to a little above the water.
   h += (WATER_Y + 0.28 - h) * (1 - smooth(2.2, 10, ds));
@@ -136,7 +147,7 @@ function terrain(r: BrushRenderer) {
     const u = -HALF + i * STEP, v = -HALF + j * STEP;
     const [x, z] = W(u, v);
     const y = height(x, z);
-    const ds = STREAM.distance(x, z), dp = pathDistance(x, z);
+    const ds = streamDistance(x, z), dp = pathDistance(x, z);
     // Colour follows the land's form: rises catch the light yellow-green, hollows sink to emerald and teal.
     const ring = (k: number) => (height(x + k, z) + height(x - k, z) + height(x, z + k) + height(x, z - k)) / 4;
     const curve = 0.4 * (y - ring(2.5)) + 0.6 * (y - ring(6));
@@ -192,7 +203,7 @@ function fixWinding(g: THREE.BufferGeometry) {
 
 function water(r: BrushRenderer) {
   const b = new MeshBuilder('water');
-  addWaterRibbon(b, STREAM, 2.0, WATER_Y);
+  addWaterRibbon(b, STREAM, 2.0 * WIDE, WATER_Y);
   r.add(b.build(), 'water');
 }
 
@@ -261,29 +272,31 @@ function wheat(r: BrushRenderer) {
 /** The solar array: panels on single posts standing out of the wheat, turned to the noon sun. Inked. */
 function panels(r: BrushRenderer) {
   const b = new MeshBuilder('ink');
-  const tilt = THREE.MathUtils.degToRad(32);
-  // Noon sun's azimuth is 115° from +x towards +z; the panels face it.
-  const az = THREE.MathUtils.degToRad(115);
-  const face = Math.atan2(Math.cos(az), Math.sin(az));
-  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt, face, 0, 'YXZ'));
-  const paint: Paint = [1, 6, 3, 0];
+  // Tilted less than the camera looks down (30°), the glass shows from every view; facing along the map's axis (towards +z,
+  // the noon sun's side), no view is ever straight behind a panel: from the worst one it is still a quarter of its face.
+  const tilt = THREE.MathUtils.degToRad(22);
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt, 0, 0, 'YXZ'));
+  const paint: Paint = [1, 8, 4, 0];
+  const Wp = 4.0, Dp = 2.3;
   for (const [u, v] of PANELS) {
     const [x, z] = W(u, v);
     const y0 = height(x, z);
-    const center = new THREE.Vector3(x, y0 + 1.75, z);
+    const center = new THREE.Vector3(x, y0 + 1.6, z);
     const frame = new THREE.Matrix4().compose(center, q, new THREE.Vector3(1, 1, 1));
-    b.addGeometry(new THREE.BoxGeometry(3.2, 0.09, 1.9), frame, C.ceramic, [0, 1, 0, 0]);
-    const Wd = 1.53, Dd = 0.88, nUp = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
-    const corner = (cu: number, cv: number) => new THREE.Vector3(cu * Wd, 0.05, cv * Dd).applyMatrix4(frame);
+    b.addGeometry(new THREE.BoxGeometry(Wp, 0.1, Dp), frame, C.ceramic, [0, 1, 0, 0]);
+    const nUp = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+    const corner = (cu: number, cv: number) => new THREE.Vector3(cu * (Wp / 2 - 0.07), 0.055, cv * (Dp / 2 - 0.07)).applyMatrix4(frame);
     const g0 = b.vertex(corner(-1, -1), nUp, C.glass, paint, [0, 0]);
-    const g1 = b.vertex(corner(1, -1), nUp, C.glass, paint, [1.5, 0]);
-    const g2 = b.vertex(corner(1, 1), nUp, C.glass, paint, [1.5, 1]);
+    const g1 = b.vertex(corner(1, -1), nUp, C.glass, paint, [1, 0]);
+    const g2 = b.vertex(corner(1, 1), nUp, C.glass, paint, [1, 1]);
     const g3 = b.vertex(corner(-1, 1), nUp, C.glass, paint, [0, 1]);
     b.quad(g0, g3, g2, g1);
-    // A brass post and a short cross-arm under the frame.
-    b.addGeometry(new THREE.CylinderGeometry(0.07, 0.09, 1.75, 8), new THREE.Matrix4().makeTranslation(x, y0 + 0.85, z), C.brass, [0, 1, 0, 0]);
-    b.addGeometry(new THREE.BoxGeometry(1.6, 0.08, 0.12), new THREE.Matrix4().compose(center.clone().add(new THREE.Vector3(0, -0.12, 0)),
-      new THREE.Quaternion().setFromEuler(new THREE.Euler(0, face, 0)), new THREE.Vector3(1, 1, 1)), C.brass, [0, 1, 0, 0]);
+    // Two brass posts and a cross-beam under the frame.
+    for (const side of [-1, 1]) {
+      const px = x + side * Wp * 0.3;
+      b.addGeometry(new THREE.CylinderGeometry(0.07, 0.09, 1.6, 8), new THREE.Matrix4().makeTranslation(px, y0 + 0.78, z), C.brass, [0, 1, 0, 0]);
+    }
+    b.addGeometry(new THREE.BoxGeometry(Wp * 0.75, 0.09, 0.12), new THREE.Matrix4().makeTranslation(x, y0 + 1.48, z), C.brass, [0, 1, 0, 0]);
   }
   r.add(b.build(), 'ink');
 }
@@ -329,11 +342,11 @@ function bridge(r: BrushRenderer) {
   const b = new MeshBuilder('ink');
   // Where the lane meets the stream.
   let best = { d: Infinity, s: 0 };
-  for (let s = 0; s < LANE.length; s += 0.25) { const p = LANE.at(s), d = STREAM.distance(p.x, p.z); if (d < best.d) best = { d, s }; }
+  for (let s = 0; s < LANE.length; s += 0.25) { const p = LANE.at(s), d = streamDistance(p.x, p.z); if (d < best.d) best = { d, s }; }
   const p = LANE.at(best.s);
   const yaw = Math.atan2(-p.dz, p.dx);
   const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0));
-  const deck = WATER_Y + 0.5, span = 6.4, width = 2.0;
+  const deck = WATER_Y + 0.5, span = 6.4 * WIDE, width = 2.0;
   const at = (along: number, across: number, y: number) =>
     new THREE.Vector3(p.x + p.dx * along - p.dz * across, y, p.z + p.dz * along + p.dx * across);
   const rand = rng(29);
@@ -387,7 +400,7 @@ function trees(r: BrushRenderer) {
   // Thickets along the stream, with gaps where the banks open to the water.
   for (let s = 1; s < STREAM.length - 1; s += 1.6 + rand() * 1.4) {
     if (noise2(s * 0.12, 3) < -0.15) continue;
-    const p = STREAM.at(s), off = (rand() < 0.5 ? -1 : 1) * (2.5 + rand() * 1.2);
+    const p = STREAM.at(s), off = (rand() < 0.5 ? -1 : 1) * (2.5 + rand() * 1.2) * WIDE;
     const x = p.x - p.dz * off, z = p.z + p.dx * off;
     if (pathDistance(x, z) < PATH_HALF + 1 || clear(x, z)) continue;
     growTree(wood, leaves, ground, { kind: rand() < 0.25 ? 'round' : 'bush', x, z, seed: 0, scale: 1.1 + rand() * 0.6,
@@ -397,7 +410,7 @@ function trees(r: BrushRenderer) {
   for (const [u, v] of SHRUBS) {
     for (let k = 0, n = 2 + Math.floor(rand() * 3); k < n; k++) {
       const [x, z] = W(u + (rand() - 0.5) * 2.6, v + (rand() - 0.5) * 1.8);
-      if (STREAM.distance(x, z) < 2.4 || pathDistance(x, z) < PATH_HALF + 0.6 || wheatInside(u, v) > -1.5 || clear(x, z)) continue;
+      if (streamDistance(x, z) < 2.4 || pathDistance(x, z) < PATH_HALF + 0.6 || wheatInside(u, v) > -1.5 || clear(x, z)) continue;
       growTree(wood, leaves, ground, { kind: 'bush', x, z, seed: 0, scale: 1.0 + rand() * 0.5, leaf: C.leaf.clone().lerp(C.emerald, rand()) }, rand);
     }
   }
@@ -408,7 +421,8 @@ function trees(r: BrushRenderer) {
 /** Places kept open: the bridge's ends, the crates, the table. */
 function clear(x: number, z: number) {
   const [u, v] = M(x, z);
-  return [...CRATES.map(([cu, cv]) => [cu, cv]), TABLE].some(([cu, cv]) => Math.hypot(u - cu, v - cv) < 2.2);
+  return [...[...CRATES, ...EMPTY_CRATES, BARROW, ...BALES].map(([cu, cv]) => [cu, cv]), ...BASKETS, ...HIVES, ...BARRELS, TABLE]
+    .some(([cu, cv]) => Math.hypot(u - cu, v - cv) < 2.2);
 }
 
 function nursery(r: BrushRenderer) {
@@ -434,23 +448,71 @@ function goods(r: BrushRenderer) {
   const box = (sx: number, sy: number, sz: number, at: THREE.Vector3, yaw: number, c: THREE.Color) =>
     b.addGeometry(new THREE.BoxGeometry(sx, sy, sz), new THREE.Matrix4().compose(at, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)),
       new THREE.Vector3(1, 1, 1)), c, [0, 1, 0, 0]);
-  for (const [u, v, yaw] of CRATES) {
-    const [x, z] = W(u, v);
-    const y = height(x, z);
-    const local = (lx: number, ly: number, lz: number) =>
+  /** A point in a prop's own frame (x along it, z across, y up), placed at map (u, v) and turned by yaw. */
+  const frameAt = (u: number, v: number, yaw: number) => {
+    const [x, z] = W(u, v), y = height(x, z);
+    return (lx: number, ly: number, lz: number) =>
       new THREE.Vector3(x + lx * Math.cos(yaw) + lz * Math.sin(yaw), y + ly, z - lx * Math.sin(yaw) + lz * Math.cos(yaw));
-    const wood = C.crate.clone().offsetHSL(0, 0, (rand() - 0.5) * 0.06);
-    // Slatted sides and a floor; apples heaped inside.
-    box(1.0, 0.06, 0.7, local(0, 0.05, 0), yaw, wood);
-    for (const [lx, lz, sx, sz] of [[0, -0.33, 1.0, 0.05], [0, 0.33, 1.0, 0.05], [-0.48, 0, 0.05, 0.7], [0.48, 0, 0.05, 0.7]] as const) {
-      for (const ly of [0.14, 0.32]) box(sx, 0.13, sz, local(lx, ly, lz), yaw, wood);
+  };
+  const ball = (r: number, p: THREE.Vector3, c: THREE.Color) =>
+    b.addGeometry(new THREE.IcosahedronGeometry(r, 1), new THREE.Matrix4().makeTranslation(p.x, p.y, p.z), c, [0, 1, 0, 0]);
+  const apple = () => C.apple.clone().offsetHSL((rand() - 0.5) * 0.05, 0, (rand() - 0.5) * 0.1);
+  // A big orchard bin: slatted sides and a floor, apples heaped inside (or empty), at a height to stack.
+  const crate = (u: number, v: number, yaw: number, full: boolean, y0 = 0) => {
+    const local = frameAt(u, v, yaw), wood = C.crate.clone().offsetHSL(0, 0, (rand() - 0.5) * 0.06);
+    const L = 1.4, D = 0.95, H = 0.62;
+    box(L, 0.07, D, local(0, y0 + 0.05, 0), yaw, wood);
+    for (const [lx, lz, sx, sz] of [[0, -D / 2, L, 0.06], [0, D / 2, L, 0.06], [-L / 2, 0, 0.06, D], [L / 2, 0, 0.06, D]] as const) {
+      for (let ly = 0.14; ly < H; ly += 0.2) box(sx, 0.15, sz, local(lx, y0 + ly, lz), yaw, wood);
     }
-    box(0.92, 0.3, 0.62, local(0, 0.2, 0), yaw, C.apple.clone().multiplyScalar(0.75));
-    for (let i = 0; i < 16; i++) {
-      const lx = (rand() - 0.5) * 0.8, lz = (rand() - 0.5) * 0.5;
-      b.addGeometry(new THREE.IcosahedronGeometry(0.075, 1), new THREE.Matrix4().makeTranslation(...local(lx, 0.38 + rand() * 0.05, lz).toArray()),
-        C.apple.clone().offsetHSL((rand() - 0.5) * 0.05, 0, (rand() - 0.5) * 0.1), [0, 1, 0, 0]);
+    for (const lx of [-L / 2, L / 2]) for (const lz of [-D / 2, D / 2]) box(0.1, H, 0.1, local(lx, y0 + H / 2, lz), yaw, wood.clone().multiplyScalar(0.85));
+    if (!full) return;
+    box(L - 0.1, H - 0.2, D - 0.1, local(0, y0 + (H - 0.1) / 2, 0), yaw, C.apple.clone().multiplyScalar(0.7));
+    for (let i = 0; i < 34; i++) ball(0.085, local((rand() - 0.5) * (L - 0.2), y0 + H - 0.05 + rand() * 0.08, (rand() - 0.5) * (D - 0.2)), apple());
+  };
+  for (const [u, v, yaw] of CRATES) crate(u, v, yaw, true);
+  for (const [u, v, yaw] of EMPTY_CRATES) { crate(u, v, yaw, false); crate(u, v, yaw + 0.08, false, 0.66); }
+  // Wicker baskets of apples: an eight-sided tub, a rim, a heap.
+  for (const [u, v] of BASKETS) {
+    const local = frameAt(u, v, rand() * 3);
+    const [x, , z] = local(0, 0, 0).toArray(), y = height(x, z);
+    b.addGeometry(new THREE.CylinderGeometry(0.34, 0.26, 0.32, 8, 1, true), new THREE.Matrix4().makeTranslation(x, y + 0.16, z), C.timber, [2, 1, 0, 0]);
+    b.addGeometry(new THREE.TorusGeometry(0.34, 0.035, 4, 12), new THREE.Matrix4().makeRotationX(Math.PI / 2).setPosition(x, y + 0.32, z), C.timber.clone().multiplyScalar(0.8), [0, 1, 0, 0]);
+    b.addGeometry(new THREE.CylinderGeometry(0.3, 0.28, 0.06, 8), new THREE.Matrix4().makeTranslation(x, y + 0.27, z), C.apple.clone().multiplyScalar(0.7), [0, 1, 0, 0]);
+    for (let i = 0; i < 9; i++) { const a = rand() * 6.28, d = rand() * 0.22; ball(0.075, new THREE.Vector3(x + Math.cos(a) * d, y + 0.33 + rand() * 0.06, z + Math.sin(a) * d), apple()); }
+  }
+  // A wheelbarrow, its tray half full of apples, resting on its legs.
+  {
+    const [u, v, yaw] = BARROW, local = frameAt(u, v, yaw), green = srgb(0x4f8a6a);
+    box(1.1, 0.08, 0.7, local(0, 0.42, 0), yaw, green);
+    for (const lz of [-0.35, 0.35]) box(1.1, 0.26, 0.05, local(0, 0.55, lz), yaw, green);
+    for (const lx of [-0.55, 0.55]) box(0.05, 0.26, 0.7, local(lx, 0.55, 0), yaw, green);
+    for (const lz of [-0.22, 0.22]) {
+      box(1.9, 0.06, 0.06, local(-0.25, 0.38, lz), yaw, C.timber);
+      box(0.06, 0.38, 0.06, local(-0.5, 0.19, lz), yaw, C.timber);
     }
+    b.addGeometry(new THREE.CylinderGeometry(0.24, 0.24, 0.08, 12).rotateX(Math.PI / 2).rotateY(yaw), new THREE.Matrix4().makeTranslation(...local(0.75, 0.24, 0).toArray()), C.bark, [0, 1, 0, 0]);
+    for (let i = 0; i < 10; i++) ball(0.08, local((rand() - 0.5) * 0.8, 0.56 + rand() * 0.05, (rand() - 0.5) * 0.45), apple());
+  }
+  // Beehives in a row by the flowers: stacked boxes in faded pastels under a pitched lid, on a low stand.
+  const hiveColors = [srgb(0xf2e2b8), srgb(0x9cc8d8), srgb(0xf0b8a0), srgb(0xc8d89a)];
+  HIVES.forEach(([u, v], i) => {
+    const local = frameAt(u, v, 0.8 + (rand() - 0.5) * 0.2), yaw = 0.8, c = hiveColors[i % hiveColors.length];
+    box(0.62, 0.2, 0.62, local(0, 0.1, 0), yaw, C.timber.clone().multiplyScalar(0.8));
+    for (let k = 0; k < 2 + (i % 2); k++) box(0.55, 0.26, 0.55, local(0, 0.33 + k * 0.27, 0), yaw, c.clone().offsetHSL(0, 0, (k % 2) * 0.04));
+    const top = 0.33 + (2 + (i % 2)) * 0.27 - 0.08;
+    b.addGeometry(new THREE.ConeGeometry(0.48, 0.18, 4, 1).rotateY(Math.PI / 4 + yaw), new THREE.Matrix4().makeTranslation(...local(0, top + 0.09, 0).toArray()), C.ceramic, [0, 1, 0, 0]);
+  });
+  // Round hay bales, lying on their sides on the cut meadow.
+  for (const [u, v, yaw] of BALES) {
+    const local = frameAt(u, v, yaw), r = 0.62, hay = srgb(0xe2bf6a).offsetHSL((rand() - 0.5) * 0.02, 0, (rand() - 0.5) * 0.06);
+    b.addGeometry(new THREE.CylinderGeometry(r, r, 1.15, 18).rotateX(Math.PI / 2).rotateY(yaw), new THREE.Matrix4().makeTranslation(...local(0, r - 0.05, 0).toArray()), hay, [2, 1, 0, 0]);
+  }
+  // Water barrels by the table.
+  for (const [u, v] of BARRELS) {
+    const local = frameAt(u, v, 0), p = local(0, 0, 0);
+    b.addGeometry(new THREE.CylinderGeometry(0.3, 0.3, 0.85, 12), new THREE.Matrix4().makeTranslation(p.x, p.y + 0.42, p.z), C.crate.clone().multiplyScalar(0.9), [2, 1, 0, 0]);
+    for (const h of [0.15, 0.7]) b.addGeometry(new THREE.CylinderGeometry(0.315, 0.315, 0.05, 12), new THREE.Matrix4().makeTranslation(p.x, p.y + h, p.z), C.brass.clone().multiplyScalar(0.7), [0, 1, 0, 0]);
   }
   // The picnic table: a trestle with two benches, a cloth and a few baskets on it.
   const [tx, tz] = W(...TABLE);
@@ -479,13 +541,13 @@ function stones(r: BrushRenderer) {
   const rand = rng(91);
   const bank = (count: number, from: number, to: number, size: number, spread: number) => {
     for (let i = 0; i < count; i++) {
-      const p = STREAM.at(rand() * STREAM.length), off = from + rand() * (to - from);
+      const p = STREAM.at(rand() * STREAM.length), off = (from + rand() * (to - from)) * WIDE;
       const side = rand() < 0.5 ? -1 : 1;
       addStone(b, ground, p.x - p.dz * off * side, p.z + p.dx * off * side, size + rand() * spread, 0.4, rand, WATER_Y);
     }
   };
-  bank(110, 0, 1.5, 0.07, 0.13);
-  bank(26, 1.35, 2.3, 0.18, 0.28);
+  bank(170, 0, 1.5, 0.07, 0.13);
+  bank(40, 1.35, 2.3, 0.18, 0.28);
   // Rocks among the cypresses.
   for (const [u, v] of [[-33, 10], [-29, 6.8], [-20, 8], [-34, 15]] as const) {
     for (let k = 0; k < 3; k++) {
@@ -510,8 +572,8 @@ function stones(r: BrushRenderer) {
   }
   r.add(b.build(), 'paint', { under: true });
   const reeds = new MeshBuilder('grass');
-  for (let c = 0; c < 60; c++) {
-    const p = STREAM.at(rand() * STREAM.length), off = (rand() < 0.5 ? -1 : 1) * (1.45 + rand() * 0.5);
+  for (let c = 0; c < 90; c++) {
+    const p = STREAM.at(rand() * STREAM.length), off = (rand() < 0.5 ? -1 : 1) * (1.45 + rand() * 0.5) * WIDE;
     addReeds(reeds, ground, p.x - p.dz * off, p.z + p.dx * off, rand);
   }
   r.add(reeds.build(), 'grass', { castShadow: false });
@@ -524,7 +586,7 @@ function grass(r: BrushRenderer) {
   const blocked = (x: number, z: number) => {
     const [u, v] = M(x, z);
     if (Math.abs(u) > HALF - 0.5 || Math.abs(v) > HALF - 0.5) return true;
-    return wheatInside(u, v) > -0.2 || pathDistance(x, z) < PATH_HALF - 0.1 || STREAM.distance(x, z) < 1.6 ||
+    return wheatInside(u, v) > -0.2 || pathDistance(x, z) < PATH_HALF - 0.1 || streamDistance(x, z) < 1.6 ||
       TREES.some((t) => Math.hypot(x - t.x, z - t.z) < 0.4 * (t.scale ?? 1));
   };
   const tuftColor = (x: number, z: number) => {
@@ -537,7 +599,7 @@ function grass(r: BrushRenderer) {
     if (blocked(x, z)) continue;
     const [u, v] = M(x, z);
     const near = Math.max(
-      1 - smooth(1.6, 3.4, STREAM.distance(x, z)),
+      1 - smooth(1.6, 3.4, streamDistance(x, z)),
       1 - smooth(PATH_HALF, PATH_HALF + 1.2, pathDistance(x, z)),
       1 - smooth(0.2, 1.6, -wheatInside(u, v)),
       ...TREES.map((t) => 1 - smooth(0.4, 2.2 * (t.scale ?? 1), Math.hypot(x - t.x, z - t.z))));

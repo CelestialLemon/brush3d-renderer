@@ -11,7 +11,7 @@ export const C = {
   moss: srgb(0x4f8040), mud: srgb(0x6a5238), bed: srgb(0x9a8660), water: srgb(0x2c6e74),
   stone: srgb(0x9a9184), reed: srgb(0x6f8a3a),
   soil: srgb(0x8a5634), timber: srgb(0xc58f55), ceramic: srgb(0xeee6d2), brass: srgb(0xc08a48), glass: srgb(0x1d4fa0),
-  bark: srgb(0x6e4a3e), leaf: srgb(0x4e9a3a), leafLight: srgb(0x8cc44a), fruitLeaf: srgb(0x5aa03e), cypress: srgb(0x2e6e57),
+  bark: srgb(0x6e4a3e), leaf: srgb(0x4e9a3a), leafLight: srgb(0x8cc44a), fruitLeaf: srgb(0x5aa03e), cypress: srgb(0x2f6a42),
   fruit: srgb(0xf06a2c), wheatRoot: srgb(0x8a9a3a), wheatTip: srgb(0xf0c45a),
   dirt: srgb(0xc7a77a), rut: srgb(0xa48660), wheat: srgb(0xf4cf4e), wheatDeep: srgb(0xdc9c34),
   fence: srgb(0xb8a48a), crate: srgb(0xb07a4a), apple: srgb(0xd8402c), deepLeaf: srgb(0x2f7044),
@@ -78,14 +78,8 @@ export function growTree(wood: MeshBuilder, leaves: MeshBuilder, ground: Ground,
   };
   const masses: { c: THREE.Vector3; r: number; tone: number }[] = [];
   const up = (y: number) => new THREE.Vector3(0, y, 0);
-  if (cypress) {
-    // A flame: widest a third of the way up, drawn to a point.
-    for (let i = 0; i < 9; i++) {
-      const f = i / 8, y = (1.2 + f * 5.0) * s;
-      const rr = (0.25 + 0.75 * Math.sin(Math.min(1, 0.25 + f * 2.6) * Math.PI / 2) * (1 - f * 0.82)) * s;
-      masses.push({ c: base.clone().add(new THREE.Vector3((rand() - 0.5) * 0.25 * s, y, (rand() - 0.5) * 0.25 * s)), r: rr, tone: rand() });
-    }
-  } else if (bush) {
+  // A cypress has no masses: its crown is one body, grown below.
+  if (bush) {
     // An orchard bush: a low row of two or three masses on a stub of trunk.
     const n = 2 + (rand() < 0.5 ? 1 : 0), a0 = rand() * Math.PI;
     for (let i = 0; i < n; i++) {
@@ -100,7 +94,7 @@ export function growTree(wood: MeshBuilder, leaves: MeshBuilder, ground: Ground,
       const a = rand() * Math.PI * 2;
       masses.push({ c: base.clone().add(new THREE.Vector3(Math.cos(a) * 0.3 * s, trunkH + 0.75 * s, Math.sin(a) * 0.3 * s)), r: 0.42 * s, tone: rand() });
     }
-  } else {
+  } else if (!cypress) {
     // A broadleaf forks into a few boughs leaning out at different angles and lengths; each carries a mass at its end (and
     // sometimes a smaller one partway), so the crown is organised by its limbs, with gaps between them.
     const fork = base.clone().add(up(trunkH * 0.85));
@@ -122,34 +116,63 @@ export function growTree(wood: MeshBuilder, leaves: MeshBuilder, ground: Ground,
     limb(fork, top, 0.09, 0.04);
     masses.push({ c: top.clone().add(up(0.35 * s)), r: (0.7 + rand() * 0.25) * s, tone: rand() });
   }
-  const crownCenter = cypress ? base.clone().add(up(3.4 * s))
-    : masses.reduce((acc, k) => acc.addScaledVector(k.c, 1 / masses.length), new THREE.Vector3());
-  const stretch = cypress ? new THREE.Vector3(1, 0.3, 1) : new THREE.Vector3(1, 1.2, 1);
+  const crownCenter = masses.reduce((acc, k) => acc.addScaledVector(k.c, 1 / masses.length), new THREE.Vector3());
+  const stretch = new THREE.Vector3(1, 1.2, 1);
   const leafColor = t.leaf ?? (cypress ? C.cypress : t.kind === 'fruit' || bush ? C.fruitLeaf : C.leaf);
   // Strokes grow with the tree, but less than it does: a big tree is more strokes, not only bigger ones.
   const dabScale = Math.pow(s, 0.45);
-  for (const k of masses) {
-    // Each mass its own shade of the tree's green: one warmer, one cooler.
-    const massColor = leafColor.clone().offsetHSL((k.tone - 0.5) * 0.04, 0, (k.tone - 0.5) * 0.06);
-    const rn = k.r / dabScale;
-    const count = Math.round((cypress ? 150 : 115) * rn * rn);
+  // A stroke's colour comes from where it sits on the crown, not from chance: lighter and warmer where the crown turns up,
+  // darker deep inside. Neighbouring strokes then differ only a little, and the crown reads as a few big masses of light and
+  // shade, broken at their borders by the strokes, rather than as a heap of separate dabs.
+  const strokeColor = (c: THREE.Color, nrm: THREE.Vector3, inner: number) => {
+    // Lit: the tree's own green, lighter and a step towards yellow (so a dark tree stays a dark tree, only lit).
+    const up = smooth(-0.1, 0.9, nrm.y);
+    const col = c.clone().offsetHSL(-0.03 * up, 0.05 * up, 0.09 * up);
+    col.multiplyScalar(1 - inner * 0.42);
+    return col.offsetHSL((rand() - 0.5) * 0.012, (rand() - 0.5) * 0.04, (rand() - 0.5) * 0.02);
+  };
+  if (cypress) {
+    // A flame: one continuous body, widest a third of the way up and drawn to a point, its skin in long upright strokes,
+    // bulging into a few vertical tufts so the silhouette is ragged, not a smooth cone.
+    const height = 5.4 * s, tufts = 5 + Math.floor(rand() * 3), turn = rand() * Math.PI * 2;
+    const radius = (f: number) => (0.3 + 0.75 * Math.sin(Math.min(1, 0.22 + f * 2.6) * Math.PI / 2) * (1 - f * 0.86)) * s;
+    const count = Math.round(420 * s * s / dabScale);
     for (let i = 0; i < count; i++) {
-      const u = rand() * 2 - 1, phi = rand() * Math.PI * 2, s2 = Math.sqrt(1 - u * u);
-      // A mass is a cloud with a flattened underside: the shelf of shade a painter puts under each one.
-      const dir = new THREE.Vector3(s2 * Math.cos(phi) * 1.12, u < 0 && !cypress ? u * 0.55 : u, s2 * Math.sin(phi) * 1.12);
-      // Most strokes on the mass's skin; some loose ones just outside it break the silhouette.
-      const loose = rand() < 0.14;
-      const depth = loose ? 1.02 + rand() * 0.14 : 0.6 + rand() * 0.4;
-      const p = k.c.clone().addScaledVector(dir, k.r * depth);
-      const toCrown = p.clone().sub(crownCenter).multiply(stretch).normalize();
-      const nrm = toCrown.multiplyScalar(cypress ? 0.6 : 0.4).addScaledVector(dir.clone().normalize(), cypress ? 0.4 : 0.6).normalize();
-      const col = massColor.clone().lerp(cypress ? C.teal : C.leafLight, Math.max(0, nrm.y) * 0.3 * rand());
-      // Strokes deeper in the mass sit in its shade.
-      col.multiplyScalar((0.72 + 0.28 * Math.min(1, (depth - 0.6) / 0.4)) * (u < -0.25 && !cypress ? 0.8 : 1));
-      col.offsetHSL((rand() - 0.5) * 0.025, (rand() - 0.5) * 0.08, (rand() - 0.5) * 0.04);
-      const size = (cypress ? 0.26 + rand() * 0.2 : loose ? 0.16 + rand() * 0.1 : 0.28 + rand() * 0.22) * dabScale;
-      const aspect = cypress ? 0.38 + rand() * 0.15 : 0.45 + rand() * 0.35;
-      addDab(leaves, p, nrm, col, size, rand(), [0.7, aspect, cypress ? Math.PI / 2 : -1, cypress ? 0.35 : 0.7]);
+      const f = Math.pow(rand(), 0.85), phi = rand() * Math.PI * 2;
+      const tuft = 0.86 + 0.2 * Math.max(0, Math.cos((phi - turn) * tufts * 0.5)) ** 2 + (rand() - 0.5) * 0.1;
+      const inner = rand() < 0.2 ? 0.5 + rand() * 0.4 : 0;
+      const r = radius(f) * tuft * (1 - inner * 0.6);
+      const p = base.clone().add(new THREE.Vector3(Math.cos(phi) * r, 1.0 * s + f * height, Math.sin(phi) * r));
+      const nrm = new THREE.Vector3(Math.cos(phi), 0.25 + f * 0.9, Math.sin(phi)).normalize();
+      const size = (inner ? 0.4 + rand() * 0.2 : 0.17 + rand() * 0.13) * dabScale;
+      addDab(leaves, p, nrm, strokeColor(leafColor, nrm, inner), size, rand(), [0.7, 0.32 + rand() * 0.14, Math.PI / 2, 0.35]);
+    }
+  }
+  for (const k of masses) {
+    // Each mass a slightly different shade of the tree's green, so the masses tell apart where they overlap.
+    const massColor = leafColor.clone().offsetHSL((k.tone - 0.5) * 0.03, 0, (k.tone - 0.5) * 0.04);
+    const rn = k.r / dabScale;
+    // Three layers: big dark strokes inside, so no gap shows through to the ground; the skin, in mid-sized strokes; and
+    // small loose ones just outside it that break the silhouette.
+    const layers = [
+      { count: 14, depth: [0.35, 0.3], size: [0.5, 0.25], inner: 1 },
+      { count: 78, depth: [0.68, 0.32], size: [0.32, 0.22], inner: 0 },
+      { count: 34, depth: [1.0, 0.13], size: [0.13, 0.09], inner: 0 },
+    ];
+    for (const layer of layers) {
+      for (let i = 0, n = Math.round(layer.count * rn * rn); i < n; i++) {
+        const u = rand() * 2 - 1, phi = rand() * Math.PI * 2, s2 = Math.sqrt(1 - u * u);
+        // A mass is a cloud with a flattened underside: the shelf of shade a painter puts under each one.
+        const dir = new THREE.Vector3(s2 * Math.cos(phi) * 1.12, u < 0 ? u * 0.55 : u, s2 * Math.sin(phi) * 1.12);
+        const depth = layer.depth[0] + rand() * layer.depth[1];
+        const p = k.c.clone().addScaledVector(dir, k.r * depth);
+        const toCrown = p.clone().sub(crownCenter).multiply(stretch).normalize();
+        const nrm = toCrown.multiplyScalar(0.55).addScaledVector(dir.clone().normalize(), 0.45).normalize();
+        // Strokes deeper in the mass sit in its shade, and so does its underside.
+        const inner = layer.inner ? 1 : Math.max(0, (0.85 - depth) / 0.25) * 0.5 + (u < -0.25 ? 0.4 : 0);
+        const size = (layer.size[0] + rand() * layer.size[1]) * dabScale;
+        addDab(leaves, p, nrm, strokeColor(massColor, nrm, Math.min(inner, 1)), size, rand(), [0.7, 0.45 + rand() * 0.35, -1, 0.7]);
+      }
     }
   }
   // Fruit: bright dabs on the outer, sunward side.

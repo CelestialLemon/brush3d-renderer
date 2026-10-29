@@ -7,14 +7,31 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 - **The farm scene** (`?scene=farm`, the default; first pass 2026-10-29): the *Dear Alice* aerial (0:37) rebuilt with more
   assets and detail. Wheat in banded rows with a solar array, a fenced track, curved orchard rows with crates of apples, a dark
   clump of big trees over a picnic table, a stream with a plank bridge and thickets, a fork in the track by a dry-stone wall,
-  and a nursery in rows. Awaiting review.
+  and a nursery in rows.
+- **Closing the gap with the reference** (second pass 2026-10-29), awaiting review:
+  - Trees are painted as masses: big dark strokes inside, the skin in mid-sized ones, small loose ones at the edge. A stroke's
+    colour follows where it sits on the crown (lighter and yellower turning up, darker inside), so neighbours differ only a
+    little and the crown reads as a few masses of light and shade. Crowns' shade goes deeper and cooler than the ground's.
+    Cypresses are one ragged flame of upright strokes, deep green rather than teal.
+  - The stream is 60% wider. Its water is mostly sky, with pale cloud-light drifting in it, and glints of sun on the ripples'
+    crests. With this much sky in it, the half-size reflection's thin grass flickered as the camera moved (a one-pixel pan
+    over the meadow's stream: 0.34, from 0.17), so grass is no longer reflected and the reflection is read through a small
+    blur: 0.12 now.
+  - The solar panels are bigger and tilted 22°, less than the camera looks down, facing along the map's axis: the glass shows
+    from every view. It reflects one sky across the array, with drifting light, long glints and the sun's sheen.
+  - More props: big apple bins, empty ones stacked, baskets, a wheelbarrow, beehives, round hay bales, barrels by the table.
 
 ### Farm: known gaps
 
-- From views 1 and 3 the solar panels are seen from behind, nearly edge-on: thin lines on posts. True to the geometry, but they
-  lose their read; a visible underframe would help.
-- The props are few and small (one table, three crates). No people or machines: those are the game's.
-- The land stops at a square edge; at the widest zoom, or turned, its corners can show.
+- The reference looks down more steeply than the game's camera (30°), so its frame shows more ground and flatter trees; ours
+  can't match its framing, only its paint.
+- The reference's big tree clump is darker and larger, one huge canopy; ours is several trees.
+- Higher-contrast crowns make the dab edges' pixel-phase shimmer stronger: a one-pixel pan over the farm changes the picture
+  by 0.18 (was 0.15), all of it foliage (see Motion and stability).
+- Broadleaf crowns still read partly as repeated rounded clusters, and the water's reflections ripple more crisply than
+  painted ones would.
+- The land stops at a square edge; at the widest zoom, or turned, its corners can show. No people or machines: those are the
+  game's.
 
 ## Later
 
@@ -27,6 +44,8 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 - **The stream is brook-sized.** A wider river or a pond would show the reflections off better.
 - **Half-res reflections smear up close.** Soft by design, but edges blur at high zoom.
 - **Cloud reflections** wait on a real cloud layer (see Weather).
+- **Grass and reeds aren't reflected** (since 2026-10-29): in the half-size reflection their thin blades flickered as the
+  camera moved. The banks' reflected green fringe went with them; bringing reeds back needs a steadier way to draw them there.
 
 ### Weather
 

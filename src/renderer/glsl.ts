@@ -230,7 +230,9 @@ void writeGBuffer(vec3 color, vec3 worldNormal, float viewDepth, float ink, floa
   // In the reflection, what's under the water isn't reflected.
   if (uMirror > 0.5 && vWorldPos.y < uMirrorY - 0.01) discard;
   vec3 vn = normalize((viewMatrix * vec4(worldNormal, 0.0)).xyz);
-  gColor = vec4(color, alpha);
+  // The reflection is stored premultiplied (over a clear, transparent black), so the water can filter it without darkening
+  // the edges of what's reflected.
+  gColor = vec4(uMirror > 0.5 ? color * alpha : color, alpha);
   gAux = vec4(vn.xy, viewDepth, ink);
 }
 `;
