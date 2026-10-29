@@ -4,6 +4,15 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 
 ## Now
 
+- **Water, step 1 of issue #1** (2026-10-29), awaiting review: we don't copy the reference's near-white stream, which read
+  as glass. The see-through water of the first pass is back (the bed, stones and depth show, the colour deepens to
+  blue-green, a little sky where it's deep), grass and reeds are reflected again, so the banks' green fringe is back in the
+  water, and the glints on the ripples' crests are kept but softer (a little over half their old weight, and no longer
+  brighter than white), so they sit on the clear water. The reflection stays premultiplied and read through its small blur,
+  which by eye doesn't soften the old look and keeps the reflected grass steadier. A one-pixel pan over the meadow's
+  stream: 0.15 (0.17 without the blur; it was 0.17 before the reference pass, 0.34 with all that sky); over the farm's
+  stream, 0.33 (was 0.51). Next, after wind (#2): water as a state the game drives (depth, flow, turbidity), then our own
+  look on it.
 - **The farm scene** (`?scene=farm`, the default; first pass 2026-10-29): the *Dear Alice* aerial (0:37) rebuilt with more
   assets and detail. Wheat in banded rows with a solar array, a fenced track, curved orchard rows with crates of apples, a dark
   clump of big trees over a picnic table, a stream with a plank bridge and thickets, a fork in the track by a dry-stone wall,
@@ -13,10 +22,8 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
     colour follows where it sits on the crown (lighter and yellower turning up, darker inside), so neighbours differ only a
     little and the crown reads as a few masses of light and shade. Crowns' shade goes deeper and cooler than the ground's.
     Cypresses are one ragged flame of upright strokes, deep green rather than teal.
-  - The stream is 60% wider. Its water is mostly sky, with pale cloud-light drifting in it, and glints of sun on the ripples'
-    crests. With this much sky in it, the half-size reflection's thin grass flickered as the camera moved (a one-pixel pan
-    over the meadow's stream: 0.34, from 0.17), so grass is no longer reflected and the reflection is read through a small
-    blur: 0.12 now.
+  - The stream is 60% wider. (Its water went mostly sky, like the reference's, then back to our own see-through water: see
+    above.)
   - The solar panels are bigger and tilted 22°, less than the camera looks down, facing along the map's axis: the glass shows
     from every view. It reflects one sky across the array, with drifting light, long glints and the sun's sheen.
   - More props: big apple bins, empty ones stacked, baskets, a wheelbarrow, beehives, round hay bales, barrels by the table.
@@ -44,8 +51,14 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 - **The stream is brook-sized.** A wider river or a pond would show the reflections off better.
 - **Half-res reflections smear up close.** Soft by design, but edges blur at high zoom.
 - **Cloud reflections** wait on a real cloud layer (see Weather).
-- **Grass and reeds aren't reflected** (since 2026-10-29): in the half-size reflection their thin blades flickered as the
-  camera moved. The banks' reflected green fringe went with them; bringing reeds back needs a steadier way to draw them there.
+- **Grass and reeds are reflected again** (2026-10-29), read through the reflection's small blur. What the water still adds
+  to a one-pixel pan over the meadow's stream (0.15 against 0.10 with it hidden) is mostly its half-size passes: the
+  reflected grass is about two fifths of it and the bed's pass about as much; the ripples and glints next to nothing. A
+  full-size, 4x multisampled reflection with no blur measured steadier still and sharper (0.13 on the meadow; 0.17 against
+  0.24 over the farm's stream at `zoom=80`): worth trying once the extra passes are profiled (see Performance). All of these
+  are `AB=2 node tools/motion.ts` on the RX 570, `scene=meadow&zoom=32&t=3` and `x=0&z=24&zoom=40&t=3` (or `zoom=80`), the
+  one-pixel pan's full-frame mean; the shares come from leaving one thing out at a time (grass from the reflection; a
+  constant bed), so they overlap rather than add up.
 
 ### Weather
 
@@ -65,7 +78,8 @@ the view, never nearer or farther, so overlapping dabs no longer swap and swatch
   alpha-to-coverage (likely its dither pattern; turning it off makes sub-pixel crawl worse). Compare sample counts and other coverage schemes at matched edge softness.
 - **Thin inked things.** Fence rails, posts, crates and panel silhouettes, and the post pass's thresholded outline. Test in
   turns and zooms before the scenes get busier.
-- **Water and reflections in motion.** Untested with the stream in frame: half-size passes, reflected canopy edges.
+- **Water and reflections in motion.** Measured on the streams (see Water): the half-size passes are most of it. Reflected
+  canopy edges and turns and zooms over the water are still to test.
 - **Haze and vignette on long pans.** Both follow the camera: haze thickens toward the top of the screen as a real aerial
   camera's would, and that is kept on purpose; report their slow change apart from crawl.
 - Measure better: several starting phases and directions, views and hours, local crops and percentiles (a mean hides sparse
