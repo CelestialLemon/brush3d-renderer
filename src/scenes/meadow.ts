@@ -56,7 +56,7 @@ function normalAt(x: number, z: number) {
 // Palette (sRGB). Greens span yellow-green to teal, as the reference's meadows do.
 const C = {
   lime: srgb(0xa6c45a), meadow: srgb(0x6aa04a), emerald: srgb(0x40885a), teal: srgb(0x3b806e),
-  moss: srgb(0x4f8040), mud: srgb(0x7a6244), bed: srgb(0x3e5a52), water: srgb(0x23657a),
+  moss: srgb(0x4f8040), mud: srgb(0x7a6244), bed: srgb(0x3e5a52), water: srgb(0x1e5862),
   soil: srgb(0x8a5634), timber: srgb(0xc58f55), ceramic: srgb(0xeee6d2), brass: srgb(0xc08a48), glass: srgb(0x1d4fa0),
   bark: srgb(0x6e4a3e), leaf: srgb(0x4e9a3a), leafLight: srgb(0x8cc44a), fruitLeaf: srgb(0x5aa03e), cypress: srgb(0x2e6e57),
   fruit: srgb(0xf06a2c), wheatRoot: srgb(0x8a9a3a), wheatTip: srgb(0xf0c45a),
@@ -82,10 +82,13 @@ function terrain(r: BrushRenderer) {
     const x = -half + i * STEP, z = -half + j * STEP;
     const y = height(x, z);
     const d = streamDistance(x, z);
-    // Meadow colour drifts between lime, meadow green, emerald and teal in broad patches.
+    // Colour follows the land's form, as a painter would: rises catch the light yellow-green, hollows sink to emerald and
+    // teal. Broad patches drift on top.
+    const curve = y - (height(x + 2.5, z) + height(x - 2.5, z) + height(x, z + 2.5) + height(x, z - 2.5)) / 4;
     const m = noise2(x * 0.07 + 11, z * 0.07 - 4) * 0.5 + 0.5, k = noise2(x * 0.19 - 7, z * 0.19 + 2) * 0.5 + 0.5;
-    c.copy(C.meadow).lerp(C.lime, smooth(0.45, 0.85, m) * 0.8).lerp(C.emerald, smooth(0.55, 0.9, 1 - m) * 0.7)
-      .lerp(C.teal, smooth(0.7, 1, k) * 0.35);
+    c.copy(C.meadow).lerp(C.lime, smooth(0.0, 0.18, curve) * 0.75 + smooth(0.6, 0.9, m) * 0.25)
+      .lerp(C.emerald, smooth(0.0, 0.2, -curve) * 0.7 + smooth(0.65, 0.95, 1 - m) * 0.3)
+      .lerp(C.teal, smooth(0.15, 0.35, -curve) * 0.4 + smooth(0.75, 1, k) * 0.2);
     // Banks: moss, then wet earth, then the stream bed.
     c.lerp(C.moss, 1 - smooth(1.6, 3.2, d)).lerp(C.mud, (1 - smooth(1.0, 1.7, d)) * 0.8).lerp(C.bed, 1 - smooth(0.6, 1.2, d));
     const angle = 0.7 + noise2(x * 0.05, z * 0.05) * 0.9;

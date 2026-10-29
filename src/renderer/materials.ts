@@ -164,12 +164,13 @@ void main() {
   vec3 n = normalize(vNormal);
   vec3 p = vWorldPos;
   vec2 bp = brushPlane(p, n);
-  float dab = paintDabs(bp, vPaint.y, vPaint.z);
-  float br = strokes(bp * vPaint.y * 0.6, vPaint.z);
+  float angle = abs(n.y) > 0.6 ? contourAngle(n, vPaint.z) : vPaint.z;
+  float dab = paintDabs(bp, vPaint.y, angle);
+  float br = paintStrokes(bp * vPaint.y * 0.6, angle);
   vec3 base = driftColor(vColor, p, vPaint.x, dab);
-  float ndl = dot(n, uSunDir);
   float vis = sunVisibility(p, n, br);
-  float light = clamp((ndl + 0.3) / 1.3, 0.0, 1.0) * mix(0.18, 1.0, vis) + dab * 0.07 + br * 0.04;
+  // Cast shadows on the ground fall to half-tone rather than deep shade: the land stays light and calm.
+  float light = sunLight(n, 0.3) * mix(abs(n.y) > 0.6 ? 0.3 : 0.18, 1.0, vis) + dab * 0.07 + br * 0.04;
   vec3 col = paintBands(base, light, 0.05, n.y * 0.5 + 0.5);
   col += uRimColor * rimLight(n, vPaint.w);
   writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
@@ -194,9 +195,8 @@ void main() {
   // Strokes follow the dab, so each pad carries a couple of brush marks.
   float br = strokes(c * 1.6 + seed, seed);
   vec3 base = driftColor(vColor, p, vPaint.x, br * 0.5);
-  float ndl = dot(n, uSunDir);
   float vis = sunVisibility(p, normalize(vNormal), br);
-  float light = clamp((ndl + 0.25) / 1.25, 0.0, 1.0) * mix(0.15, 1.0, vis) + br * 0.09;
+  float light = sunLight(n, 0.25) * mix(0.15, 1.0, vis) + br * 0.09;
   // Inner pads sit in the crown's own shade: darker towards the dab's lower side.
   light -= (1.0 - smoothstep(-1.0, 0.6, c.y)) * 0.08;
   vec3 col = paintBands(base, light, 0.06, 0.6);
@@ -212,12 +212,12 @@ void main() {
   // Grass is lit like the ground it grows from (its normal is the ground's), so a meadow reads as one painted surface.
   vec3 n = normalize(vNormal);
   vec3 p = vWorldPos;
-  float dab = paintDabs(p.xz, vPaint.y, vPaint.z);
-  float br = strokes(p.xz * vPaint.y * 0.6, vPaint.z);
+  float angle = contourAngle(n, vPaint.z);
+  float dab = paintDabs(p.xz, vPaint.y, angle);
+  float br = paintStrokes(p.xz * vPaint.y * 0.6, angle);
   vec3 base = driftColor(vColor, p, vPaint.x, dab);
-  float ndl = dot(n, uSunDir);
   float vis = sunVisibility(p, n, br);
-  float light = clamp((ndl + 0.3) / 1.3, 0.0, 1.0) * mix(0.18, 1.0, vis) + dab * 0.07 + br * 0.04;
+  float light = sunLight(n, 0.3) * mix(0.18, 1.0, vis) + dab * 0.07 + br * 0.04;
   // Tips catch a little more light than roots.
   light += (vBlade.x - 0.5) * 0.18;
   vec3 col = paintBands(base, light, 0.06, 0.8);
@@ -243,9 +243,8 @@ void main() {
   vec3 p = vWorldPos;
   float finish = vPaint.x;
   vec3 base = vColor;
-  float ndl = dot(n, uSunDir);
   float vis = sunVisibility(p, n, 0.0);
-  float light = clamp((ndl + 0.2) / 1.2, 0.0, 1.0) * mix(0.2, 1.0, vis);
+  float light = sunLight(n, 0.2) * mix(0.2, 1.0, vis);
   if (finish > 1.5) {
     // Timber: a few long grain streaks.
     float g = snoise(vec2(vUv.x * 1.5, vUv.y * 24.0)) * 0.5 + 0.5;
@@ -261,8 +260,8 @@ void main() {
     vec3 r = reflect(-v, n);
     float fres = 0.25 + 0.75 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 3.0);
     float sheen = smoothstep(0.1, 0.0, abs(fract(vUv.x * 0.8 + vUv.y * 0.9 - uTime * 0.0) - 0.55) - 0.12);
-    vec3 glass = mix(col, skyReflect(r) * uSunColor, fres * 0.7);
-    glass = mix(glass, vec3(0.75, 0.92, 1.0) * uSunColor, sheen * 0.45 * vis);
+    vec3 glass = mix(col, skyReflect(r) * sunTint(), fres * 0.7);
+    glass = mix(glass, vec3(0.75, 0.92, 1.0) * sunTint(), sheen * 0.45 * vis);
     col = mix(glass, glass * 1.6 + 0.05, grid * 0.6);
   }
   writeGBuffer(col, n, vViewDepth, 1.0, 1.0);
@@ -290,16 +289,17 @@ void main() {
   float st = strokes(q * 0.9, flowA);
   vec3 col = mix(deep, shallow, smoothstep(0.45, 1.0, across) * 0.7 + st * 0.08);
   // Sky caught in the water: long pale strokes along the flow.
-  float refl = smoothstep(0.25, 0.65, strokes(q * vec2(0.7, 0.7) + 3.0, flowA) * 0.5 + 0.5 - across * 0.25);
-  col = mix(col, uSkyColor * vec3(0.78, 0.92, 1.05), refl * 0.45);
+  float refl = smoothstep(0.45, 0.8, strokes(q * vec2(0.6, 0.6) + 3.0, flowA) * 0.5 + 0.5 - across * 0.15);
+  vec3 skyCol = oklabToLin(lchShift(linToOklab(uSkyColor), 0.0, 0.8, 0.0)) * 0.75;
+  col = mix(col, skyCol, refl * 0.5);
   float vis = sunVisibility(p, n, st);
-  col *= mix(0.7, 1.0, vis) * mix(uSkyColor, uSunColor, 0.65);
+  col *= mix(0.7, 1.0, vis) * mix(skyTint(), sunTint(), 0.6);
   // Foam: broken white where the water meets the bank.
-  float foam = smoothstep(0.8, 0.97, across + snoise(q * vec2(3.0, 1.2)) * 0.12);
-  col = mix(col, vec3(0.9, 0.96, 1.0) * uSunColor, foam * 0.75);
+  float foam = smoothstep(0.86, 0.98, across + snoise(q * vec2(3.0, 1.2)) * 0.1);
+  col = mix(col, vec3(0.88, 0.95, 0.98) * sunTint(), foam * 0.6);
   // Sparks of sun.
   float g = snoise(p.xz * 5.0 + vec2(uTime * 0.7, -uTime * 0.5)) * snoise(p.xz * 3.7 - uTime * 0.4);
-  col += uSunColor * smoothstep(0.5, 0.7, g) * vis * 0.9;
+  col += sunTint() * smoothstep(0.55, 0.72, g) * vis * 0.8;
   writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
 }
 `;

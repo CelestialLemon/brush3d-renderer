@@ -45,32 +45,45 @@ float strokes(vec2 p, float angle) {
   vec2 q = vec2(c * p.x + s * p.y, -s * p.x + c * p.y);
   return snoise(q * vec2(0.55, 2.6)) * 0.6 + snoise(q * vec2(1.3, 5.5) + 31.7) * 0.4;
 }
-// Brush dabs: the plane tiled with overlapping, elongated dabs (Voronoi cells in a stretched, turned frame), each flat in
-// value, the way a painter lays strokes side by side. Returns two random values in [-1, 1] for the dab under p, and how far
-// p is inside it (0 on its border).
-vec3 dabs(vec2 p, float angle, float stretch) {
+// Brush dabs: the plane covered in overlapping, elongated dabs (cells in a stretched, turned frame), each with its own
+// value, the way a painter lays strokes side by side. The cells blend softly into their neighbours (a smooth Voronoi), so a
+// dab has a soft, rounded edge rather than a cut one. Returns the dab value in about [-1, 1].
+float dabs(vec2 p, float angle, float stretch) {
   float c = cos(angle), s = sin(angle);
   vec2 q = vec2(c * p.x + s * p.y, -s * p.x + c * p.y);
   q.x /= stretch;
   vec2 i = floor(q), f = fract(q);
-  float best = 1e9, second = 1e9;
-  vec2 id = vec2(0.0);
+  float sum = 0.0, wsum = 0.0;
   for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
     vec2 g = vec2(float(x), float(y));
     vec2 o = hash22(i + g) * 0.9 + 0.05;
     vec2 r = g + o - f;
     r.x *= stretch * 0.5;
-    float d = dot(r, r);
-    if (d < best) { second = best; best = d; id = i + g; } else if (d < second) second = d;
+    float w = exp(-9.0 * dot(r, r));
+    sum += w * (hash12(i + g + 4.1) * 2.0 - 1.0);
+    wsum += w;
   }
-  vec2 h = hash22(id * 1.37 + 4.1) * 2.0 - 1.0;
-  return vec3(h, sqrt(second) - sqrt(best));
+  return sum / max(wsum, 1e-5);
 }
 // Two layers of dabs at different sizes and angles, so no grid shows: a value in about [-1, 1].
+float dabLayer(vec2 p, float scale, float angle) {
+  float a = dabs(p * scale, angle, 2.6);
+  float b = dabs(p * scale * 1.9 + 17.3, angle + 0.4, 2.2);
+  // Bristle streaks along the stroke.
+  float hair = snoise(vec2(dot(p, vec2(cos(angle), sin(angle))) * scale * 1.2, dot(p, vec2(-sin(angle), cos(angle))) * scale * 9.0));
+  return clamp(a * 1.25, -1.0, 1.0) * 0.6 + b * 0.3 + hair * 0.12;
+}
+// Dabs laid along a direction that may change across a surface. Turning the whole pattern by a varying angle would swirl it
+// (far from the origin a small turn is a big shift), so the dabs are laid at fixed 30° steps and the two nearest blended.
 float paintDabs(vec2 p, float scale, float angle) {
-  vec3 a = dabs(p * scale, angle, 2.6);
-  vec3 b = dabs(p * scale * 1.9 + 17.3, angle + 0.5, 2.2);
-  return a.x * 0.65 + b.x * 0.35;
+  const float STEP = 0.5235988;
+  float k = angle / STEP, k0 = floor(k), w = smoothstep(0.3, 0.7, k - k0);
+  return mix(dabLayer(p, scale, k0 * STEP), dabLayer(p, scale, (k0 + 1.0) * STEP), w);
+}
+float paintStrokes(vec2 p, float angle) {
+  const float STEP = 0.5235988;
+  float k = angle / STEP, k0 = floor(k), w = smoothstep(0.3, 0.7, k - k0);
+  return mix(strokes(p, k0 * STEP), strokes(p, (k0 + 1.0) * STEP), w);
 }
 `;
 
@@ -101,11 +114,12 @@ vec3 lchShift(vec3 lab, float dL, float cMul, float turn) {
   vec2 ab = vec2(c * lab.y - s * lab.z, s * lab.y + c * lab.z) * cMul;
   return vec3(lab.x + dL, ab);
 }
-// Pulls a colour's hue part of the way towards a target hue (radians in OKLab's a-b plane), the short way round.
+// Pulls a colour's hue part of the way towards a target hue (radians in OKLab's a-b plane), the short way round, and never
+// more than about 40°: a painter cools a shade, he doesn't swap its colour (yellow wheat in shade stays a warm olive).
 vec3 hueToward(vec3 lab, float target, float amount) {
   float h = atan(lab.z, lab.y);
   float d = mod(target - h + 3.14159265, 6.2831853) - 3.14159265;
-  float c = length(lab.yz), nh = h + d * amount;
+  float c = length(lab.yz), nh = h + clamp(d * amount, -0.7, 0.7);
   return vec3(lab.x, c * cos(nh), c * sin(nh));
 }
 `;
@@ -154,20 +168,40 @@ float sunVisibility(vec3 worldPos, vec3 n, float brush) {
  * with the brush already in it. Three bands (shade, half-tone, lit) with soft, brush-broken edges: `soft` is how wide an edge is.
  */
 export const PAINT = /* glsl */ `
+// The look's light colours as tints: their hue, at a set strength, with the brightness left to the exposure.
+vec3 tintOf(vec3 c, float amount) { return mix(vec3(1.0), c / max(max(c.r, c.g), max(c.b, 1e-3)), amount); }
+vec3 sunTint() { return tintOf(uSunColor, 0.4); }
+vec3 skyTint() { return tintOf(uSkyColor, 0.45); }
+// How lit a surface is by the sun, 0..1, measured against flat ground: flat ground is in full sun whatever the hour (a
+// painter keeps an evening meadow warm and lit), slopes and sides turned away from the sun fall into half-tone and shade.
+float sunLight(vec3 n, float wrap) {
+  float rel = dot(n, uSunDir) / max(uSunDir.y, 0.3);
+  return clamp((rel + wrap) / (1.0 + wrap), 0.0, 1.0);
+}
+// The direction brush strokes run on the ground: along the contours where it slopes, a set angle where it's flat.
+float contourAngle(vec3 n, float fallback) {
+  float m = length(n.xz);
+  float a = atan(n.z, n.x) + 1.5707963;
+  vec2 v = vec2(cos(2.0 * a), sin(2.0 * a)) * smoothstep(0.02, 0.12, m) + vec2(cos(2.0 * fallback), sin(2.0 * fallback)) * 0.25;
+  return mod(atan(v.y, v.x) * 0.5, 3.14159265);
+}
+
 vec3 paintBands(vec3 base, float light, float soft, float upness) {
   vec3 lab = linToOklab(base);
-  // Shade: darker, a touch more saturated, leaning to the look's shade hue (teal at noon, violet at dusk).
-  vec3 shade = hueToward(lchShift(lab, -uShadeDepth * lab.x, 1.12, 0.0), uShadeHue, uShadeLean);
-  // Half-tone: between, leaning a little less.
-  vec3 half_ = hueToward(lchShift(lab, -uShadeDepth * 0.45 * lab.x, 1.08, 0.0), uShadeHue, uShadeLean * 0.45);
-  // Lit: the colour itself, warmed.
-  vec3 lit = hueToward(lchShift(lab, 0.02, 1.06, 0.0), uLitHue, uLitLean);
+  // Shade: darker, a touch richer, with some of the look's shade colour mixed in (teal at noon, violet at dusk), the way a
+  // painter cools a shadow with blue rather than black. Mixing, not turning the hue: yellow wheat in shade goes olive, not red.
+  vec3 shadeMix = vec3(0.0, cos(uShadeHue), sin(uShadeHue)) * uShadeLean * 0.09;
+  vec3 shade = lchShift(lab, -uShadeDepth * lab.x, 1.1, 0.0) + shadeMix;
+  // Half-tone: between, with less of it.
+  vec3 half_ = lchShift(lab, -uShadeDepth * 0.45 * lab.x, 1.06, 0.0) + shadeMix * 0.45;
+  // Lit: the colour itself, warmed by the hour.
+  vec3 lit = lchShift(lab, 0.02, 1.05, 0.0) + vec3(0.0, cos(uLitHue), sin(uLitHue)) * uLitLean * 0.09;
   float t1 = smoothstep(0.30 - soft, 0.30 + soft, light);
   float t2 = smoothstep(0.62 - soft, 0.62 + soft, light);
   vec3 col = oklabToLin(mix(mix(shade, half_, t1), lit, t2));
   // The sky fills the shade from above; the sun tints the lit band.
-  vec3 sky = uSkyColor * (0.55 + 0.45 * upness);
-  return mix(col * sky, col * uSunColor, t2 * 0.85 + t1 * 0.15);
+  vec3 sky = skyTint() * (0.8 + 0.2 * upness);
+  return mix(col * sky, col * sunTint(), t2 * 0.85 + t1 * 0.15);
 }
 `;
 
