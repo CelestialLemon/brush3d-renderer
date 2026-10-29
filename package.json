@@ -1,0 +1,24 @@
+{
+  "name": "brush3d-renderer",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "A painterly 3D renderer for three.js games: painted worlds, inked things. An experiment.",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "vite --port 5190",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "shot": "node tools/shot.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/three": "^0.180.0",
+    "puppeteer-core": "^25.16.0",
+    "three": "^0.180.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}

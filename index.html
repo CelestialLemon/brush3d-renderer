@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>brush3d-renderer</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #1b2030; font: 13px/1.4 system-ui, sans-serif; }
+    canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
+    #hud { position: fixed; left: 12px; bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    #hud button { background: rgba(255, 252, 240, 0.85); border: 0; border-radius: 6px; padding: 5px 9px; cursor: pointer; color: #2a2a30; }
+    #hud button.on { background: #ffd98a; }
+    #hud span { color: #fffaf0; text-shadow: 0 1px 2px #0008; margin-left: 6px; }
+    body.still #hud { display: none; }
+  </style>
+</head>
+<body>
+  <canvas id="view"></canvas>
+  <div id="hud"></div>
+  <script type="module" src="/src/app/main.ts"></script>
+</body>
+</html>
