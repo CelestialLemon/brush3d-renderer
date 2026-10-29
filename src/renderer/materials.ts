@@ -428,30 +428,29 @@ void main() {
   vec3 under = bed * through + scatter * (1.0 - through);
 
   // The reflection, and the sky where nothing is reflected: looking down at 30 degrees, the water mirrors the sky 30 degrees up.
-  // Taken through a small blur: the reflection is drawn at half size, and with this much sky in the water its thin bright
-  // things (grass blades above all) would flicker as the camera moves.
+  // Taken through a small blur: the reflection is drawn at half size, and its thin bright things (grass blades above all)
+  // would flicker as the camera moves.
   vec2 rt = 3.0 / uScreen;
   vec2 ruv = uv + nudge * 1.6;
   vec4 refl = (texture(uReflect, ruv) * 2.0 + texture(uReflect, ruv + vec2(rt.x, 0.0)) + texture(uReflect, ruv - vec2(rt.x, 0.0))
     + texture(uReflect, ruv + vec2(0.0, rt.y)) + texture(uReflect, ruv - vec2(0.0, rt.y))) / 6.0;
-  // A painter keeps open water light: mostly the sky low and pale, with soft drifts where clouds would be reflected.
-  vec3 sky = mix(uSkyTop, uSkyBottom, 0.6);
-  float drift = smoothstep(0.1, 0.7, fbm2(p.xz * vec2(0.09, 0.05) + 3.0));
-  sky = mix(sky, mix(uSkyBottom, vec3(1.0), 0.6), drift * 0.75);
+  // The upper sky, and on the ripples' crests, which tilt towards the horizon, the glow low in it: a mean of the two would be grey.
+  vec3 sky = mix(uSkyTop, uSkyBottom, 0.25);
   vec3 mirrored = sky * (1.0 - refl.a) + refl.rgb;
+  // Mostly see-through: the bed shows in the shallows, and the reflection grows only where the water is deep and dark.
   float depthy = 1.0 - (through.g * 0.5 + through.b * 0.5);
-  float fres = clamp(0.5 + depthy * 0.35 + ripple * 0.1, 0.0, 0.9);
+  float fres = clamp(0.08 + depthy * 0.22 + ripple * 0.1, 0.0, 0.5);
   vec3 col = mix(under, mirrored, fres);
-  col = mix(col, mix(uSkyBottom, vec3(1.0), 0.4), smoothstep(0.45, 0.9, ripple) * 0.35 * depthy);
+  col = mix(col, mix(uSkyBottom, vec3(1.0), 0.25), smoothstep(0.5, 0.9, ripple) * 0.25 * depthy);
   // Sparkle: glints of sun on the ripples' crests, little dashes lying across the flow, carried along by it, each winking
-  // in and out on its own beat.
+  // in and out on its own beat. Sparse and soft, so they sit on the clear water rather than whiting it out.
   vec2 fq = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x))) * vec2(3.5, 1.6);
   vec2 cell = floor(fq), f = fract(fq) - 0.5 - (hash22(cell) - 0.5) * 0.5;
   float h = hash12(cell + 7.3);
   float wink = max(0.0, sin(uTime * (2.0 + h * 3.0) + h * 40.0));
   float crest = smoothstep(-0.15, 0.35, ripple);
   float spark = (1.0 - smoothstep(0.5, 1.0, length(f / vec2(0.15, 0.3)))) * step(0.5, h) * wink * crest;
-  col = mix(col, vec3(1.0) * mix(vec3(1.0), sunTint(), 0.5) * 1.3, spark * vis * (0.4 + depthy * 0.6));
+  col = mix(col, mix(vec3(1.0), sunTint(), 0.5), spark * vis * (0.2 + depthy * 0.4));
   writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
 }
 `;
