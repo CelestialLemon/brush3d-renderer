@@ -1,28 +1,32 @@
 import { PRESETS, lookAt } from '../renderer/look';
 import { BrushRenderer } from '../renderer/renderer';
 import { buildMeadow } from '../scenes/meadow';
+import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
 //   view=0..3  zoom=16..96 (screen px per metre)  hour=0..24  x, z (camera target)  t (seconds: freeze the clock there)
-//   lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
+//   scene=farm|meadow  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
 
 const params = new URLSearchParams(location.search);
 const num = (k: string, d: number) => (params.has(k) ? Number(params.get(k)) : d);
 const canvas = document.getElementById('view') as HTMLCanvasElement;
-const renderer = new BrushRenderer(canvas, { shadowRadius: 34, pixelRatio: params.has('dpr') ? num('dpr', 1) : undefined });
-const meadow = buildMeadow(renderer);
-renderer.setWaterLevel(meadow.waterLevel);
+const sceneName = params.get('scene') ?? 'farm';
+const farm = sceneName === 'farm';
+const renderer = new BrushRenderer(canvas, {
+  shadowRadius: farm ? 48 : 34, shadowMapSize: farm ? 4096 : 2048, pixelRatio: params.has('dpr') ? num('dpr', 1) : undefined,
+});
+const scene = farm ? buildFarm(renderer) : buildMeadow(renderer);
+renderer.setWaterLevel(scene.waterLevel);
 const view = renderer.view;
 view.view = num('view', 0); view.zoom = num('zoom', 40);
-view.target.set(num('x', -1), 0, num('z', 0));
+view.target.set(num('x', farm ? 0 : -1), 0, num('z', 0));
 view.update(0, true);
 renderer.settings.lines = num('lines', 1) !== 0;
 renderer.settings.shadows = num('shadows', 1) !== 0;
 let hour = num('hour', 12);
 const frozen = params.has('t') ? num('t', 0) : null;
 if (params.has('still')) document.body.classList.add('still');
-void meadow;
 
 function resize() { renderer.resize(canvas.clientWidth, canvas.clientHeight); }
 addEventListener('resize', resize);

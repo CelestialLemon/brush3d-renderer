@@ -18,7 +18,7 @@ npm run typecheck
 npm run shot -- out "hour=12" "hour=17.5&view=2"     # headless frames as PNGs (needs the dev server)
 ```
 
-The demo's URL takes `view` (0-3), `zoom` (screen px per metre, 16-96), `hour`, `x`/`z` (the camera's target), `t` (freeze
+The demo's URL takes `scene` (`farm`, the default, or `meadow`), `view` (0-3), `zoom` (screen px per metre, 16-96), `hour`, `x`/`z` (the camera's target), `t` (freeze
 the clock), `lines=0`, `shadows=0` and `still` (hide the buttons).
 
 ## How it draws
@@ -35,7 +35,8 @@ the clock), `lines=0`, `shadows=0` and `still` (hide the buttons).
 ## Layout
 
 - `src/renderer/`: the renderer (`renderer.ts`), its materials and GLSL, the camera, the time-of-day looks.
-- `src/scenes/`: demo scenes, built in TypeScript (`meadow.ts`, the first slice).
+- `src/scenes/`: demo scenes, built in TypeScript: `farm.ts` (the *Dear Alice* aerial, rebuilt), `meadow.ts` (the first slice),
+  and `kit.ts`, the pieces both are made of (trees, stones, grass, reeds, lines on the map, water).
 - `src/app/`: the demo viewer.
 - `tools/shot.ts`: headless capture.
 - `reference/`: how to pull frames from the reference film (kept out of git: they're copyrighted).
