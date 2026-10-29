@@ -142,17 +142,22 @@ function field(r: BrushRenderer) {
   board(cx, z0, w + 0.12, 0.12); board(cx, z1, w + 0.12, 0.12); board(x0, cz, 0.12, d); board(x1, cz, 0.12, d);
   r.add(ink.build(), 'ink');
 
-  // Wheat: nine tiles of stalks with heavy golden ears.
+  // Wheat: a painted golden mass filling the bed, and stalks with heavy ears standing out of it and round its edge. The mass
+  // carries the field's colour; the stalks only break its top and sides, so little of the field is thin, crawling geometry.
+  const mass = new MeshBuilder('paint');
+  mass.addGeometry(new THREE.BoxGeometry(w - 0.5, 0.36, d - 0.5), new THREE.Matrix4().makeTranslation(cx, y0 + 0.16 + 0.3, cz),
+    C.wheatTip.clone().lerp(C.wheatRoot, 0.35), [1, 3.0, 0.4, 0]);
+  r.add(mass.build(), 'paint');
   const g = new MeshBuilder('grass');
   const rand = rng(5);
   const up = new THREE.Vector3(0, 1, 0);
   const soilTop = y0 + 0.16;
   for (let tx = 0; tx < 3; tx++) for (let tz = 0; tz < 3; tz++) {
-    for (let k = 0; k < 90; k++) {
+    for (let k = 0; k < 60; k++) {
       const x = x0 + 0.12 + tx + rand() * 0.86, z = z0 + 0.12 + tz + rand() * 0.86;
       const h = 0.55 + rand() * 0.18, lean = (rand() - 0.5) * 0.1, seed = rand();
       const dir = rand() * Math.PI;
-      const ox = Math.cos(dir) * 0.018, oz = Math.sin(dir) * 0.018;
+      const ox = Math.cos(dir) * 0.026, oz = Math.sin(dir) * 0.026;
       const paint: Paint = [0.5, 1.4, 0.4, 0.8];
       const tip = new THREE.Vector3(x + lean, soilTop + h, z + lean * 0.5);
       const root = C.wheatRoot.clone(), gold = C.wheatTip.clone().lerp(C.wheatRoot, rand() * rand() * 0.6).offsetHSL((rand() - 0.5) * 0.03, 0, (rand() - 0.5) * 0.06);
@@ -185,11 +190,11 @@ function trees(r: BrushRenderer) {
     const y0 = height(t.x, t.z) - 0.05;
     const base = new THREE.Vector3(t.x, y0, t.z);
     const cypress = t.kind === 'cypress';
-    const trunkH = cypress ? 1.2 : 1.9, crownY = cypress ? 3.1 : 3.0, crownR = cypress ? 1.25 : 1.85;
-    const crown = base.clone().add(new THREE.Vector3(0, crownY, 0));
+    const trunkH = cypress ? 1.2 : 1.45;
     const trunk = new THREE.CylinderGeometry(cypress ? 0.1 : 0.12, cypress ? 0.16 : 0.2, trunkH + 0.4, 9, 1);
     wood.addGeometry(trunk, new THREE.Matrix4().makeTranslation(t.x, y0 + (trunkH + 0.4) / 2, t.z), C.bark, [0.4, 2.5, 1.57, 0]);
-    // Branch masses: unequal, off-centre, a big one high on one side.
+    // Branch masses. A broadleaf forks into a few boughs leaning out at different angles and lengths; each carries a mass
+    // at its end (and sometimes a smaller one partway), so the crown is organised by its limbs, with gaps between them.
     const masses: { c: THREE.Vector3; r: number; tone: number }[] = [];
     if (cypress) {
       // A flame: widest a third of the way up, drawn to a point.
@@ -199,26 +204,32 @@ function trees(r: BrushRenderer) {
         masses.push({ c: base.clone().add(new THREE.Vector3((rand() - 0.5) * 0.25, y, (rand() - 0.5) * 0.25)), r: rr, tone: rand() });
       }
     } else {
-      const lean = rand() * Math.PI * 2;
-      masses.push({ c: crown.clone().add(new THREE.Vector3(Math.cos(lean) * 0.35, 0.7, Math.sin(lean) * 0.35)), r: 1.15, tone: rand() });
-      const n = 5 + Math.floor(rand() * 2);
-      for (let i = 0; i < n; i++) {
-        const a = lean + Math.PI * 0.4 + (i / n) * Math.PI * 2 + (rand() - 0.5) * 0.8;
-        const out = crownR * (0.5 + rand() * 0.3), rr = 0.55 + rand() * 0.6;
-        const off = new THREE.Vector3(Math.cos(a) * out, (rand() - 0.65) * 0.9, Math.sin(a) * out);
-        masses.push({ c: crown.clone().add(off), r: rr, tone: rand() });
-      }
-      // Boughs from the trunk top to the lower masses, so the gaps show wood.
-      for (const k of masses.slice(1)) {
-        if (k.c.y > crown.y + 0.2) continue;
-        const from = base.clone().add(new THREE.Vector3(0, trunkH * 0.9, 0)), to = k.c.clone().lerp(crown, 0.3);
-        const len = from.distanceTo(to);
-        const g = new THREE.CylinderGeometry(0.045, 0.085, len, 6, 1);
+      const fork = base.clone().add(new THREE.Vector3(0, trunkH * 0.85, 0));
+      const limb = (from: THREE.Vector3, to: THREE.Vector3, r0: number, r1: number) => {
+        const g = new THREE.CylinderGeometry(r1, r0, from.distanceTo(to), 6, 1);
         const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
         wood.addGeometry(g, new THREE.Matrix4().compose(from.clone().lerp(to, 0.5), q, new THREE.Vector3(1, 1, 1)), C.bark, [0.4, 2.5, 1.57, 0]);
+      };
+      const nb = 3 + (rand() < 0.6 ? 1 : 0), a0 = rand() * Math.PI * 2;
+      for (let i = 0; i < nb; i++) {
+        const a = a0 + (i / nb) * Math.PI * 2 + (rand() - 0.5) * 1.0;
+        const tilt = 0.6 + rand() * 0.45, len = 1.2 + rand() * 1.0;
+        const dir = new THREE.Vector3(Math.sin(tilt) * Math.cos(a), Math.cos(tilt), Math.sin(tilt) * Math.sin(a));
+        const end = fork.clone().addScaledVector(dir, len);
+        limb(fork, end, 0.1, 0.05);
+        masses.push({ c: end.clone().addScaledVector(dir, 0.25).add(new THREE.Vector3(0, 0.3, 0)), r: 0.75 + rand() * 0.45, tone: rand() });
+        if (rand() < 0.55) {
+          const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(rand() < 0.5 ? 0.5 : -0.5);
+          masses.push({ c: fork.clone().addScaledVector(dir, len * 0.5).add(side).add(new THREE.Vector3(0, 0.15, 0)), r: 0.45 + rand() * 0.2, tone: rand() });
+        }
       }
+      // A leader up the middle, its mass a little smaller, so the top isn't a dome.
+      const top = fork.clone().add(new THREE.Vector3((rand() - 0.5) * 0.4, 1.5 + rand() * 0.4, (rand() - 0.5) * 0.4));
+      limb(fork, top, 0.09, 0.04);
+      masses.push({ c: top.clone().add(new THREE.Vector3(0, 0.35, 0)), r: 0.7 + rand() * 0.25, tone: rand() });
     }
-    const crownCenter = cypress ? base.clone().add(new THREE.Vector3(0, 3.4, 0)) : crown.clone().add(new THREE.Vector3(0, 0.3, 0));
+    const crownCenter = cypress ? base.clone().add(new THREE.Vector3(0, 3.4, 0))
+      : masses.reduce((s, k) => s.addScaledVector(k.c, 1 / masses.length), new THREE.Vector3());
     const stretch = cypress ? new THREE.Vector3(1, 0.3, 1) : new THREE.Vector3(1, 1.2, 1);
     const leafColor = cypress ? C.cypress : t.kind === 'fruit' ? C.fruitLeaf : C.leaf;
     for (const k of masses) {
@@ -227,16 +238,17 @@ function trees(r: BrushRenderer) {
       const count = Math.round((cypress ? 150 : 115) * k.r * k.r);
       for (let i = 0; i < count; i++) {
         const u = rand() * 2 - 1, phi = rand() * Math.PI * 2, s2 = Math.sqrt(1 - u * u);
-        const dir = new THREE.Vector3(s2 * Math.cos(phi), u, s2 * Math.sin(phi));
+        // A mass is a cloud with a flattened underside: the shelf of shade a painter puts under each one.
+        const dir = new THREE.Vector3(s2 * Math.cos(phi) * 1.12, u < 0 && !cypress ? u * 0.55 : u, s2 * Math.sin(phi) * 1.12);
         // Most strokes on the mass's skin; some loose ones just outside it break the silhouette.
         const loose = rand() < 0.14;
         const depth = loose ? 1.02 + rand() * 0.14 : 0.6 + rand() * 0.4;
         const p = k.c.clone().addScaledVector(dir, k.r * depth);
         const toCrown = p.clone().sub(crownCenter).multiply(stretch).normalize();
-        const nrm = toCrown.multiplyScalar(cypress ? 0.6 : 0.45).addScaledVector(dir, cypress ? 0.4 : 0.55).normalize();
+        const nrm = toCrown.multiplyScalar(cypress ? 0.6 : 0.4).addScaledVector(dir.clone().normalize(), cypress ? 0.4 : 0.6).normalize();
         let col = massColor.clone().lerp(cypress ? C.teal : C.leafLight, Math.max(0, nrm.y) * 0.3 * rand());
         // Strokes deeper in the mass sit in its shade.
-        col.multiplyScalar(0.72 + 0.28 * Math.min(1, (depth - 0.6) / 0.4));
+        col.multiplyScalar((0.72 + 0.28 * Math.min(1, (depth - 0.6) / 0.4)) * (u < -0.25 && !cypress ? 0.8 : 1));
         col.offsetHSL((rand() - 0.5) * 0.025, (rand() - 0.5) * 0.08, (rand() - 0.5) * 0.04);
         const size = cypress ? 0.26 + rand() * 0.2 : loose ? 0.16 + rand() * 0.1 : 0.28 + rand() * 0.22;
         const aspect = cypress ? 0.38 + rand() * 0.15 : 0.45 + rand() * 0.35;

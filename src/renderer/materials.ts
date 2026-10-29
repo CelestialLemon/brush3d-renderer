@@ -178,9 +178,9 @@ void main() {
   float light = sunLight(n, 0.3) * mix(abs(n.y) > 0.6 ? 0.3 : 0.18, 1.0, vis) + dab * 0.07 + br * 0.04 * detail;
   // A fine, faint layer of strokes everywhere, so close up even the quiet lawn is paint, not airbrush. It fades out (its
   // contrast, not its place) as the camera pulls back and the strokes get too small to read.
-  vec2 fp = bp * vPaint.y * 3.5;
-  float fine = paintStrokes(fp, angle) * (1.0 - smoothstep(0.08, 0.3, length(fwidth(fp))));
-  light += fine * 0.035;
+  vec2 fp = bp * vPaint.y * 1.3;
+  float fine = paintStrokes(fp, angle) * (1.0 - smoothstep(0.12, 0.4, length(fwidth(fp))));
+  light += fine * 0.04;
   vec3 col = paintBands(base, light, 0.05, n.y * 0.5 + 0.5);
   col += uRimColor * rimLight(n, vPaint.w);
   writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
@@ -219,7 +219,8 @@ void main() {
   float vis = sunVisibility(p, nCanopy, br);
   // In the crown's own shadow the lumps still read: the shadow lowers the light rather than flattening it.
   float lit = sunLight(n, 0.35);
-  float light = lit * mix(0.32, 1.0, vis) + br * 0.08;
+  // Out of the sun, a mass is still lit by the sky from above: tops lighter than undersides, so the shade keeps its form.
+  float light = lit * mix(0.32, 1.0, vis) + br * 0.08 + nCanopy.y * 0.12 * (1.0 - vis * lit);
   // A dab is a touch darker at its lower edge, where it tucks under the next.
   light -= (1.0 - smoothstep(-1.0, 0.6, c.y)) * 0.06;
   vec3 col = paintBands(base, light, 0.07, nCanopy.y * 0.5 + 0.5);
