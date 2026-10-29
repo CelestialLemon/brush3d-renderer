@@ -207,13 +207,13 @@ export function addTuft(g: MeshBuilder, ground: Ground, x: number, z: number, ta
   for (let k = 0; k < blades; k++) {
     const a = rand() * Math.PI * 2, h = tall * (0.6 + rand() * 0.6), w = 0.035 + rand() * 0.02;
     const lean = 0.25 + rand() * 0.45, seed = rand();
-    const dx = Math.cos(a), dz = Math.sin(a), px = -dz * w, pz = dx * w;
+    const dx = Math.cos(a), dz = Math.sin(a), px = -dz * w, pz = dx * w, across = Math.atan2(dx, -dz);
     const bx = x + dx * 0.04, bz = z + dz * 0.04;
-    const v0 = g.vertex({ x: bx - px, y: y - 0.02, z: bz - pz }, n, root, paint, [0, 0], [0, seed]);
-    const v1 = g.vertex({ x: bx + px, y: y - 0.02, z: bz + pz }, n, root, paint, [0, 0], [0, seed]);
+    const v0 = g.vertex({ x: bx - px, y: y - 0.02, z: bz - pz }, n, root, paint, [0, 0], [0, seed, -w, across]);
+    const v1 = g.vertex({ x: bx + px, y: y - 0.02, z: bz + pz }, n, root, paint, [0, 0], [0, seed, w, across]);
     const mx = bx + dx * lean * h * 0.4, mz = bz + dz * lean * h * 0.4, my = y + h * 0.55;
-    const v2 = g.vertex({ x: mx + px * 0.7, y: my, z: mz + pz * 0.7 }, n, mid, paint, [0, 0], [0.55, seed]);
-    const v3 = g.vertex({ x: mx - px * 0.7, y: my, z: mz - pz * 0.7 }, n, mid, paint, [0, 0], [0.55, seed]);
+    const v2 = g.vertex({ x: mx + px * 0.7, y: my, z: mz + pz * 0.7 }, n, mid, paint, [0, 0], [0.55, seed, w * 0.7, across]);
+    const v3 = g.vertex({ x: mx - px * 0.7, y: my, z: mz - pz * 0.7 }, n, mid, paint, [0, 0], [0.55, seed, -w * 0.7, across]);
     const v4 = g.vertex({ x: bx + dx * lean * h, y: y + h, z: bz + dz * lean * h }, n, tip, paint, [0, 0], [1, seed]);
     g.quad(v0, v1, v2, v3);
     g.tri(v3, v2, v4);
@@ -229,8 +229,8 @@ export function addReeds(g: MeshBuilder, ground: Ground, cx: number, cz: number,
     const nrm = ground.normal(x, z), a = rand() * Math.PI, w = 0.018 + rand() * 0.012, h = tall * (0.6 + rand() * 0.5);
     const px = Math.cos(a) * w, pz = Math.sin(a) * w, lean = (rand() - 0.5) * 0.25, seed = rand();
     const root = C.reed.clone().lerp(C.teal, 0.4).multiplyScalar(0.75), tip = C.reed.clone().lerp(C.lime, 0.25 * rand());
-    const v0 = g.vertex({ x: x - px, y, z: z - pz }, nrm, root, paint, [0, 0], [0, seed]);
-    const v1 = g.vertex({ x: x + px, y, z: z + pz }, nrm, root, paint, [0, 0], [0, seed]);
+    const v0 = g.vertex({ x: x - px, y, z: z - pz }, nrm, root, paint, [0, 0], [0, seed, -w, a]);
+    const v1 = g.vertex({ x: x + px, y, z: z + pz }, nrm, root, paint, [0, 0], [0, seed, w, a]);
     const v2 = g.vertex({ x: x + lean * h, y: y + h, z: z + lean * h * 0.5 }, nrm, tip, paint, [0, 0], [1, seed]);
     g.tri(v0, v1, v2);
   }

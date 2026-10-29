@@ -15,7 +15,7 @@ export class MeshBuilder {
 
   constructor(readonly kind: MaterialKind) {
     this.extraName = kind === 'foliage' ? 'aCard' : kind === 'grass' ? 'aBlade' : null;
-    this.extraSize = kind === 'foliage' ? 4 : kind === 'grass' ? 2 : 0;
+    this.extraSize = kind === 'foliage' || kind === 'grass' ? 4 : 0;
   }
 
   get vertexCount() { return this.pos.length / 3; }

@@ -166,14 +166,14 @@ function field(r: BrushRenderer) {
       const tip = new THREE.Vector3(x + lean, soilTop + h, z + lean * 0.5);
       const root = C.wheatRoot.clone(), gold = C.wheatTip.clone().lerp(C.wheatRoot, rand() * rand() * 0.6).offsetHSL((rand() - 0.5) * 0.03, 0, (rand() - 0.5) * 0.06);
       // Stalk.
-      const a = g.vertex({ x: x - ox, y: soilTop, z: z - oz }, up, root, paint, [0, 0], [0, seed]);
-      const b = g.vertex({ x: x + ox, y: soilTop, z: z + oz }, up, root, paint, [0, 0], [0, seed]);
-      const c2 = g.vertex({ x: tip.x + ox * 0.6, y: tip.y - 0.16, z: tip.z + oz * 0.6 }, up, root.clone().lerp(gold, 0.7), paint, [0, 0], [0.8, seed]);
-      const d2 = g.vertex({ x: tip.x - ox * 0.6, y: tip.y - 0.16, z: tip.z - oz * 0.6 }, up, root.clone().lerp(gold, 0.7), paint, [0, 0], [0.8, seed]);
+      const a = g.vertex({ x: x - ox, y: soilTop, z: z - oz }, up, root, paint, [0, 0], [0, seed, -0.026, dir]);
+      const b = g.vertex({ x: x + ox, y: soilTop, z: z + oz }, up, root, paint, [0, 0], [0, seed, 0.026, dir]);
+      const c2 = g.vertex({ x: tip.x + ox * 0.6, y: tip.y - 0.16, z: tip.z + oz * 0.6 }, up, root.clone().lerp(gold, 0.7), paint, [0, 0], [0.8, seed, 0.026 * 0.6, dir]);
+      const d2 = g.vertex({ x: tip.x - ox * 0.6, y: tip.y - 0.16, z: tip.z - oz * 0.6 }, up, root.clone().lerp(gold, 0.7), paint, [0, 0], [0.8, seed, -0.026 * 0.6, dir]);
       g.quad(a, b, c2, d2);
       // Ear: a fat diamond.
-      const e1 = g.vertex({ x: tip.x - ox * 2.2, y: tip.y - 0.06, z: tip.z - oz * 2.2 }, up, gold, paint, [0, 0], [0.9, seed]);
-      const e2 = g.vertex({ x: tip.x + ox * 2.2, y: tip.y - 0.06, z: tip.z + oz * 2.2 }, up, gold, paint, [0, 0], [0.9, seed]);
+      const e1 = g.vertex({ x: tip.x - ox * 2.2, y: tip.y - 0.06, z: tip.z - oz * 2.2 }, up, gold, paint, [0, 0], [0.9, seed, -0.026 * 2.2, dir]);
+      const e2 = g.vertex({ x: tip.x + ox * 2.2, y: tip.y - 0.06, z: tip.z + oz * 2.2 }, up, gold, paint, [0, 0], [0.9, seed, 0.026 * 2.2, dir]);
       const e3 = g.vertex({ x: tip.x + lean * 0.3, y: tip.y + 0.12, z: tip.z }, up, gold, paint, [0, 0], [1, seed]);
       g.tri(d2, c2, e2); g.tri(d2, e2, e3); g.tri(d2, e3, e1);
     }

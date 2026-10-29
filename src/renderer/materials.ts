@@ -22,6 +22,7 @@ export function createSharedUniforms() {
     uLitLean: { value: 0.1 },
     uTime: { value: 0 },
     uWind: { value: 1 },
+    uViewBack: { value: new THREE.Vector3(0, 0, 1) },
     uShadowMap: { value: null as THREE.Texture | null },
     uShadowMatrix: { value: new THREE.Matrix4() },
     uShadowTexel: { value: new THREE.Vector2(1 / 2048, 1 / 2048) },
@@ -56,6 +57,14 @@ varying vec4 vPaint;
 varying float vViewDepth;
 // Puts a world position on screen, mirrored in the water when drawing its reflection. The surface is still lit where it
 // really is (vWorldPos and the normal stay unmirrored), so a tree in the water shows its shaded underside.
+// A movement with its part along the main camera's view taken out: on screen it looks the same, but nothing comes nearer or
+// goes farther, so things that overlap never swap which is in front. (Wind moving leaves to and fro in depth would swap
+// overlapping dabs of different colours, and the swatches would pop.) Mirrored in the reflection. The sun's shadow pass uses
+// the main camera's direction too, so the shadows move with what casts them.
+vec3 acrossView(vec3 d) {
+  vec3 b = uMirror > 0.5 ? uViewBack * vec3(1.0, -1.0, 1.0) : uViewBack;
+  return d - b * dot(d, b);
+}
 void place(vec3 world) {
   if (uMirror > 0.5) world.y = 2.0 * uMirrorY - world.y;
   vec4 vp = viewMatrix * vec4(world, 1.0);
@@ -88,8 +97,10 @@ void main() {
 const FOLIAGE_VERT = /* glsl */ `
 ${HEAD}
 attribute vec4 aCard;
+uniform vec2 uScreen;
 varying vec4 vCard;
 varying vec3 vDabNormal;
+varying float vCardPx;
 void main() {
   vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
   vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
@@ -99,7 +110,7 @@ void main() {
   vec4 wc = modelMatrix * vec4(position, 1.0);
   // Wind: the whole crown leans gently, each dab flutters a little on its own.
   float sway = sin(uTime * 1.3 + wc.x * 0.4 + wc.z * 0.3) * 0.04 + sin(uTime * 3.7 + aCard.w * 40.0) * 0.015;
-  wc.xz += vec2(sway, sway * 0.6) * uWind * max(wc.y, 0.0) * 0.4;
+  wc.xyz += acrossView(vec3(sway, 0.0, sway * 0.6) * uWind * max(wc.y, 0.0) * 0.4);
   vec3 world = wc.xyz + (right * c.x + up * c.y) * aCard.z;
   vWorldPos = world;
   vNormal = normalize(mat3(modelMatrix) * normal);
@@ -108,26 +119,53 @@ void main() {
   vColor = color;
   vPaint = aPaint;
   vCard = aCard;
+  // Screen pixels per unit of the card, for its edge's antialiasing (orthographic: the same everywhere on screen).
+  vCardPx = aCard.z * projectionMatrix[0][0] * uScreen.x * 0.5;
   place(world);
 }
 `;
 
-/** Grass and crops: blades that bend in the wind more towards the tip. aBlade: height along the blade (0..1), a seed. */
+/**
+ * Grass and crops: blades that bend in the wind more towards the tip. aBlade: height along the blade (0..1), a seed, the
+ * vertex's signed distance across the blade from its middle (zero on the centre line), and the direction across the blade
+ * (an angle in the xz plane, from +x towards +z; the same for every vertex of a blade).
+ */
 const GRASS_VERT = /* glsl */ `
 ${HEAD}
-attribute vec2 aBlade;
+attribute vec4 aBlade;
+uniform vec2 uScreen;
 varying vec2 vBlade;
 void main() {
   vec4 wp = modelMatrix * vec4(position, 1.0);
+  // Blades are flat, and a flat blade seen edge-on is a sliver under a pixel wide that crawls as the camera moves. Turn each
+  // most of the way to face the camera, and keep it at least a pixel and a bit across. The turn works on the blade's axis as
+  // an unoriented line (angles doubled), so it never jumps as the camera turns past a blade edge-on. Every vertex of a blade
+  // carries the same angle, so all of them turn the axis identically, then take their own signed distance along it: rows
+  // stay in step and mirrored vertices stay on opposite sides. Not in the sun's shadow pass: no camera there.
+#ifndef SHADOW_PASS
+  vec3 across = mat3(modelMatrix) * vec3(cos(aBlade.w), 0.0, sin(aBlade.w));
+  float stretch = length(across.xz);
+  if (aBlade.z != 0.0 && stretch > 1e-6) {
+    vec2 dir = across.xz / stretch;
+    float a = atan(dir.y, dir.x), b = atan(viewMatrix[2][0], viewMatrix[0][0]);
+    vec2 m = mix(vec2(cos(2.0 * a), sin(2.0 * a)), vec2(cos(2.0 * b), sin(2.0 * b)), 0.75);
+    float c = 0.5 * atan(m.y, m.x);
+    vec2 axis = vec2(cos(c), sin(c));
+    axis *= dot(axis, dir) < 0.0 ? -1.0 : 1.0;
+    float halfWidth = abs(aBlade.z) * stretch;
+    float pxPerMetre = projectionMatrix[0][0] * uScreen.x * 0.5;
+    wp.xz += axis * sign(aBlade.z) * max(halfWidth, 0.6 / pxPerMetre) - dir * aBlade.z * stretch;
+  }
+#endif
   float h = aBlade.x * aBlade.x;
   float gust = snoise(wp.xz * 0.12 - vec2(uTime * 0.35, uTime * 0.2)) * 0.5 + 0.5;
   float sway = (sin(uTime * 2.1 + aBlade.y * 6.283 + wp.x * 0.7) * 0.35 + gust * 0.9) * uWind;
-  wp.xz += vec2(0.09, 0.05) * sway * h;
+  wp.xyz += acrossView(vec3(0.09, 0.0, 0.05) * sway * h);
   vWorldPos = wp.xyz;
   vNormal = normalize(mat3(modelMatrix) * normal);
   vColor = color;
   vPaint = aPaint;
-  vBlade = aBlade;
+  vBlade = aBlade.xy;
   place(wp.xyz);
 }
 `;
@@ -149,11 +187,28 @@ varying float vViewDepth;
 ${GBUFFER_OUT}
 vec3 toCamera() { return normalize(vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2])); }
 
-// Where the brush runs on a surface: across the ground on flat faces, around and up on steep ones.
-vec2 brushPlane(vec3 p, vec3 n) {
-  if (abs(n.y) > 0.6) return p.xz;
-  vec2 t = normalize(vec2(-n.z, n.x) + 1e-5);
-  return vec2(dot(p.xz, t), p.y);
+// Where the brush runs on a surface: across the ground on flat faces, up the sides on steep ones, blended between the three
+// world planes by the normal, so curved surfaces (stones, trunks, the wheat's rounded edge) carry no seam. The top plane's
+// strokes follow the contours, the sides' run at the surface's set angle.
+vec3 planeWeights(vec3 n) {
+  vec3 w = pow(abs(n), vec3(4.0));
+  // Planes under 1% are skipped; take that much off each so the skip doesn't leave a step.
+  w = max(w / (w.x + w.y + w.z) - 0.01, 0.0);
+  return w / (w.x + w.y + w.z);
+}
+float dabsOn(vec3 p, vec3 w, float scale, float top, float side) {
+  float s = 0.0;
+  if (w.y > 0.0) s += w.y * paintDabs(p.xz, scale, top);
+  if (w.x > 0.0) s += w.x * paintDabs(p.zy, scale, side);
+  if (w.z > 0.0) s += w.z * paintDabs(p.xy, scale, side);
+  return s;
+}
+float strokesOn(vec3 p, vec3 w, float top, float side) {
+  float s = 0.0;
+  if (w.y > 0.0) s += w.y * paintStrokes(p.xz, top);
+  if (w.x > 0.0) s += w.x * paintStrokes(p.zy, side);
+  if (w.z > 0.0) s += w.z * paintStrokes(p.xy, side);
+  return s;
 }
 
 // The surface's own colour, drifting in hue and value across the world (one meadow runs yellow-green to emerald to teal),
@@ -177,21 +232,22 @@ varying vec2 vUv;
 void main() {
   vec3 n = normalize(vNormal);
   vec3 p = vWorldPos;
-  vec2 bp = brushPlane(p, n);
-  float angle = abs(n.y) > 0.6 ? contourAngle(n, vPaint.z) : vPaint.z;
+  vec3 w = planeWeights(n);
+  float angle = contourAngle(n, vPaint.z);
   // aPaint.x is how much brushwork shows here: a painter works the banks, edges and turns of the land and leaves the
   // open lawn as quiet colour.
   float detail = vPaint.x;
-  float dab = paintDabs(bp, vPaint.y, angle) * detail;
-  float br = paintStrokes(bp * vPaint.y * 0.6, angle);
+  float dab = dabsOn(p, w, vPaint.y, angle, vPaint.z) * detail;
+  float br = strokesOn(p * vPaint.y * 0.6, w, angle, vPaint.z);
   vec3 base = driftColor(vColor, p, 1.0, dab);
   float vis = sunVisibility(p, n, br);
   // Cast shadows on the ground fall to half-tone rather than deep shade: the land stays light and calm.
-  float light = sunLight(n, 0.3) * mix(abs(n.y) > 0.6 ? 0.3 : 0.18, 1.0, vis) + dab * 0.07 + br * 0.04 * detail;
+  float floor_ = mix(0.18, 0.3, smoothstep(0.5, 0.7, abs(n.y)));
+  float light = sunLight(n, 0.3) * mix(floor_, 1.0, vis) + dab * 0.07 + br * 0.04 * detail;
   // A fine, faint layer of strokes everywhere, so close up even the quiet lawn is paint, not airbrush. It fades out (its
   // contrast, not its place) as the camera pulls back and the strokes get too small to read.
-  vec2 fp = bp * vPaint.y * 1.3;
-  float fine = paintStrokes(fp, angle) * (1.0 - smoothstep(0.12, 0.4, length(fwidth(fp))));
+  vec3 fp = p * vPaint.y * 1.3;
+  float fine = strokesOn(fp, w, angle, vPaint.z) * (1.0 - smoothstep(0.12, 0.4, length(fwidth(fp))));
   light += fine * 0.04;
   vec3 col = paintBands(base, light, 0.05, n.y * 0.5 + 0.5);
   col += uRimColor * rimLight(n, vPaint.w);
@@ -216,11 +272,18 @@ ${FRAG_HEAD}
 ${DAB_SHAPE}
 varying vec4 vCard;
 varying vec3 vDabNormal;
+varying float vCardPx;
 void main() {
   vec2 c = vCard.xy;
   float seed = vCard.w * 91.0;
   float edge = dabShape(c, seed, vPaint.y);
-  float alpha = clamp(edge / max(fwidth(edge), 1e-4) + 0.5, 0.0, 1.0);
+  // The edge softened over one pixel. Its slope comes from the ellipse, not from fwidth: screen derivatives are taken per
+  // 2x2 block of pixels, so they change as the picture moves by one pixel and the edges would shimmer. The reflection is drawn
+  // at half size and mirrored (the card no longer faces the camera squarely), so there the derivatives are the right measure.
+  vec2 q = vec2(c.x, c.y / max(vPaint.y, 0.2));
+  float slope = length(vec2(q.x, q.y / max(vPaint.y, 0.2))) / max(length(q), 1e-3);
+  float px = uMirror > 0.5 ? 1.0 / max(fwidth(edge), 1e-4) : vCardPx / (slope * 1.2);
+  float alpha = clamp(edge * px + 0.5, 0.0, 1.0);
   if (alpha < 0.02) discard;
   vec3 nCanopy = normalize(vNormal);
   vec3 n = normalize(nCanopy + vDabNormal * 0.2);
@@ -296,8 +359,10 @@ void main() {
   if (finish > 0.5 && finish < 1.5) {
     // Solar glass: deep blue cells under a sky reflection, bright diagonal sheen, thin pale gridlines.
     vec2 cells = vUv * vPaint.yz;
-    vec2 f = abs(fract(cells) - 0.5);
-    float grid = smoothstep(0.43, 0.47, max(f.x, f.y));
+    // Lines a pixel's worth antialiased, and fading out as the cells shrink to a few pixels, so they don't crawl.
+    vec2 fw = max(fwidth(cells), 1e-4);
+    vec2 line = clamp((0.045 - (0.5 - abs(fract(cells) - 0.5))) / fw + 0.5, 0.0, 1.0);
+    float grid = max(line.x, line.y) * (1.0 - smoothstep(0.12, 0.3, max(fw.x, fw.y)));
     vec3 v = toCamera();
     vec3 r = reflect(-v, n);
     float fres = 0.25 + 0.75 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 3.0);
@@ -412,6 +477,7 @@ export function depthMaterial(kind: MaterialKind, shared: SharedUniforms): THREE
     uniforms: { ...shared },
     vertexShader: VERT[kind],
     fragmentShader: kind === 'foliage' ? FOLIAGE_DEPTH_FRAG : DEPTH_FRAG,
+    defines: { SHADOW_PASS: 1 },
     vertexColors: true,
     side: THREE.DoubleSide,
   });

@@ -151,6 +151,7 @@ uniform float uLitHue;       // OKLab hue the lit band leans to
 uniform float uLitLean;
 uniform float uTime;
 uniform float uWind;
+uniform vec3 uViewBack;     // the main camera's backward direction (wind moves things only across it)
 uniform sampler2D uShadowMap;
 uniform mat4 uShadowMatrix;  // world -> shadow-map uv and depth
 uniform vec2 uShadowTexel;

@@ -33,13 +33,24 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 Held until the renderer looks right; the developer wants to get it right rather than early. A cloud layer (shadows on the land,
 reflections in the water), fog, rain, dust and frost, each changing the whole picture.
 
-### Motion and stability (from Sol's review, 2026-10-29)
+### Motion and stability
 
-- Re-measure the wheat crawl now that wheat is a painted mass (it was the worst motion artefact: MAE 6.37 over 40% of pixels).
-- Anchor the haze to the world: it is measured from the camera's target, so it breathes slightly on long pans.
-- `brushPlane`'s 0.6 threshold is a latent seam where the brush flips projection.
-- Screen-anchored grain explains the low-level frame-to-frame differences; decide whether to keep it.
-- Record pan videos to judge motion by eye.
+First round done 2026-10-29: `tools/motion.ts` measures crawl (sub-pixel pans, frames lined back up), `tools/video.ts`
+records moves to judge by eye. The wheat's crawl went with the painted mass; blades turn to the camera; dab edges and the
+panel cells are antialiased; the brush blends between planes instead of switching. Wind moves leaves and grass only across
+the view, never nearer or farther, so overlapping dabs no longer swap and swatches no longer pop. Left, most visible first (Sol's ranking):
+
+- **Thin vegetation coverage.** Grass blades and the wheat's fringe are still the largest share of sub-pixel crawl: 4x
+  multisampling on long thin edges. Try coverage-aware tapering, or easing tufts into painted masses as the camera pulls back.
+- **Foliage edges on odd pixels.** Dab edges change on a one-pixel pan but not on a two-pixel one, and the change goes with
+  alpha-to-coverage (likely its dither pattern; turning it off makes sub-pixel crawl worse). Compare sample counts and other coverage schemes at matched edge softness.
+- **Thin inked things.** Fence rails, posts, crates and panel silhouettes, and the post pass's thresholded outline. Test in
+  turns and zooms before the scenes get busier.
+- **Water and reflections in motion.** Untested with the stream in frame: half-size passes, reflected canopy edges.
+- **Haze and vignette on long pans.** Both follow the camera: haze thickens toward the top of the screen as a real aerial
+  camera's would, and that is kept on purpose; report their slow change apart from crawl.
+- Measure better: several starting phases and directions, views and hours, local crops and percentiles (a mean hides sparse
+  pops), and wind-only videos apart from camera moves.
 
 ### Looks
 
