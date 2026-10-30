@@ -19,8 +19,8 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   10. #14 snow, frost and ice;
   11. #19 the water's own look, chosen under every weather.
 - **The demo on GitHub Pages** (#15, shipped 2026-10-30): https://celestiallemon.github.io/brush3d-renderer/main/, and a preview
-  of every open pull request at `.../pr-<number>/`, removed when it closes.
-- **Wind, issue #2** (2026-10-30), awaiting review: `renderer.setWind({ speed, direction, gust })`, eased, from calm to a
+  of every open pull request from this repo at `.../pr-<number>/`, removed when it closes.
+- **Wind, issue #2** (2026-10-30, shipped in #5): `renderer.setWind({ speed, direction, gust })`, eased, from calm to a
   hurricane (0, 5, 17, 25, 35 m/s), with a slider and direction in the demo and a `tools/video.ts` move per strength plus
   `wind-ramp`.
   - Trees lean downwind and rock about the lean (big trees slowly, shrubs quickly), stronger in a gust. Each crown moves as
@@ -34,7 +34,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   - `tools/pops.ts` finds patches that change colour all at once between frames 4 ms apart. Breeze and gale: none in either
     scene. Storm and hurricane: none bar the flying leaves, which are moving, not popping. A one-pixel pan is unchanged from
     before (farm 0.290, meadow 0.144).
-- **Water, step 1 of issue #1** (2026-10-29), awaiting review: we don't copy the reference's near-white stream, which read
+- **Water, step 1 of issue #1** (2026-10-29, shipped in #4): we don't copy the reference's near-white stream, which read
   as glass. The see-through water of the first pass is back (the bed, stones and depth show, the colour deepens to
   blue-green, a little sky where it's deep), grass and reeds are reflected again, so the banks' green fringe is back in the
   water, and the glints on the ripples' crests are kept but softer (a little over half their old weight, and no longer
@@ -94,7 +94,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 
 ### Weather
 
-Planned 2026-10-30 as epic #3, with its tasks #6 to #14 (see Now).
+Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
 
 ### Motion and stability
 
@@ -123,7 +123,7 @@ since #2). Left, most visible first (Sol's ranking):
   if it does. They also ignore the ground and the trees (they fly at a few metres, round the camera).
 - **The game's half** isn't drawn yet: snapped branches, fallen trees, a field flattened by a storm. The renderer will take
   them as states (a fallen pose, how flat a field is) when the game has them.
-- **Weather (#3)** drives `setWind` along with the water (#1); the game calls `setWind` and `setWeather` side by side. Rain is #11.
+- **Weather (#3)** drives `setWind` along with the dynamic water (#18); the game calls `setWind` and `setWeather` side by side. Rain is #11.
 
 ### Looks
 

@@ -11,7 +11,7 @@
   alternatives before settling.
 - Before building, read the issue, its epic (if any), `docs/ROADMAP.md` and `docs/DIRECTION.md`, and ask about anything unclear.
 - An issue can take more than one PR: land the groundwork first and the look second, rather than one PR that's hard to review.
-- Every PR gets a live preview at `https://celestiallemon.github.io/brush3d-renderer/pr-<number>/` (linked in a comment on it).
+- Every PR from this repo (not from a fork) gets a live preview at `https://celestiallemon.github.io/brush3d-renderer/pr-<number>/` (linked in a comment on it).
   For a look choice, build the candidates into the demo behind a button in the demo's controls and a URL option (say
   `?overcast=a`), so the developer can flip between them on the preview in any scene, hour and weather. Remove the ones not
   picked before the PR merges.
