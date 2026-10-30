@@ -46,6 +46,8 @@ const farmScene = farm ? buildFarm(renderer, shedStyle) : null;
 const scene = farmScene ?? buildMeadow(renderer);
 /** Settles once the scene's models are in. */
 const loaded = farmScene?.ready ?? Promise.resolve();
+let isLoaded = false;
+loaded.then(() => { isLoaded = true; });
 renderer.setWaterLevel(scene.waterLevel);
 const view = renderer.view;
 view.view = num('view', 0); view.zoom = num('zoom', 40);
@@ -282,6 +284,7 @@ if (params.has('shot')) {
 
 // Profiling (tools/profile.ts, or ?profile on any machine): the demo's own loop waits while the cases run.
 async function profile(cases = defaultCases(), progress?: (row: ProfileRow, i: number) => void) {
+  await loaded;
   profiling = true;
   try {
     return await runProfile(renderer, (t) => { renderer.setLook(lookAt(hour)); renderer.render(t); },
@@ -332,6 +335,7 @@ function frame(now: number) {
   playTimeline(time);
   renderer.setLook(lookAt(hour));
   renderer.render(time);
-  if (++frames === 3) loaded.then(() => { (window as unknown as { __ready: boolean }).__ready = true; });
+  // Ready once a frame is drawn with everything loaded (the farm's shed comes after the first frames).
+  if (++frames >= 3 && isLoaded) (window as unknown as { __ready: boolean }).__ready = true;
   requestAnimationFrame(frame);
 }
