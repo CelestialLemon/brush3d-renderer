@@ -128,7 +128,9 @@ Nothing in them moves, so they're drawn only when cover changes (a building plac
 | meadow | 0.06 | 4.83 → 4.91 |
 
 Nearly all of the farm's 0.58 is its 60,000 leaf cards. On the laptop that's a little over a millisecond in the one frame
-cover changes, against the budget's 0.2 a frame: well within it. Reading the map costs its readers (rain, wetness, snow),
+cover changes, against the budget's 0.2 a frame: well within it. On the MacBook Air (`?profile` on #31's preview; read by
+the uncapped frame, its GPU timers count waiting): the farm's 1080p storm 14.99 → 15.66 ms with the map drawn every frame,
+0.67. Reading the map costs its readers (rain, wetness, snow),
 counted in their own lines.
 
 ## Quality settings
