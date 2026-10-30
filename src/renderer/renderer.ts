@@ -433,10 +433,17 @@ export class BrushRenderer {
     const ground = this.scene.children.find((o) => o.userData.kind === 'ground' && o.userData.fields);
     const s = this.shared;
     this.shelter.draw(this.gl, this.scene, cover, ground?.userData.fields ?? null, () => {
-      // No wind and no clock: what's left of the sway and the flutter (a little even in a calm) is the same every draw.
-      const saved = [s.uWindSpeed.value, s.uTime.value, s.uWindFlutter.value, s.uWindDrift.value.clone()] as const;
-      s.uWindSpeed.value = 0; s.uTime.value = 0; s.uWindFlutter.value = 0; s.uWindDrift.value.set(0, 0);
-      return () => { [s.uWindSpeed.value, s.uTime.value, s.uWindFlutter.value] = saved; s.uWindDrift.value.copy(saved[3]); };
+      // Every wind value and the clock set to one rest, whatever the weather, and the flutter kept across the map's own
+      // view (straight down), not the camera's: what's left of the sway and the flutter (a little even in a calm) is then
+      // the same every draw, so a new building can't nudge a tree's dry patch.
+      const saved = [s.uTime.value, s.uWindSpeed.value, s.uWindGustiness.value, s.uWindFlutter.value,
+        s.uWindDir.value.clone(), s.uWindDrift.value.clone(), s.uViewBack.value.clone()] as const;
+      s.uTime.value = 0; s.uWindSpeed.value = 0; s.uWindGustiness.value = 0; s.uWindFlutter.value = 0;
+      s.uWindDir.value.set(1, 0); s.uWindDrift.value.set(0, 0); s.uViewBack.value.set(0, 1, 0);
+      return () => {
+        [s.uTime.value, s.uWindSpeed.value, s.uWindGustiness.value, s.uWindFlutter.value] = saved;
+        s.uWindDir.value.copy(saved[4]); s.uWindDrift.value.copy(saved[5]); s.uViewBack.value.copy(saved[6]);
+      };
     });
   }
 
