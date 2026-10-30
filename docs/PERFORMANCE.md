@@ -59,6 +59,25 @@ RX 570, 1080p, the demo's default view, a storm; GPU ms (`node tools/profile.ts`
   every frame), and the trees' leaf cards overlap about 17 deep where they cover the screen, each one painted in full
   before the nearest hides it. The same leaves drawn near-first cost 30 ms a frame, far-first 49.
 
+### On integrated graphics
+
+The developer's laptop, through `?profile` on #21's preview (2026-10-30): an **Intel Arc 140T** (a 2025 Core Ultra laptop,
+16 GB shared; Windows, Chrome 150, ANGLE on Direct3D 11), plugged in. Two runs of each scene agreed within about 3%. The
+full tables are on #21.
+
+| 1080p, storm, GPU ms | RX 570 | Arc 140T | ratio |
+|---|---:|---:|---:|
+| farm | 37.4 | 47.3 | ×1.26 |
+| meadow | 14.1 | 26.4 | ×1.87 |
+| the ground's paint (saved without it), farm / meadow | 9.1 / 8.0 | 13.6 / 15.4 | ×1.5 / ×1.9 |
+| the trees (saved without them), farm | 18.2 | 15.9 | ×0.9 |
+
+- **No single ratio.** The ground's brush recipe, a lot of arithmetic in every pixel, runs about twice as slowly on the
+  laptop; the trees' layered leaf cards about as fast. So on integrated graphics the ground costs the most, and cuts to
+  the per-pixel paint count for more than on the RX 570.
+- **The CPU stays idle there too**: 0.1–0.2 ms a frame.
+- Iris Xe is roughly half an Arc 140T, so from these runs ×3 to ×4 against the RX 570 (×3 assumed above).
+
 ## The budget
 
 RX 570, 1080p, ms of GPU a frame. Weather pieces that never run together (rain and snow) share a line; a storm, the
