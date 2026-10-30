@@ -332,9 +332,12 @@ uniform mat3 uFieldsMap;
 uniform float uBasisScales[BASIS];
 vec4 basisFields(vec2 xz, float scale, float angle) {
   float k = angle / 0.5235988, k0 = floor(k), w = smoothstep(0.3, 0.7, k - k0);
-  // The scales are baked a thousandth apart at least, so at most one is within half of that.
-  float layers = 0.0;
-  for (int i = 1; i < BASIS; i++) if (abs(scale - uBasisScales[i]) < 0.0005) layers = float(i * 7);
+  // The nearest scale baked.
+  float layers = 0.0, nearest = abs(scale - uBasisScales[0]);
+  for (int i = 1; i < BASIS; i++) {
+    float d = abs(scale - uBasisScales[i]);
+    if (d < nearest) { nearest = d; layers = float(i * 7); }
+  }
   k0 += layers;
   vec2 uv = (uFieldsMap * vec3(xz, 1.0)).xy;
   return (mix(texture(uBasis, vec3(uv, k0)), texture(uBasis, vec3(uv, k0 + 1.0)), w) - 0.5) / 0.45;
