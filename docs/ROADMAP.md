@@ -12,14 +12,15 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
      shadows on the land, reflections in the water and panels;
   4. #9 mist, fog, dust and heat haze;
   5. #10 the shelter map, so rain and snow stop at roofs, and a test shed;
-  6. #1 step 2, dynamic water;
+  6. #18 dynamic water: a state the game drives;
   7. #11 rain and wet ground;
   8. #12 storms and lightning;
   9. #13 seasons;
   10. #14 snow, frost and ice;
-  11. #1 step 3, the water's own look, chosen under every weather.
-- **The demo on GitHub Pages, #15:** every merge into `main` publishes the demo, so it can be tried from a URL. Before #6.
-- **Wind, issue #2** (2026-10-30), awaiting review: `renderer.setWind({ speed, direction, gust })`, eased, from calm to a
+  11. #19 the water's own look, chosen under every weather.
+- **The demo on GitHub Pages** (#15, shipped 2026-10-30): https://celestiallemon.github.io/brush3d-renderer/main/, and a preview
+  of every open pull request from this repo at `.../pr-<number>/`, removed when it closes.
+- **Wind, issue #2** (2026-10-30, shipped in #5): `renderer.setWind({ speed, direction, gust })`, eased, from calm to a
   hurricane (0, 5, 17, 25, 35 m/s), with a slider and direction in the demo and a `tools/video.ts` move per strength plus
   `wind-ramp`.
   - Trees lean downwind and rock about the lean (big trees slowly, shrubs quickly), stronger in a gust. Each crown moves as
@@ -33,15 +34,15 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   - `tools/pops.ts` finds patches that change colour all at once between frames 4 ms apart. Breeze and gale: none in either
     scene. Storm and hurricane: none bar the flying leaves, which are moving, not popping. A one-pixel pan is unchanged from
     before (farm 0.290, meadow 0.144).
-- **Water, step 1 of issue #1** (2026-10-29), awaiting review: we don't copy the reference's near-white stream, which read
+- **Water, step 1 of issue #1** (2026-10-29, shipped in #4): we don't copy the reference's near-white stream, which read
   as glass. The see-through water of the first pass is back (the bed, stones and depth show, the colour deepens to
   blue-green, a little sky where it's deep), grass and reeds are reflected again, so the banks' green fringe is back in the
   water, and the glints on the ripples' crests are kept but softer (a little over half their old weight, and no longer
   brighter than white), so they sit on the clear water. The reflection stays premultiplied and read through its small blur,
   which by eye doesn't soften the old look and keeps the reflected grass steadier. A one-pixel pan over the meadow's
   stream: 0.15 (0.17 without the blur; it was 0.17 before the reference pass, 0.34 with all that sky); over the farm's
-  stream, 0.33 (was 0.51). Next, within the weather epic (#3): water as a state the game drives (depth, flow, turbidity)
-  after the shelter map (#10) and before rain (#11); our own look on it after snow (#14), chosen under every weather.
+  stream, 0.33 (was 0.51). Next, within the weather epic (#3): water as a state the game drives (depth, flow, turbidity),
+  #18, after the shelter map (#10) and before rain (#11); our own look on it, #19, after snow (#14).
 - **The farm scene** (`?scene=farm`, the default; first pass 2026-10-29): the *Dear Alice* aerial (0:37) rebuilt with more
   assets and detail. Wheat in banded rows with a solar array, a fenced track, curved orchard rows with crates of apples, a dark
   clump of big trees over a picnic table, a stream with a plank bridge and thickets, a fork in the track by a dry-stone wall,
@@ -80,8 +81,8 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 - **The stream is brook-sized.** A wider river or a pond would show the reflections off better.
 - **Half-res reflections smear up close.** Soft by design, but edges blur at high zoom.
 - **Cloud reflections** wait on the cloud layer (#8).
-- **Order** (decided 2026-10-30): step 2 of #1, the dynamic water, comes in the middle of the weather epic, before rain (#11);
-  step 3, the water's own look, comes last, so it's chosen under every sky.
+- **Order** (decided 2026-10-30): #1's later steps are now their own issues in the weather epic. The dynamic water, #18, comes
+  in the middle, before rain (#11); the water's own look, #19, comes last, so it's chosen under every sky.
 - **Grass and reeds are reflected again** (2026-10-29), read through the reflection's small blur. What the water still adds
   to a one-pixel pan over the meadow's stream (0.15 against 0.10 with it hidden) is mostly its half-size passes: the
   reflected grass is about two fifths of it and the bed's pass about as much; the ripples and glints next to nothing. A
@@ -93,7 +94,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 
 ### Weather
 
-Planned 2026-10-30 as epic #3, with its tasks #6 to #14 (see Now).
+Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
 
 ### Motion and stability
 
@@ -122,7 +123,7 @@ since #2). Left, most visible first (Sol's ranking):
   if it does. They also ignore the ground and the trees (they fly at a few metres, round the camera).
 - **The game's half** isn't drawn yet: snapped branches, fallen trees, a field flattened by a storm. The renderer will take
   them as states (a fallen pose, how flat a field is) when the game has them.
-- **Weather (#3)** drives `setWind` along with the water (#1); the game calls `setWind` and `setWeather` side by side. Rain is #11.
+- **Weather (#3)** drives `setWind` along with the dynamic water (#18); the game calls `setWind` and `setWeather` side by side. Rain is #11.
 
 ### Looks
 
