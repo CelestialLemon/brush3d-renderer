@@ -27,6 +27,9 @@ const renderer = new BrushRenderer(canvas, {
   pixelRatio: params.has('dpr') ? num('dpr', 1) : params.has('profile') ? 1 : undefined,
   samples: params.has('samples') ? num('samples', 4) : undefined,
 });
+// On a high-DPI screen the frame is drawn at 1080p's pixel count and scaled up: the budget's, and to the developer's eye
+// on the MacBook no softer than 1440p's (#6, #28). Not with dpr or profile, which set the pixels themselves.
+if (!params.has('dpr') && !params.has('profile')) renderer.maxPixels = 1920 * 1080;
 const scene = farm ? buildFarm(renderer) : buildMeadow(renderer);
 renderer.setWaterLevel(scene.waterLevel);
 const view = renderer.view;
@@ -67,7 +70,8 @@ let drag: { x: number; y: number } | null = null;
 canvas.addEventListener('pointerdown', (e) => { if (profiling) return; drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener('pointermove', (e) => {
   if (!drag) return;
-  view.pan(e.clientX - drag.x, e.clientY - drag.y);
+  // The zoom counts the screen's pixels; the pointer moves in CSS pixels.
+  view.pan((e.clientX - drag.x) * renderer.screenRatio, (e.clientY - drag.y) * renderer.screenRatio);
   drag = { x: e.clientX, y: e.clientY };
 });
 canvas.addEventListener('pointerup', () => { drag = null; });

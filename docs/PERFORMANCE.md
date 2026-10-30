@@ -19,8 +19,10 @@ Decided with the developer on 2026-10-30 (#6). The game is played by the develop
   graphics"), so the laptop's 22 ms is about **12 ms here**.
 - **The MacBook Air** is faster than the laptop: the farm takes 15 ms at 1080p there (#27, Chrome; its GPU timers don't
   work, so only the uncapped frame counts). Its screen is high-DPI: at full sharpness the game draws two to three times
-  1080p's pixels (21 ms at 1440p's, 37 at 4K's), so there it should draw at about 1080p's pixel count. That is still to
-  set up.
+  1080p's pixels (21 ms at 1440p's, 37 at 4K's). So the game draws at most 1080p's pixel count (`renderer.maxPixels`),
+  scaled up to the screen (#6, part 6): the MacBook's 2940×1800 window draws at 1840×1126. At 1080p and below nothing
+  changes. The developer's pick (#28): on the MacBook 1440p's count looked no sharper than 1080p's; the screen's own was
+  noticeably sharper, but about 27 ms a frame there, below 45 fps before the weather.
 - If the floor needs it, the look may change, but only as the developer chooses: each change built behind a button on the
   PR's preview, to flip between in any scene, hour and weather.
 

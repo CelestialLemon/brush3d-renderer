@@ -6,7 +6,8 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 
 - **Weather, epic #3** (planned 2026-10-30): season, weather and hour change the whole picture. The decisions are in #3; in
   short, the game owns the weather's state and logic and the renderer only draws it. The order:
-  1. #6 performance: measure the frame and set the weather's budget;
+  1. #6 performance: measure the frame and set the weather's budget (done 2026-10-30: the farm 17.5 ms on the laptop,
+     leaving the weather about 5);
   2. #7 the handoff from the game (`setWeather`), a scripted weather timeline in the demo, and the overcast look;
   3. #8 clouds: one cloud recipe the game shares (cloud shadows will cut solar panels' power, CelestialLemon/Soil-n-Silo#198),
      shadows on the land, reflections in the water and panels;
@@ -149,4 +150,6 @@ RX 570. `docs/PERFORMANCE.md` has the budget.
   Done (#6, part 5): the grass's and the crops' brush baked by place at load, seven angles a brush scale (a crop's
   growing, harvest and sowing need no new bake): the farm 11.7 ms here, 17.5 on the laptop (from 20.3) and 15.0 on the MacBook (from 19.0), the meadow
   4.9 here.
+  Done (#6, part 6): at most 1080p's pixel count drawn, scaled up to a high-DPI screen (the MacBook's), so it costs what
+  it does at 1080p (the developer's pick over 1440p's and the screen's own).
   `node tools/profile.ts` measures here, `?profile` on any machine.
