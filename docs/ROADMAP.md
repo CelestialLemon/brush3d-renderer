@@ -4,6 +4,21 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 
 ## Now
 
+- **Weather, epic #3** (planned 2026-10-30): season, weather and hour change the whole picture. The decisions are in #3; in
+  short, the game owns the weather's state and logic and the renderer only draws it. The order:
+  1. #6 performance: measure the frame and set the weather's budget;
+  2. #7 the handoff from the game (`setWeather`), a scripted weather timeline in the demo, and the overcast look;
+  3. #8 clouds: one cloud recipe the game shares (cloud shadows will cut solar panels' power, CelestialLemon/Soil-n-Silo#198),
+     shadows on the land, reflections in the water and panels;
+  4. #9 mist, fog, dust and heat haze;
+  5. #10 the shelter map, so rain and snow stop at roofs, and a test shed;
+  6. #1 step 2, dynamic water;
+  7. #11 rain and wet ground;
+  8. #12 storms and lightning;
+  9. #13 seasons;
+  10. #14 snow, frost and ice;
+  11. #1 step 3, the water's own look, chosen under every weather.
+- **The demo on GitHub Pages, #15:** every merge into `main` publishes the demo, so it can be tried from a URL. Before #6.
 - **Wind, issue #2** (2026-10-30), awaiting review: `renderer.setWind({ speed, direction, gust })`, eased, from calm to a
   hurricane (0, 5, 17, 25, 35 m/s), with a slider and direction in the demo and a `tools/video.ts` move per strength plus
   `wind-ramp`.
@@ -25,8 +40,8 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   brighter than white), so they sit on the clear water. The reflection stays premultiplied and read through its small blur,
   which by eye doesn't soften the old look and keeps the reflected grass steadier. A one-pixel pan over the meadow's
   stream: 0.15 (0.17 without the blur; it was 0.17 before the reference pass, 0.34 with all that sky); over the farm's
-  stream, 0.33 (was 0.51). Next, after wind (#2): water as a state the game drives (depth, flow, turbidity), then our own
-  look on it.
+  stream, 0.33 (was 0.51). Next, within the weather epic (#3): water as a state the game drives (depth, flow, turbidity)
+  after the shelter map (#10) and before rain (#11); our own look on it after snow (#14), chosen under every weather.
 - **The farm scene** (`?scene=farm`, the default; first pass 2026-10-29): the *Dear Alice* aerial (0:37) rebuilt with more
   assets and detail. Wheat in banded rows with a solar array, a fenced track, curved orchard rows with crates of apples, a dark
   clump of big trees over a picnic table, a stream with a plank bridge and thickets, a fork in the track by a dry-stone wall,
@@ -64,7 +79,9 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   view). Fine from the aerial camera, flat otherwise.
 - **The stream is brook-sized.** A wider river or a pond would show the reflections off better.
 - **Half-res reflections smear up close.** Soft by design, but edges blur at high zoom.
-- **Cloud reflections** wait on a real cloud layer (see Weather).
+- **Cloud reflections** wait on the cloud layer (#8).
+- **Order** (decided 2026-10-30): step 2 of #1, the dynamic water, comes in the middle of the weather epic, before rain (#11);
+  step 3, the water's own look, comes last, so it's chosen under every sky.
 - **Grass and reeds are reflected again** (2026-10-29), read through the reflection's small blur. What the water still adds
   to a one-pixel pan over the meadow's stream (0.15 against 0.10 with it hidden) is mostly its half-size passes: the
   reflected grass is about two fifths of it and the bed's pass about as much; the ripples and glints next to nothing. A
@@ -76,8 +93,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 
 ### Weather
 
-Held until the renderer looks right; the developer wants to get it right rather than early. A cloud layer (shadows on the land,
-reflections in the water), fog, rain, dust and frost, each changing the whole picture.
+Planned 2026-10-30 as epic #3, with its tasks #6 to #14 (see Now).
 
 ### Motion and stability
 
@@ -106,13 +122,17 @@ since #2). Left, most visible first (Sol's ranking):
   if it does. They also ignore the ground and the trees (they fly at a few metres, round the camera).
 - **The game's half** isn't drawn yet: snapped branches, fallen trees, a field flattened by a storm. The renderer will take
   them as states (a fallen pose, how flat a field is) when the game has them.
-- **Weather (#3)** should drive `setWind` along with the water (#1); rain belongs there.
+- **Weather (#3)** drives `setWind` along with the water (#1); the game calls `setWind` and `setWeather` side by side. Rain is #11.
 
 ### Looks
 
-- Night still leans green.
+- Night still leans green. Fix it in #7 if that work touches the night look, since all night-time weather builds on the night
+  lighting.
 
 ### Performance
+
+Targets (decided 2026-10-30): 60 fps at 1080p, and at least 45 fps on weak integrated graphics, so about 80–90 fps on the
+RX 570 (11–12 ms a frame). Measuring and budgeting is #6; the weather comes with quality tiers.
 
 - Profile: the frame now draws the scene four times (shadow, under-water, reflection, main). Measure on the RX 570 and cull
   the extra passes to what the water can see.
