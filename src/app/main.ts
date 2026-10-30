@@ -31,7 +31,7 @@ const renderer = new BrushRenderer(canvas, {
 // `1440`, or `full` (the screen's own). Not with dpr or profile, which set the pixels themselves.
 const PIXELS: Record<string, number> = { 1080: 1920 * 1080, 1440: 2560 * 1440, full: Infinity };
 let pixels = params.get('pixels') ?? '1080';
-if (!(pixels in PIXELS)) pixels = '1080';
+if (!Object.hasOwn(PIXELS, pixels)) pixels = '1080';
 const fixedPixels = params.has('dpr') || params.has('profile');
 if (!fixedPixels) renderer.maxPixels = PIXELS[pixels];
 const scene = farm ? buildFarm(renderer) : buildMeadow(renderer);
@@ -74,7 +74,8 @@ let drag: { x: number; y: number } | null = null;
 canvas.addEventListener('pointerdown', (e) => { if (profiling) return; drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener('pointermove', (e) => {
   if (!drag) return;
-  view.pan(e.clientX - drag.x, e.clientY - drag.y);
+  // The zoom counts the screen's pixels; the pointer moves in CSS pixels.
+  view.pan((e.clientX - drag.x) * renderer.screenRatio, (e.clientY - drag.y) * renderer.screenRatio);
   drag = { x: e.clientX, y: e.clientY };
 });
 canvas.addEventListener('pointerup', () => { drag = null; });

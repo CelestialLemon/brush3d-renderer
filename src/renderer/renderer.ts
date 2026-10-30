@@ -62,8 +62,8 @@ export class BrushRenderer {
   readonly shared: SharedUniforms = createSharedUniforms();
   readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true };
   width = 1; height = 1;
-  /** Device pixels per CSS pixel asked for (see RendererOptions). */
-  private readonly screenRatio: number;
+  /** Device pixels per CSS pixel asked for (see RendererOptions): the screen's pixels, which the zoom counts in. */
+  readonly screenRatio: number;
   /** Device pixels per CSS pixel drawn: screenRatio, or less where that would draw more than maxPixels. */
   pixelRatio: number;
   /**
@@ -398,7 +398,9 @@ export class BrushRenderer {
     s.uWindGustiness.value = w.gust;
     s.uWindDrift.value.set(w.driftX, w.driftZ);
     s.uWindFlutter.value = w.flutter;
-    this.view.apply(this.width, this.height);
+    // Framed by the screen's pixels, not the pixels drawn: drawing fewer (maxPixels) makes the frame softer, not nearer.
+    const toScreen = this.screenRatio / this.pixelRatio;
+    this.view.apply(this.width * toScreen, this.height * toScreen);
     s.uViewBack.value.copy(this.view.backward());
     s.uViewTarget.value.copy(this.view.target);
     this.scene.updateMatrixWorld();
