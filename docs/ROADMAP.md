@@ -40,8 +40,8 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   brighter than white), so they sit on the clear water. The reflection stays premultiplied and read through its small blur,
   which by eye doesn't soften the old look and keeps the reflected grass steadier. A one-pixel pan over the meadow's
   stream: 0.15 (0.17 without the blur; it was 0.17 before the reference pass, 0.34 with all that sky); over the farm's
-  stream, 0.33 (was 0.51). Next, after wind (#2): water as a state the game drives (depth, flow, turbidity), then our own
-  look on it.
+  stream, 0.33 (was 0.51). Next, within the weather epic (#3): water as a state the game drives (depth, flow, turbidity)
+  after the shelter map (#10) and before rain (#11); our own look on it after snow (#14), chosen under every weather.
 - **The farm scene** (`?scene=farm`, the default; first pass 2026-10-29): the *Dear Alice* aerial (0:37) rebuilt with more
   assets and detail. Wheat in banded rows with a solar array, a fenced track, curved orchard rows with crates of apples, a dark
   clump of big trees over a picnic table, a stream with a plank bridge and thickets, a fork in the track by a dry-stone wall,
@@ -126,7 +126,8 @@ since #2). Left, most visible first (Sol's ranking):
 
 ### Looks
 
-- Night still leans green. Fix it with the overcast look (#7), which every night weather sits on.
+- Night still leans green. Fix it in #7 if that work touches the night look, since all night-time weather builds on the night
+  lighting.
 
 ### Performance
 
