@@ -6,7 +6,7 @@ import type { Look } from './look';
 // one teal. A grey day needs its own recipe instead: light from the whole sky (tops lighter, sides and undersides darker),
 // no sharp cast shadows but a soft darkening under things, the tones closer together with the colour kept (never grey,
 // docs/DIRECTION.md), a cooler grade, a softer rim. The cover, eased (WeatherState.overcast), blends the hour's look
-// towards it. A recipe is the numbers for that blend at full cover; the candidates are built for the developer to choose.
+// towards it. A recipe is the numbers for that blend at full cover.
 //
 // Calibrated with Sol (#7), measuring each frame's lightness, colour and contrast against the clear one: the haze laid
 // over the whole picture is what turned a grey day milky, so the haze here stays modest; the hour's warmth goes by
@@ -42,32 +42,15 @@ export interface OvercastRecipe {
   exposure: number; saturation: number;
 }
 
-/** The candidates, for the developer to choose (#7). */
-export const OVERCAST: Record<string, OvercastRecipe> = {
-  // Pearl: a cool, coloured, calm grey day, the forms softer than in sun.
-  pearl: {
-    sky: 1, shadowFade: 0.48, shadowLift: 1, shadowBlur: 4, contrast: 0.62, litLean: 0.1, skyChroma: 0.55,
-    shadeHue: 245, shadeTurn: 0.6, rim: 0.08, hazeDensity: 0.65, hazeFloor: 0.6, exposure: 0.85, saturation: 1.04,
-  },
-  // Slate: thicker cloud. Darker, richer colour, more weight under the trees, violet in the shade.
-  slate: {
-    sky: 1, shadowFade: 0.4, shadowLift: 1, shadowBlur: 4, contrast: 0.78, litLean: 0.04, skyChroma: 0.8,
-    shadeHue: 270, shadeTurn: 0.8, rim: 0.04, hazeDensity: 0.5, hazeFloor: 0.5, exposure: 0.7, saturation: 1.14,
-  },
-  // Slate with less colour (the developer's question on #30: a grey day should lose some): 12% and 21% less.
-  'slate-muted': {
-    sky: 1, shadowFade: 0.4, shadowLift: 1, shadowBlur: 4, contrast: 0.78, litLean: 0.04, skyChroma: 0.8,
-    shadeHue: 270, shadeTurn: 0.8, rim: 0.04, hazeDensity: 0.5, hazeFloor: 0.5, exposure: 0.7, saturation: 1,
-  },
-  'slate-grey': {
-    sky: 1, shadowFade: 0.4, shadowLift: 1, shadowBlur: 4, contrast: 0.78, litLean: 0.04, skyChroma: 0.8,
-    shadeHue: 270, shadeTurn: 0.8, rim: 0.04, hazeDensity: 0.5, hazeFloor: 0.5, exposure: 0.7, saturation: 0.9,
-  },
-  // Silver: a bright, soft grey day, the tones closest together.
-  silver: {
-    sky: 0.88, shadowFade: 0.55, shadowLift: 1, shadowBlur: 4, contrast: 0.48, litLean: 0.14, skyChroma: 0.4,
-    shadeHue: 225, shadeTurn: 0.55, rim: 0.12, hazeDensity: 0.85, hazeFloor: 0.7, exposure: 0.95, saturation: 1,
-  },
+/**
+ * The overcast look (#7, the developer's pick of three, Pearl, Slate and Silver, and of three colour levels): Slate, for
+ * the shadow it keeps under things at full cover (the others went flat, without depth) and its fuller colour, with a
+ * little colour taken out (saturation 1, not Slate's 1.14) so a grey day isn't more colourful than a sunny morning.
+ * Darker cloud, violet in the shade.
+ */
+export const OVERCAST: OvercastRecipe = {
+  sky: 1, shadowFade: 0.4, shadowLift: 1, shadowBlur: 4, contrast: 0.78, litLean: 0.04, skyChroma: 0.8,
+  shadeHue: 270, shadeTurn: 0.8, rim: 0.04, hazeDensity: 0.5, hazeFloor: 0.5, exposure: 0.7, saturation: 1,
 };
 
 /** At night the cloud takes the moonlight's direction and some of its brightness, whatever the recipe (Sol's, #7). */

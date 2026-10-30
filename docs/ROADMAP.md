@@ -8,7 +8,8 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   short, the game owns the weather's state and logic and the renderer only draws it. The order:
   1. #6 performance: measure the frame and set the weather's budget (done 2026-10-30: the farm 17.5 ms on the laptop,
      leaving the weather about 5);
-  2. #7 the handoff from the game (`setWeather`), a scripted weather timeline in the demo, and the overcast look;
+  2. #7 the handoff from the game (`setWeather`), a scripted weather timeline in the demo, and the overcast look (done
+     2026-10-31, #29 and #30: see Weather);
   3. #8 clouds: one cloud recipe the game shares (cloud shadows will cut solar panels' power, CelestialLemon/Soil-n-Silo#198),
      shadows on the land, reflections in the water and panels;
   4. #9 mist, fog, dust and heat haze;
@@ -99,6 +100,17 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 
 Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
 
+- **The handoff and the overcast look (#7, done 2026-10-31 in #29 and #30).** `renderer.setWeather` takes the game's
+  weather (cloud, rain, snow, heat, haze); the cover is drawn exactly as given (#8's cloud shadows read it) and the light
+  that follows from it eases over about 1.5 s. Presets, URL params, sliders and a scripted timeline (`src/app/timeline.ts`)
+  stand in for the game; the tools take the weather, with `falling=0` to leave out what's in the air. Under cloud the light
+  comes from the whole sky (tops lit, sides half, undersides shade), the sun's shadows fade to a soft darkening under
+  things, and the tones close up with the colour kept (`src/renderer/overcast.ts`). The developer chose Slate, of three
+  candidates, for the shadow it keeps at full cover (depth), with a little colour taken out so a grey day isn't more
+  colourful than a sunny morning. Left: a small brightness swing at part cover (dawn and sunset are a little brighter at
+  half to three-quarter cover than either end); judge it again with #8's cloud shadows, which change what part cover looks
+  like.
+
 ### Motion and stability
 
 First round done 2026-10-29: `tools/motion.ts` measures crawl (sub-pixel pans, frames lined back up), `tools/video.ts`
@@ -130,8 +142,8 @@ since #2). Left, most visible first (Sol's ranking):
 
 ### Looks
 
-- Night still leans green. Fix it in #7 if that work touches the night look, since all night-time weather builds on the night
-  lighting.
+- The night is moonlight blue (#7, the developer's pick, 2026-10-31): cooler light and haze and the whole picture nudged
+  from yellow-green toward blue. It used to lean green.
 
 ### Performance
 
