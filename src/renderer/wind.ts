@@ -74,12 +74,13 @@ export class WindState {
     const k = 1 - Math.exp(-dt / EASE);
     this.speed += (this.goal.speed - this.speed) * k;
     this.gust += (this.goal.gust - this.gust) * k;
-    // The direction turns the short way round (easing the vector), and a little slower than the speed changes.
-    const gx = Math.cos(this.goal.direction), gz = Math.sin(this.goal.direction);
-    let x = this.dirX + (gx - this.dirX) * k * 0.7, z = this.dirZ + (gz - this.dirZ) * k * 0.7;
-    const len = Math.hypot(x, z);
-    if (len < 1e-3) { x = -this.dirZ; z = this.dirX; } else { x /= len; z /= len; }
-    this.dirX = x; this.dirZ = z;
+    // The direction turns the short way round (easing the angle; a wind turned right about turns anticlockwise), and a
+    // little slower than the speed changes.
+    const now = Math.atan2(this.dirZ, this.dirX);
+    let turn = (this.goal.direction - now) % (2 * Math.PI);
+    if (turn > Math.PI) turn -= 2 * Math.PI; else if (turn <= -Math.PI) turn += 2 * Math.PI;
+    const a = now + turn * k * 0.7;
+    this.dirX = Math.cos(a); this.dirZ = Math.sin(a);
     const d = WindState.driftSpeed(this.speed) * dt;
     this.driftX += this.dirX * d; this.driftZ += this.dirZ * d;
     this.flutter += WindState.flutterRate(this.speed) * dt;
