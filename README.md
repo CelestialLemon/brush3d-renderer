@@ -29,7 +29,8 @@ node tools/profile.ts out                              # what a frame costs, pas
 The demo's URL takes `scene` (`farm`, the default, or `meadow`), `view` (0-3), `zoom` (screen px per metre, 16-96), `hour`, `x`/`z` (the camera's target), `t` (freeze
 the clock), `lines=0`, `shadows=0`, `still` (hide the buttons), and the wind: `wind` (m/s, or `calm`, `breeze`,
 `gale`, `storm`, `hurricane`), `windDir` (degrees it blows towards) and `gust` (0-1). `samples` (MSAA) and `shadowMap`
-(texels) try quality settings, and `profile` times the frame on whatever machine opens it.
+(texels) try quality settings, `prepass=0` and `scissor=0` turn off two speed-ups (for comparing), and `profile` times
+the frame on whatever machine opens it.
 
 The game sets the wind with `renderer.setWind({ speed, direction, gust })`; the drawn wind eases towards it. Trees lean and
 rock as whole crowns, leaves flutter, gusts roll over the grass and through the wheat, the water chops, and from a gale up
@@ -40,7 +41,8 @@ anything they cause, and the renderer draws what it's given. Weather is planned 
 
 ## How it draws
 
-- **One G-buffer pass** at the screen's resolution, 4× MSAA: colour, plus view normal, view depth and an ink flag.
+- **One G-buffer pass** at the screen's resolution, 4× MSAA: colour, plus view normal, view depth and an ink flag. Its
+  silhouettes are drawn first, depth only, so each pixel is painted once, by the surface that shows.
 - **Painted materials** (ground, grass, foliage, water, crops) shade in OKLab: three bands (shade, half-tone, lit) whose edges
   are broken by brush dabs and strokes keyed to world positions, so the paint stays put as the camera moves. Shade leans to the
   hour's hue (teal at noon, violet at dusk), the colour drifts in hue and value across a surface, and foliage is clumps of leafy

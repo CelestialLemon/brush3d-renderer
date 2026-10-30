@@ -1,14 +1,17 @@
 import * as THREE from 'three';
 import { CAMERA_DISTANCE, ViewCamera } from './camera';
 import type { Look } from './look';
-import { createSharedUniforms, depthMaterial, sceneMaterial, type MaterialKind, type SharedUniforms } from './materials';
+import {
+  createSharedUniforms, depthMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
+} from './materials';
 import { POST_FRAG, POST_VERT } from './post';
 import type { PassTimer } from './timer';
 import { leafStorm, WindState, type Wind } from './wind';
 
-// The renderer: a sun shadow map; for the water, the bed drawn without it and the scene mirrored in it (both at half size);
-// a multisampled G-buffer (colour plus view normal, depth and ink); and a post pass that inks the lines, hazes the distance
-// and grades. It draws at the screen's own resolution: no art-pixel grid.
+// The renderer: a sun shadow map; for the water, the bed drawn without it and the scene mirrored in it (both at half size,
+// and only round the water on screen); a multisampled G-buffer (colour plus view normal, depth and ink), its silhouettes
+// drawn first so the painting runs only where a surface shows; and a post pass that inks the lines, hazes the distance and
+// grades. It draws at the screen's own resolution: no art-pixel grid. docs/PERFORMANCE.md has what each pass costs.
 
 export interface RendererOptions {
   /** Shadow-map size in texels. */
@@ -22,7 +25,13 @@ export interface RendererOptions {
   pixelRatio?: number;
 }
 
-export interface Settings { lines: boolean; shadows: boolean; grain: number; }
+export interface Settings {
+  lines: boolean; shadows: boolean; grain: number;
+  /** Draw the main view's silhouettes before painting it (depth only), so hidden surfaces aren't painted. */
+  prepass: boolean;
+  /** Draw the water's two passes only round the water on screen. */
+  waterScissor: boolean;
+}
 
 /** How a mesh takes part in the passes. */
 export interface MeshOptions {
@@ -39,7 +48,7 @@ export class BrushRenderer {
   readonly scene = new THREE.Scene();
   readonly view = new ViewCamera();
   readonly shared: SharedUniforms = createSharedUniforms();
-  readonly settings: Settings = { lines: true, shadows: true, grain: 0.012 };
+  readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true };
   width = 1; height = 1;
   readonly pixelRatio: number;
   /** Times each pass when set (tools/profile.ts, the demo's ?profile). */
@@ -52,8 +61,15 @@ export class BrushRenderer {
   private post: THREE.ShaderMaterial;
   private postScene = new THREE.Scene();
   private postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  private materials = new Map<MaterialKind, { main: THREE.ShaderMaterial; depth: THREE.ShaderMaterial }>();
+  private materials = new Map<MaterialKind, { main: THREE.ShaderMaterial; depth: THREE.ShaderMaterial; prepass: THREE.ShaderMaterial }>();
   private casters: THREE.Mesh[] = [];
+  /**
+   * Each mesh's silhouette twin (the same geometry, depth only), drawn in the main view just before the painted meshes, in
+   * the same render: three resolves a multisampled target after every render, and a full-size resolve costs a millisecond
+   * or so on integrated graphics. Hidden in every other pass.
+   */
+  private silhouettes = new THREE.Group();
+  private twins: [THREE.Mesh, THREE.Mesh][] = [];
   private underTarget: THREE.WebGLRenderTarget;
   private reflectTarget: THREE.WebGLRenderTarget;
   private look: Look | null = null;
@@ -97,6 +113,8 @@ export class BrushRenderer {
       },
     });
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.post));
+    this.silhouettes.visible = false;
+    this.scene.add(this.silhouettes);
     // Leaves in the air, for strong winds: the renderer's own, round wherever the camera is.
     this.add(leafStorm(), 'debris', { castShadow: false });
   }
@@ -110,7 +128,10 @@ export class BrushRenderer {
   /** The shared material of a kind (one per renderer, so meshes of a kind batch their state). */
   material(kind: MaterialKind) {
     let m = this.materials.get(kind);
-    if (!m) { m = { main: sceneMaterial(kind, this.shared), depth: depthMaterial(kind, this.shared) }; this.materials.set(kind, m); }
+    if (!m) {
+      m = { main: sceneMaterial(kind, this.shared), depth: depthMaterial(kind, this.shared), prepass: prepassMaterial(kind, this.shared) };
+      this.materials.set(kind, m);
+    }
     return m.main;
   }
 
@@ -123,6 +144,13 @@ export class BrushRenderer {
     mesh.userData.reflect = options.reflect ?? kind !== 'water';
     this.scene.add(mesh);
     if (options.castShadow ?? kind !== 'water') this.casters.push(mesh);
+    const twin = new THREE.Mesh(geometry, this.materials.get(kind)!.prepass);
+    twin.frustumCulled = false;
+    twin.renderOrder = -1;
+    twin.matrixAutoUpdate = false;
+    twin.matrixWorldAutoUpdate = false;
+    this.silhouettes.add(twin);
+    this.twins.push([mesh, twin]);
     return mesh;
   }
 
@@ -183,14 +211,51 @@ export class BrushRenderer {
   }
   private shadowDirty = true;
 
-  /** Draws only the meshes `keep` picks into a target, from the view camera. */
-  private drawOnly(target: THREE.WebGLRenderTarget, keep: (m: THREE.Object3D) => boolean) {
+  /** Draws only the meshes `keep` picks into a target, from the view camera; only inside `scissor` (pixels) if given. */
+  private drawOnly(target: THREE.WebGLRenderTarget, keep: (m: THREE.Object3D) => boolean, scissor: THREE.Vector4 | null) {
     const hidden: THREE.Object3D[] = [];
     for (const o of this.scene.children) if (o.visible && !keep(o)) { o.visible = false; hidden.push(o); }
+    target.scissorTest = scissor !== null;
+    if (scissor) target.scissor.copy(scissor);
     this.gl.setRenderTarget(target);
     this.gl.clear(true, true, false);
     this.gl.render(this.scene, this.view.camera);
     for (const o of hidden) o.visible = true;
+  }
+
+  private waterBox = new THREE.Box2();
+  private corner = new THREE.Vector3();
+  /** Where the water is on screen (-1 to 1 across and up), or null where none shows. */
+  private waterOnScreen() {
+    const box = this.waterBox.makeEmpty(), v = this.corner;
+    for (const o of this.scene.children) {
+      if (!o.visible || o.userData.kind !== 'water') continue;
+      const mesh = o as THREE.Mesh;
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+      const b = mesh.geometry.boundingBox!;
+      for (let i = 0; i < 8; i++) {
+        v.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z);
+        v.applyMatrix4(mesh.matrixWorld).project(this.view.camera);
+        box.expandByPoint(new THREE.Vector2(v.x, v.y));
+      }
+    }
+    return box.isEmpty() || box.max.x < -1 || box.min.x > 1 || box.max.y < -1 || box.min.y > 1 ? null : box;
+  }
+
+  /**
+   * The rectangle of a water pass's target (pixels) the water can read: where it is on screen, widened by how far its
+   * lookups reach, `reach` in screen uv plus `px` screen pixels (see WATER_REACH), with a texel for filtering and one to
+   * spare. Null draws the whole target.
+   */
+  private waterRect(onScreen: THREE.Box2, target: THREE.WebGLRenderTarget, reach: number, px: number) {
+    if (!this.settings.waterScissor) return null;
+    const w = target.width, h = target.height;
+    const rx = reach + px / this.width, ry = reach + px / this.height;
+    const x0 = Math.max(0, Math.floor(((onScreen.min.x + 1) / 2 - rx) * w) - 2);
+    const y0 = Math.max(0, Math.floor(((onScreen.min.y + 1) / 2 - ry) * h) - 2);
+    const x1 = Math.min(w, Math.ceil(((onScreen.max.x + 1) / 2 + rx) * w) + 2);
+    const y1 = Math.min(h, Math.ceil(((onScreen.max.y + 1) / 2 + ry) * h) + 2);
+    return new THREE.Vector4(x0, y0, x1 - x0, y1 - y0);
   }
 
   render(time: number) {
@@ -208,6 +273,7 @@ export class BrushRenderer {
     this.view.apply(this.width, this.height);
     s.uViewBack.value.copy(this.view.backward());
     s.uViewTarget.value.copy(this.view.target);
+    this.scene.updateMatrixWorld();
     const gl = this.gl;
 
     // The sun's shadow map: redrawn every frame, because foliage and grass move in the wind.
@@ -226,23 +292,36 @@ export class BrushRenderer {
     }
     this.shadowDirty = false;
 
-    // What the water shows: the bed without it, and the scene mirrored in it.
+    // What the water shows: the bed without it, and the scene mirrored in it. Only round the water on screen, and not at
+    // all when none shows. The farthest a lookup reaches (snoise peaks a little past 1, hence the tenth more):
     t?.mark('under');
     gl.setClearColor(0x000000, 0);
-    this.drawOnly(this.underTarget, (m) => m.userData.under);
+    const water = this.waterOnScreen();
+    const nudge = (WATER_REACH.ripple + WATER_REACH.chop * WATER_REACH.chopMax) * 1.1;
+    if (water) this.drawOnly(this.underTarget, (m) => m.userData.under, this.waterRect(water, this.underTarget, nudge, 0));
     t?.mark('reflect');
-    this.shared.uMirror.value = 1;
-    // Mirroring flips the winding, so one-sided surfaces show their back faces.
-    const flipped = [...this.materials.values()].map((m) => m.main).filter((m) => m.side === THREE.FrontSide);
-    for (const m of flipped) m.side = THREE.BackSide;
-    this.drawOnly(this.reflectTarget, (m) => m.userData.reflect);
-    for (const m of flipped) m.side = THREE.FrontSide;
-    this.shared.uMirror.value = 0;
+    if (water) {
+      this.shared.uMirror.value = 1;
+      // Mirroring flips the winding, so one-sided surfaces show their back faces.
+      const flipped = [...this.materials.values()].map((m) => m.main).filter((m) => m.side === THREE.FrontSide);
+      for (const m of flipped) m.side = THREE.BackSide;
+      const rect = this.waterRect(water, this.reflectTarget, nudge * WATER_REACH.reflectNudge, WATER_REACH.blurPx);
+      this.drawOnly(this.reflectTarget, (m) => m.userData.reflect, rect);
+      for (const m of flipped) m.side = THREE.FrontSide;
+      this.shared.uMirror.value = 0;
+    }
 
+    // The main view's silhouettes first, depth only: then each pixel is painted once, by the surface that shows there,
+    // rather than by every leaf card stacked behind it.
     t?.mark('main');
     gl.setRenderTarget(this.gbuffer);
     gl.clear(true, true, false);
+    this.silhouettes.visible = this.settings.prepass;
+    if (this.settings.prepass) {
+      for (const [mesh, twin] of this.twins) { twin.visible = mesh.visible; twin.matrixWorld.copy(mesh.matrixWorld); }
+    }
     gl.render(this.scene, this.view.camera);
+    this.silhouettes.visible = false;
 
     t?.mark('post');
     gl.setRenderTarget(null);
