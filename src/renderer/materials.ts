@@ -557,7 +557,7 @@ void main() {
 
 /**
  * Inked: crisp cel bands, the colour barely drifting. aPaint.x picks a finish: 0 plain, 1 solar glass (uv over the panel,
- * aPaint.yz cells along u and v), 2 timber (grain along u).
+ * aPaint.yz cells along u and v), 2 timber (grain along u), 3 tin (corrugations, aPaint.z of them a uv unit along v).
  */
 const INK_FRAG = /* glsl */ `
 ${FRAG_HEAD}
@@ -580,24 +580,11 @@ void main() {
   }
   vec3 col = paintBands(base, light, 0.02, n.y * 0.5 + 0.5);
   if (finish > 2.5) {
-    // A roof (uv in metres: down the slope, along the ridge): tin's corrugations (3), or shingles (4) in courses with
-    // staggered joints, each shingle its own tone. Tone only, never lines; fading out before they're a few pixels apart,
-    // so they don't crawl.
-    vec2 q = vUv * vPaint.yz;
-    vec2 fw = max(fwidth(q), 1e-4);
-    if (finish < 3.5) {
-      float fade = 1.0 - smoothstep(0.12, 0.3, fw.y);
-      col *= 1.0 - 0.09 * fade * (0.5 + 0.5 * cos(q.y * 6.2831853));
-    } else {
-      float fade = 1.0 - smoothstep(0.1, 0.25, max(fw.x, fw.y));
-      float course = floor(q.x);
-      float along = q.y + 0.5 * mod(course, 2.0);
-      // The shadow under each course's butts, and a thin joint between shingles.
-      float butt = clamp((0.16 - fract(q.x)) / fw.x + 0.5, 0.0, 1.0);
-      float joint = clamp((0.035 - (0.5 - abs(fract(along) - 0.5))) / fw.y + 0.5, 0.0, 1.0);
-      float tone = hash12(vec2(course, floor(along)) + 3.7) - 0.5;
-      col *= 1.0 + fade * (tone * 0.12 - 0.16 * max(butt, joint));
-    }
+    // Tin (uv in metres: down the slope, along the ridge): its corrugations, as tone only, never lines; fading out
+    // before they're a few pixels apart, so they don't crawl.
+    float q = vUv.y * vPaint.z;
+    float fade = 1.0 - smoothstep(0.12, 0.3, max(fwidth(q), 1e-4));
+    col *= 1.0 - 0.09 * fade * (0.5 + 0.5 * cos(q * 6.2831853));
   }
   if (finish > 0.5 && finish < 1.5) {
     // Solar glass: deep blue cells under the sky's reflection. Light drifts across the whole array (one sky over all of

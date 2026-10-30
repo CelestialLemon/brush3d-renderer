@@ -1,14 +1,14 @@
 # The farm's test shed (#10): a small timber field shed with an open porch, modelled in Blender by this script and exported
-# as glTF for the renderer, one file per style:
-#   flatpak run org.blender.Blender -b --factory-startup --python tools/blender/shed.py -- src/scenes/models [style ...]
-# Styles: timber (weathered boards, a rusty tin roof: the developer's pick, #10), red (barn-red boards, white trim, grey
-# tin), pale (sage boards, cream trim, timber shingles). With none given, all three.
+# as glTF for the renderer:
+#   flatpak run org.blender.Blender -b --factory-startup --python $PWD/tools/blender/shed.py -- $PWD/src/scenes/models
+# (Flatpak's Blender wants absolute paths, and can't see /tmp.) Barn-red boards, white trim, a grey tin roof: the
+# developer's pick of three styles (#32; the others were weathered timber with rusty tin, and pale sage with shingles).
 #
 # Inked, as the farm's other made things are: each piece is one flat colour per face (per corner on the roof, for its rust),
 # so the post pass draws lines only where pieces meet at an angle or stand proud: the corners, the trim, the door's
 # braces, the roof's edges. The boards of a wall are coplanar, so they show as a change of tone, not as lines.
 # Each face's material says how the ink shader finishes it (src/scenes/model.ts): plain, timber (grain), glass (panes),
-# tin (corrugations) or shingle (courses).
+# tin (corrugations).
 #
 # Built in the game's frame (x right, y up, z towards the front: the porch), metres, the floor's middle at the origin;
 # Blender's own frame is z-up, so points are turned into it as they're made, and the glTF exporter turns them back.
@@ -22,7 +22,6 @@ from mathutils import Vector
 
 ARGS = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 OUT = ARGS[0] if ARGS else '.'
-STYLES = ARGS[1:] or ['timber', 'red', 'pale']
 
 # The shed: a room W wide and D deep, an open porch P deep in front of it, under one gabled roof.
 W, D, P = 4.0, 3.0, 2.0
@@ -51,16 +50,10 @@ def mix(a, b, t):
     return tuple(a[i] + (b[i] - a[i]) * t for i in range(3)) + (1.0,)
 
 
-STYLE = {
-    'timber': dict(boards=[0xb8a48a, 0xae9a80, 0xc2ae94, 0xa8957c], trim=0x8a7660, sill=0x6a5646, door=0x7f9a82,
-                   frame=0xe2d8c2, roof='tin', sheet=0x8e999e, rust=0xb0663c, rusty=0.55),
-    'red': dict(boards=[0xa84a3c, 0xa04436, 0xb05042, 0x9a4234], trim=0xeee6d2, sill=0x6a5646, door=0xa84a3c,
-                frame=0xeee6d2, roof='tin', sheet=0x7f8b93, rust=0xa8643c, rusty=0.2),
-    'pale': dict(boards=[0xb4c49c, 0xaebe96, 0xbccaa4, 0xa8b892], trim=0xf2e6c4, sill=0x6a5646, door=0x8fbccc,
-                 frame=0xf2e6c4, roof='shingle', sheet=0x9a6c48, rust=0x7e5a40, rusty=0.0),
-}
+STYLE = dict(boards=[0xa84a3c, 0xa04436, 0xb05042, 0x9a4234], trim=0xeee6d2, sill=0x6a5646, door=0xa84a3c,
+             frame=0xeee6d2, sheet=0x7f8b93, rust=0xa8643c, rusty=0.2)
 
-MATERIALS = ['plain', 'timber', 'glass', 'tin', 'shingle']
+MATERIALS = ['plain', 'timber', 'glass', 'tin']
 
 
 class Model:
@@ -171,8 +164,8 @@ def roof_y(x):
     return H + RISE * (1 - abs(x) / (W / 2))
 
 
-def build(style):
-    s = STYLE[style]
+def build():
+    s = STYLE
     rand = random.Random(10)
     m = Model()
     trim, sill, door_col, frame = lin(s['trim']), lin(s['sill']), lin(s['door']), lin(s['frame'])
@@ -293,8 +286,8 @@ def build(style):
     sz0, sz1, sy0, sy1 = SIDE_WINDOW
     window([(W / 2, sy0, sz1), (W / 2, sy0, sz0), (W / 2, sy1, sz0), (W / 2, sy1, sz1)], (1, 0, 0))
 
-    # The roof: two slopes from the ridge, out past the walls, over the porch; each in sheets down the slope (tin) or
-    # in one piece (shingles), on top of the walls' gables, with a cap along the ridge and barge boards at the ends.
+    # The roof: two slopes from the ridge, out past the walls, over the porch; each in seven tin sheets down the slope,
+    # on top of the walls' gables, with a cap along the ridge and barge boards at the ends.
     sheet, rust = lin(s['sheet']), lin(s['rust'])
     zr0, zr1 = ZB - OVER_BACK, ZP + OVER_FRONT
     xe = W / 2 + OVER_SIDE
@@ -303,7 +296,7 @@ def build(style):
         # The underside's line from the ridge (x 0) to the eave (x xe), then the top's, th above it.
         def at(x, z, top):
             return (sx * x, roof_y(x) + (th if top else 0.0), z)
-        edges = [zr0 + (zr1 - zr0) * k / 7 for k in range(8)] if s['roof'] == 'tin' else [zr0, zr1]
+        edges = [zr0 + (zr1 - zr0) * k / 7 for k in range(8)]
         for a, b in zip(edges, edges[1:]):
             base = shade(sheet, 0.94 + rand.random() * 0.12)
             # Rust creeps up from the eave, more on some sheets than others.
@@ -315,9 +308,9 @@ def build(style):
                 cols = [ca, cb, cb, ca, ca, cb, cb, ca]
                 m.hexa([at(xa, a, False), at(xb, a, False), at(xb, b, False), at(xa, b, False),
                         at(xa, a, True), at(xb, a, True), at(xb, b, True), at(xa, b, True)],
-                       base, s['roof'], (sx, -RISE / (W / 2), 0), cols)
+                       base, 'tin', (sx, -RISE / (W / 2), 0), cols)
     # Ridge cap.
-    cap = shade(sheet, 0.85) if s['roof'] == 'tin' else lin(0x7e5a40)
+    cap = shade(sheet, 0.85)
     for sx in (-1, 1):
         m.hexa([(0, roof_y(0) + th, zr0 - 0.02), (sx * 0.16, roof_y(0.16) + th, zr0 - 0.02),
                 (sx * 0.16, roof_y(0.16) + th, zr1 + 0.02), (0, roof_y(0) + th, zr1 + 0.02),
@@ -348,15 +341,15 @@ def build(style):
     for y in (0.12, 0.75):
         m.cylinder(butt, 0.335, y - 0.025, y + 0.025, 16, shade(lin(0xc08a48), 0.7), 'plain')
 
-    return m.finish(f'shed-{style}')
+    return m.finish('shed')
 
 
-def export(style):
+def export():
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    obj = build(style)
+    obj = build()
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
-    path = f'{OUT}/shed-{style}.glb'
+    path = f'{OUT}/shed.glb'
     bpy.ops.export_scene.gltf(
         filepath=path, export_format='GLB', use_selection=True, export_yup=True, export_apply=False,
         export_normals=True, export_texcoords=True, export_materials='EXPORT', export_vertex_color='NONE',
@@ -365,5 +358,4 @@ def export(style):
     print(f'wrote {path}')
 
 
-for st in STYLES:
-    export(st)
+export()

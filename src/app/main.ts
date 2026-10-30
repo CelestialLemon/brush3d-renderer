@@ -1,7 +1,7 @@
 import { PRESETS, lookAt } from '../renderer/look';
 import { BrushRenderer } from '../renderer/renderer';
 import { buildMeadow } from '../scenes/meadow';
-import { buildFarm, SHED_STYLES, type ShedStyle } from '../scenes/farm';
+import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
 import type { MaterialKind } from '../renderer/materials';
 import { WEATHER_PRESETS, type Haze, type Weather, type WeatherName } from '../renderer/weather';
@@ -23,7 +23,6 @@ import { SPEEDS, timelineAt, timelinePhase } from './timeline';
 //   ground=live, crop=live, grass=live (that kind's brush worked out in every pixel, as before it was baked at load)
 //   shelter (show the shelter map over the frame: what's under a roof, under a crown, the roofs' tops; the map in the corner)
 //   shelterSize (its texels across: 1024, or 512 reduced)
-//   shed=timber|red|pale (the farm's test shed in a style, #10: to choose between, the others removed once one is picked)
 //   profile: time the frame pass by pass, on whatever machine opens it (see profile.ts)
 
 const params = new URLSearchParams(location.search);
@@ -40,9 +39,7 @@ const renderer = new BrushRenderer(canvas, {
 // On a high-DPI screen the frame is drawn at 1080p's pixel count and scaled up: the budget's, and to the developer's eye
 // on the MacBook no softer than 1440p's (#6, #28). Not with dpr or profile, which set the pixels themselves.
 if (!params.has('dpr') && !params.has('profile')) renderer.maxPixels = 1920 * 1080;
-const shedParam = params.get('shed');
-let shedStyle: ShedStyle = shedParam !== null && shedParam in SHED_STYLES ? shedParam as ShedStyle : 'timber';
-const farmScene = farm ? buildFarm(renderer, shedStyle) : null;
+const farmScene = farm ? buildFarm(renderer) : null;
 const scene = farmScene ?? buildMeadow(renderer);
 /** Settles once the scene's models are in. */
 const loaded = farmScene?.ready ?? Promise.resolve();
@@ -145,18 +142,6 @@ function hud() {
   shelter.title = 'What\'s under cover: blue under a roof, teal under a crown, yellow the roofs\' tops; the map from above in the corner';
   shelter.onclick = () => { renderer.settings.shelterDebug = !renderer.settings.shelterDebug; hud(); };
   hudEl.append(shelter);
-  if (farmScene) {
-    const shed = document.createElement('button');
-    shed.textContent = `Shed: ${shedStyle}`;
-    shed.title = 'The test shed\'s style (#10): weathered timber and tin, barn red, or pale with shingles';
-    shed.onclick = () => {
-      const styles = Object.keys(SHED_STYLES) as ShedStyle[];
-      shedStyle = styles[(styles.indexOf(shedStyle) + 1) % styles.length];
-      farmScene.setShed(shedStyle);
-      hud();
-    };
-    hudEl.append(shed);
-  }
   const windSet = (f: (v: number) => void) => (v: number) => { f(v); renderer.setWind(wind); };
   hudEl.append(slider('Wind', 0, 45, 0.5, () => wind.speed, windSet((v) => { wind.speed = v; }), (v) => `${windName(v)} ${v.toFixed(1)} m/s`));
   hudEl.append(slider('towards', 0, 360, 5, () => (wind.direction * 180) / Math.PI, windSet((v) => { wind.direction = (v * Math.PI) / 180; }), (v) => `${v.toFixed(0)}°`));

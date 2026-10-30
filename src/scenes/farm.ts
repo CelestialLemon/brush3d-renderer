@@ -2,9 +2,7 @@ import * as THREE from 'three';
 import type { BrushRenderer } from '../renderer/renderer';
 import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
 import { addModel, loadModel } from './model';
-import shedTimber from './models/shed-timber.glb?url';
-import shedRed from './models/shed-red.glb?url';
-import shedPale from './models/shed-pale.glb?url';
+import shedModel from './models/shed.glb?url';
 import {
   C, MapLine, addFlowers, addReeds, addStone, addTuft, addWaterRibbon, groundOf, growTree, smooth, type Tree,
 } from './kit';
@@ -91,11 +89,9 @@ const SHRUBS: [number, number][] = [[-7.8, -23.6], [8, -19], [-30, -10], [-33, -
 const WALL = line([[19.5, -13.5], [24, -12], [28.5, -11]]);
 
 /**
- * The test shed (#10): a timber field shed with an open porch, below the lane, its porch facing down the screen (the
- * default view looks into it). Modelled in Blender (tools/blender/shed.py); a style per model, the developer to pick one.
+ * The test shed (#10): a barn-red field shed with an open porch, below the lane, its porch facing down the screen (the
+ * default view looks into it). Modelled in Blender (tools/blender/shed.py).
  */
-export const SHED_STYLES = { timber: shedTimber, red: shedRed, pale: shedPale };
-export type ShedStyle = keyof typeof SHED_STYLES;
 const SHED = { u: -2.5, v: -20.5, yaw: Math.PI / 4 };
 /** A map point in the shed's own frame: x along its front, z out through the porch (local z 1.5 the front wall, 3.5 the posts). */
 function shedLocal(x: number, z: number): [number, number] {
@@ -143,11 +139,9 @@ export interface Farm {
   center: THREE.Vector3; radius: number; waterLevel: number;
   /** Settles once the models are loaded and in the scene. */
   ready: Promise<void>;
-  /** Puts the shed up in a style (taking down the last), once loaded. */
-  setShed(style: ShedStyle): Promise<void>;
 }
 
-export function buildFarm(r: BrushRenderer, shedStyle: ShedStyle = 'timber'): Farm {
+export function buildFarm(r: BrushRenderer): Farm {
   terrain(r);
   water(r);
   wheat(r);
@@ -160,12 +154,11 @@ export function buildFarm(r: BrushRenderer, shedStyle: ShedStyle = 'timber'): Fa
   goods(r);
   stones(r);
   grass(r);
-  const setShed = shed(r);
-  return { center: new THREE.Vector3(0, 0, 0), radius: HALF * Math.SQRT2, waterLevel: WATER_Y, ready: setShed(shedStyle), setShed };
+  return { center: new THREE.Vector3(0, 0, 0), radius: HALF * Math.SQRT2, waterLevel: WATER_Y, ready: shed(r) };
 }
 
-/** The shed, loaded in the style asked for; another style replaces it. Its floor sits at the ground's mean height round it. */
-function shed(r: BrushRenderer) {
+/** The shed, once its model has loaded. Its floor sits at the ground's mean height round it. */
+async function shed(r: BrushRenderer) {
   const [x, z] = W(SHED.u, SHED.v);
   let y = 0, n = 0;
   for (const lx of [-2, 0, 2]) for (const lz of [-1.5, 0, 1.5]) {
@@ -174,20 +167,9 @@ function shed(r: BrushRenderer) {
   }
   const place = new THREE.Matrix4().compose(new THREE.Vector3(x, y / n, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, SHED.yaw, 0)),
     new THREE.Vector3(1, 1, 1));
-  const models = new Map<ShedStyle, Promise<THREE.Object3D>>();
-  let mesh: THREE.Mesh | null = null, asked: ShedStyle | null = null, latest: Promise<void> = Promise.resolve();
-  const put = async (style: ShedStyle): Promise<void> => {
-    asked = style;
-    if (!models.has(style)) models.set(style, loadModel(SHED_STYLES[style]));
-    const model = await models.get(style)!;
-    // Only the last style asked for goes up; one asked for before it settles when that one is up.
-    if (asked !== style) return latest;
-    const b = new MeshBuilder('ink');
-    addModel(b, model, place);
-    if (mesh) { r.remove(mesh); mesh.geometry.dispose(); }
-    mesh = r.add(b.build(), 'ink');
-  };
-  return (style: ShedStyle) => (latest = put(style));
+  const b = new MeshBuilder('ink');
+  addModel(b, await loadModel(shedModel), place);
+  r.add(b.build(), 'ink');
 }
 
 /** How near a point is to the rows of the orchard and the nursery: 1 on a row, falling off over the alley. */

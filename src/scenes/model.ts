@@ -5,7 +5,7 @@ import { PLAIN, type MeshBuilder, type Paint } from './builder';
 // Models made in Blender (tools/blender/), as glTF: inked things, each face one colour (a custom attribute, _COLOR, linear,
 // as the scenes' own colours are), its material's name saying how the ink shader finishes it. No textures: the look is the renderer's.
 
-/** The ink shader's finish for each material name (see INK_FRAG): plain, timber grain, glass in panes, tin, shingles. */
+/** The ink shader's finish for each material name (see INK_FRAG): plain, timber grain, glass in panes, tin. */
 const FINISH: Record<string, Paint> = {
   plain: PLAIN,
   timber: [2, 1, 0, 0],
@@ -13,8 +13,6 @@ const FINISH: Record<string, Paint> = {
   glass: [1, 2, 2, 0],
   // Corrugations, five a metre across the sheet (uv in metres: down the slope, along the ridge).
   tin: [3, 0, 5, 0],
-  // Courses four a metre down the slope, shingles three a metre along it.
-  shingle: [4, 4, 3.3, 0],
 };
 
 const loader = new GLTFLoader();
