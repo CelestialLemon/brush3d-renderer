@@ -87,10 +87,10 @@ if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop'].some((k) =
 renderer.setWeather(weather, true);
 renderer.settings.falling = num('falling', 1) !== 0;
 let overcastName = params.get('overcast') ?? 'pearl';
-if (!(overcastName in OVERCAST)) overcastName = 'pearl';
+if (!Object.hasOwn(OVERCAST, overcastName)) overcastName = 'pearl';
 renderer.overcast = OVERCAST[overcastName];
 let nightName = (params.get('night') ?? 'blue') as NightName;
-if (!(nightName in NIGHTS)) nightName = 'blue';
+if (!Object.hasOwn(NIGHTS, nightName)) nightName = 'blue';
 setNight(nightName);
 // The scripted timeline, at a game speed: it sends the weather as the game would, a few times a second.
 let playing = params.has('timeline'), speed = Number(params.get('timeline')) || 1;

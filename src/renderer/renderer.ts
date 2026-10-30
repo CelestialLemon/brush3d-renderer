@@ -390,8 +390,11 @@ export class BrushRenderer {
     const r = this.shadowRadius, c = this.sunCamera;
     c.left = -r; c.right = r; c.top = r; c.bottom = -r; c.near = 1; c.far = 300;
     c.position.copy(this.shadowCenter).addScaledVector(this.shadowDir, 150);
-    c.up.set(0, 1, 0);
-    if (Math.abs(this.shadowDir.y) > 0.999) c.up.set(0, 0, 1);
+    // Up in the shadow map is away from the sun's bearing (the same as the world's up for the sun itself), which holds
+    // still while the cloud turns the shadows overhead: switching it near overhead would turn the map's texels at once.
+    const sun = this.shared.uSunDir.value;
+    c.up.set(-sun.x, 0, -sun.z);
+    if (c.up.lengthSq() < 1e-6) c.up.set(0, 0, 1);
     c.lookAt(this.shadowCenter);
     c.updateProjectionMatrix();
     c.updateMatrixWorld();

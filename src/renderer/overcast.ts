@@ -91,7 +91,8 @@ export function overcastLook(look: Look, cover: number, r: OvercastRecipe): Look
   const exposure = Math.pow(lerp(r.exposure * look.cloudDim, NIGHT.exposure, n), t * (1.5 - 0.5 * t));
   return {
     ...look,
-    sunColor: hueOf(look.sunColor).lerp(sky, t * 0.98),
+    // Its brightness eased from the hour's too, so a trace of cover starts from the clear light exactly.
+    sunColor: hueOf(look.sunColor).lerp(sky, t * 0.98).multiplyScalar(lerp(Math.max(look.sunColor.r, look.sunColor.g, look.sunColor.b), 1, t)),
     rimColor: look.rimColor.clone().multiplyScalar(lerp(1, r.rim, t)),
     hazeColor: look.hazeColor.clone().lerp(haze, t * look.cloudHaze),
     skyTop: look.skyTop.clone().lerp(muted(look.skyTop, 0.4), t), skyBottom: look.skyBottom.clone().lerp(muted(look.skyBottom, 0.4), t),
