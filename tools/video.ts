@@ -56,11 +56,12 @@ try {
     const frames = Math.round(move.seconds * FPS);
     for (let i = 0; i < frames; i++) {
       const t = i / FPS;
-      const wind = move.wind ? { speed: move.wind(t) } : undefined;
+      // Each move starts from its own wind (the demo's, if it sets none), not where the last one left it; then eases if asked.
+      const wind = move.wind ? { speed: move.wind(t) } : i === 0 ? {} : undefined;
       const png = await page.evaluate((cam, time, wind, ease) => {
         (window as any).__draw(cam, { time, wind, ease });
         return document.querySelector('canvas')!.toDataURL('image/png');
-      }, move.at(t), 3 + t, wind, !!move.ease);
+      }, move.at(t), 3 + t, wind, !!move.ease && i > 0);
       await writeFile(join(dir, `${String(i).padStart(4, '0')}.png`), Buffer.from(png.split(',')[1], 'base64'));
     }
     const file = join(out, `${name}.mp4`);

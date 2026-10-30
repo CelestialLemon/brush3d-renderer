@@ -75,8 +75,10 @@ export class WindState {
       this.flutter = WindState.flutterRate(this.speed) * time;
       return;
     }
-    const n = Math.min(Math.ceil(dt / 0.1), 50);
-    for (let i = 0; i < n; i++) this.step(dt / n);
+    // Fine steps while the wind may still be easing (it has settled after half a minute), then the rest in one.
+    const fine = Math.min(dt, 30), n = Math.ceil(fine / 0.1);
+    for (let i = 0; i < n; i++) this.step(fine / n);
+    if (dt > fine) this.step(dt - fine);
   }
 
   private step(dt: number) {
