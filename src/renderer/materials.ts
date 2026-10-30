@@ -557,7 +557,7 @@ void main() {
 
 /**
  * Inked: crisp cel bands, the colour barely drifting. aPaint.x picks a finish: 0 plain, 1 solar glass (uv over the panel,
- * aPaint.yz cells along u and v), 2 timber (grain along u).
+ * aPaint.yz cells along u and v), 2 timber (grain along u), 3 tin (corrugations, aPaint.z of them a uv unit along v).
  */
 const INK_FRAG = /* glsl */ `
 ${FRAG_HEAD}
@@ -573,12 +573,19 @@ void main() {
   vec3 base = vColor;
   float vis = sunVisibility(p, n, 0.0);
   float light = sunLight(n, 0.2) * mix(0.2, 1.0, vis);
-  if (finish > 1.5) {
+  if (finish > 1.5 && finish < 2.5) {
     // Timber: a few long grain streaks.
     float g = snoise(vec2(vUv.x * 1.5, vUv.y * 24.0)) * 0.5 + 0.5;
     base = oklabToLin(lchShift(linToOklab(base), (g - 0.5) * 0.05, 1.0, 0.0));
   }
   vec3 col = paintBands(base, light, 0.02, n.y * 0.5 + 0.5);
+  if (finish > 2.5) {
+    // Tin (uv in metres: down the slope, along the ridge): its corrugations, as tone only, never lines; fading out
+    // before they're a few pixels apart, so they don't crawl.
+    float q = vUv.y * vPaint.z;
+    float fade = 1.0 - smoothstep(0.12, 0.3, max(fwidth(q), 1e-4));
+    col *= 1.0 - 0.09 * fade * (0.5 + 0.5 * cos(q * 6.2831853));
+  }
   if (finish > 0.5 && finish < 1.5) {
     // Solar glass: deep blue cells under the sky's reflection. Light drifts across the whole array (one sky over all of
     // it, the way the water's is), brightest where the glass turns towards the horizon, with a sheen where the sun is.

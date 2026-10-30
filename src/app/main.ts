@@ -39,7 +39,12 @@ const renderer = new BrushRenderer(canvas, {
 // On a high-DPI screen the frame is drawn at 1080p's pixel count and scaled up: the budget's, and to the developer's eye
 // on the MacBook no softer than 1440p's (#6, #28). Not with dpr or profile, which set the pixels themselves.
 if (!params.has('dpr') && !params.has('profile')) renderer.maxPixels = 1920 * 1080;
-const scene = farm ? buildFarm(renderer) : buildMeadow(renderer);
+const farmScene = farm ? buildFarm(renderer) : null;
+const scene = farmScene ?? buildMeadow(renderer);
+/** Settles once the scene's models are in. */
+const loaded = farmScene?.ready ?? Promise.resolve();
+let isLoaded = false;
+loaded.then(() => { isLoaded = true; });
 renderer.setWaterLevel(scene.waterLevel);
 const view = renderer.view;
 view.view = num('view', 0); view.zoom = num('zoom', 40);
@@ -254,16 +259,17 @@ if (params.has('shot')) {
     for (let i = 0; i < 2; i++) renderer.render(options.time ?? frozen ?? 0);
     renderer.settings.grain = grain;
   };
-  Object.assign(window, {
+  loaded.then(() => Object.assign(window, {
     __draw: draw,
     __profile: (cases?: ProfileCase[]) => profile(cases),
     __profileTable: table,
     __shot: () => { draw(); return canvas.toDataURL('image/png'); },
-  });
+  }));
 } else requestAnimationFrame(frame);
 
 // Profiling (tools/profile.ts, or ?profile on any machine): the demo's own loop waits while the cases run.
 async function profile(cases = defaultCases(), progress?: (row: ProfileRow, i: number) => void) {
+  await loaded;
   profiling = true;
   try {
     return await runProfile(renderer, (t) => { renderer.setLook(lookAt(hour)); renderer.render(t); },
@@ -314,6 +320,7 @@ function frame(now: number) {
   playTimeline(time);
   renderer.setLook(lookAt(hour));
   renderer.render(time);
-  if (++frames === 3) (window as unknown as { __ready: boolean }).__ready = true;
+  // Ready once a frame is drawn with everything loaded (the farm's shed comes after the first frames).
+  if (++frames >= 3 && isLoaded) (window as unknown as { __ready: boolean }).__ready = true;
   requestAnimationFrame(frame);
 }

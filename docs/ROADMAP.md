@@ -12,7 +12,9 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   3. #8 clouds: one cloud recipe the game shares (cloud shadows will cut solar panels' power, CelestialLemon/Soil-n-Silo#198),
      shadows on the land, reflections in the water and panels;
   4. #9 mist, fog, dust and heat haze;
-  5. #10 the shelter map, so rain and snow stop at roofs, and a test shed;
+  5. #10 the shelter map, so rain and snow stop at roofs, and a test shed (done 2026-10-31, #31 and #32: two depth maps
+     from above, roofs and crowns (a crown keeps off 60%), drawn only when cover changes, `?shelter` to see it; a
+     barn-red shed (the developer's pick of three) modelled by `tools/blender/shed.py`, the first model made in Blender);
   6. #18 dynamic water: a state the game drives;
   7. #11 rain and wet ground;
   8. #12 storms and lightning;
