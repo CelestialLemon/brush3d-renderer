@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CAMERA_DISTANCE, ViewCamera } from './camera';
 import type { Look } from './look';
 import {
-  createSharedUniforms, depthMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
+  createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
 } from './materials';
 import { POST_FRAG, POST_VERT } from './post';
 import type { PassTimer } from './timer';
@@ -48,8 +48,9 @@ export interface MeshOptions {
   /** Is mirrored in the water. */
   reflect?: boolean;
   /**
-   * For the ground: the square its brush fields are baked over (see setGroundFields), centred at x, z, `side` metres
-   * across and turned `turn` radians about the vertical. It should cover the ground, and not much more.
+   * For the ground: the square its brush fields are baked over (see setFields), centred at x, z, `side` metres across and
+   * turned `turn` radians about the vertical. It should cover the ground, and not much more. The grass's and crops' brush
+   * is baked over the same square.
    */
   fields?: { x: number; z: number; side: number; turn: number };
 }
@@ -64,6 +65,11 @@ export class BrushRenderer {
   readonly pixelRatio: number;
   /** Times each pass when set (tools/profile.ts, the demo's ?profile). */
   timer: PassTimer | null = null;
+  /**
+   * Where the finished frame goes: the canvas (null), or a target. Profiling draws into a target, as the canvas may make
+   * each frame wait for the screen's next refresh (on the MacBook it did).
+   */
+  output: THREE.WebGLRenderTarget | null = null;
   private gbuffer: THREE.WebGLRenderTarget;
   private shadowTarget: THREE.WebGLRenderTarget;
   private sunCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.5, 400);
@@ -83,7 +89,7 @@ export class BrushRenderer {
    */
   private silhouettes = new THREE.Group();
   private twins: [THREE.Mesh, THREE.Mesh][] = [];
-  private fields: THREE.WebGLRenderTarget | null = null;
+  private fields = new Map<MaterialKind, THREE.WebGLRenderTarget>();
   private underTarget: THREE.WebGLRenderTarget;
   private reflectTarget: THREE.WebGLRenderTarget;
   private look: Look | null = null;
@@ -173,47 +179,84 @@ export class BrushRenderer {
   }
 
   /**
-   * Bakes the ground's brush fields into a `size`² texture, so its paint reads them rather than working them out in every
-   * pixel every frame (the light stays live); 0 works them out live again. One ground per renderer: the 'ground' mesh
-   * added with `fields`. Call after the scene is built.
+   * Bakes a kind's brush fields into `size`² textures, so its paint reads them rather than working them out in every pixel
+   * every frame (the light and the wind stay live); 0 works them out live again. Call after the scene is built.
+   * - 'ground': the ground (added with `fields`) drawn flat over its square: it must be a heightfield (one surface over
+   *   each point). Re-bake if its shape or paint changes.
+   * - 'grass', 'crop': by place, not by mesh, over the ground's square: the brush on the flat at seven angles, for each
+   *   brush scale (up to eight) the kind's meshes use now. So crops can grow, be harvested and be sown anew with no new
+   *   bake, unless at a new brush scale. A crop's sides (its edges) stay live.
+   * Returns whether it baked.
    */
-  setGroundFields(size: number) {
-    const main = this.materials.get('ground')?.main;
-    const ground = this.scene.children.find((o) => o.userData.kind === 'ground' && o.userData.fields) as THREE.Mesh | undefined;
-    this.fields?.dispose();
-    this.fields = null;
-    if (!main) return;
+  setFields(kind: 'ground' | 'crop' | 'grass', size: number): boolean {
+    const main = this.materials.get(kind)?.main;
+    this.fields.get(kind)?.dispose();
+    this.fields.delete(kind);
+    if (!main) return false;
     delete main.defines.FIELDS;
-    if (size > 0 && ground) {
-      const f = ground.userData.fields as NonNullable<MeshOptions['fields']>;
-      // x and z to 0..1 across the square: take the centre off, turn back, scale.
-      const c = Math.cos(f.turn) / f.side, sn = Math.sin(f.turn) / f.side;
-      const map = new THREE.Matrix3().set(c, -sn, 0.5 - c * f.x + sn * f.z, sn, c, 0.5 - sn * f.x - c * f.z, 0, 0, 1);
-      const target = new THREE.WebGLRenderTarget(size, size, {
-        type: THREE.UnsignedByteType, format: THREE.RGBAFormat, depthBuffer: false,
-        minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false,
+    delete main.defines.BASIS;
+    main.needsUpdate = true;
+    const meshes = this.scene.children.filter((o): o is THREE.Mesh => o.userData.kind === kind);
+    const ground = this.scene.children.find((o) => o.userData.kind === 'ground' && o.userData.fields) as THREE.Mesh | undefined;
+    const square = ground?.userData.fields as MeshOptions['fields'];
+    if (size <= 0 || !ground || !square) return false;
+    // x and z to 0..1 across the square: take the centre off, turn back, scale.
+    const c = Math.cos(square.turn) / square.side, sn = Math.sin(square.turn) / square.side;
+    const map = new THREE.Matrix3().set(c, -sn, 0.5 - c * square.x + sn * square.z, sn, c, 0.5 - sn * square.x - c * square.z, 0, 0, 1);
+    const options = {
+      type: THREE.UnsignedByteType, format: THREE.RGBAFormat, depthBuffer: false,
+      minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false,
+    } as const;
+    const scene = new THREE.Scene();
+    const bake = (target: THREE.WebGLRenderTarget, layer = 0) => {
+      this.gl.setRenderTarget(target, layer);
+      this.gl.setClearColor(0x808080, 1);
+      this.gl.clear(true, false, false);
+      this.gl.render(scene, this.postCamera);
+    };
+    let target: THREE.WebGLRenderTarget;
+    if (kind !== 'ground') {
+      const scales = [...new Set(meshes.flatMap((m) => {
+        const a = m.geometry.getAttribute('aPaint');
+        return Array.from({ length: a.count }, (_, i) => a.getY(i));
+      }))];
+      if (scales.length === 0 || scales.length > 8) return false;
+      target = new THREE.WebGLArrayRenderTarget(size, size, scales.length * 7, options);
+      const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
+      quad.frustumCulled = false;
+      scene.add(quad);
+      const unmap = map.clone().invert();
+      scales.forEach((scale, i) => {
+        for (let layer = 0; layer < 7; layer++) {
+          const material = basisBakeMaterial(this.shared, unmap, scale, layer);
+          quad.material = material;
+          bake(target, i * 7 + layer);
+          material.dispose();
+        }
       });
-      const bake = groundBakeMaterial(this.shared, map);
-      const flat = new THREE.Mesh(ground.geometry, bake);
+      quad.geometry.dispose();
+      main.uniforms.uBasis = { value: target.texture };
+      main.uniforms.uBasisScales = { value: scales };
+      main.defines.BASIS = scales.length;
+    } else {
+      target = new THREE.WebGLRenderTarget(size, size, options);
+      const material = groundBakeMaterial(this.shared, map);
+      const flat = new THREE.Mesh(ground.geometry, material);
       flat.frustumCulled = false;
       ground.updateMatrixWorld();
       flat.matrixWorld.copy(ground.matrixWorld);
       flat.matrixAutoUpdate = false;
       flat.matrixWorldAutoUpdate = false;
-      const scene = new THREE.Scene();
       scene.add(flat);
-      this.gl.setRenderTarget(target);
-      this.gl.setClearColor(0x808080, 1);
-      this.gl.clear(true, false, false);
-      this.gl.render(scene, this.postCamera);
-      this.gl.setRenderTarget(null);
-      bake.dispose();
-      this.fields = target;
+      bake(target);
+      material.dispose();
       main.uniforms.uFields = { value: target.texture };
-      main.uniforms.uFieldsMap = { value: map };
       main.defines.FIELDS = 1;
     }
-    main.needsUpdate = true;
+    this.gl.setRenderTarget(null);
+    this.fields.set(kind, target);
+    main.uniforms.uFieldsMap = { value: map };
+    return true;
   }
 
   /**
@@ -416,7 +459,7 @@ export class BrushRenderer {
     this.paintOver(false, () => false);
 
     t?.mark('post');
-    gl.setRenderTarget(null);
+    gl.setRenderTarget(this.output);
     const u = this.post.uniforms;
     u.uLines.value = this.settings.lines ? 1 : 0;
     u.uGrain.value = this.settings.grain;

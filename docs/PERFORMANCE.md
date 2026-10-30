@@ -17,9 +17,10 @@ Decided with the developer on 2026-10-30 (#6). The game is played by the develop
 - **The laptop is the floor**: the weakest of the three, so its 22 ms a frame is the budget. Measured there with `?profile`.
 - **The RX 570 stands in for it day to day.** A millisecond here costs up to 1.9 on the laptop (see "On integrated
   graphics"), so the laptop's 22 ms is about **12 ms here**.
-- **The MacBook Air** is still to measure. Its screen is high-DPI: at its full sharpness it draws about twice the pixels
-  of 1080p, so there it should draw at about 1080p's pixel count (to set up once it's measured). Safari has no GPU
-  timers; Chrome on the Mac may.
+- **The MacBook Air** is faster than the laptop: the farm takes 15 ms at 1080p there (#27, Chrome; its GPU timers don't
+  work, so only the uncapped frame counts). Its screen is high-DPI: at full sharpness the game draws two to three times
+  1080p's pixels (21 ms at 1440p's, 37 at 4K's), so there it should draw at about 1080p's pixel count. That is still to
+  set up.
 - If the floor needs it, the look may change, but only as the developer chooses: each change built behind a button on the
   PR's preview, to flip between in any scene, hour and weather.
 
@@ -38,7 +39,10 @@ Each case draws the frame at a set size, showing the same piece of the world at 
 height, as on a high-DPI screen), for 90 frames with the clock running. It reports each pass's median GPU time (WebGL
 timer queries, where the browser has them: Chromium on desktop, not Safari), the CPU's time for the whole frame, and the
 uncapped frame (frames drawn back to back, which is what the GPU or CPU, whichever is slower, allows). Frames are drawn in
-short bursts so the GPU never idles partway through a pass waiting for the page, which a timer would count as work. The
+short bursts so the GPU never idles partway through a pass waiting for the page, which a timer would count as work, and
+into an off-screen target, not the canvas: on the MacBook the canvas held each frame to the screen's next refresh, so its
+times came out in steps of 16.7 ms. Where the GPU timers add up to far more than the uncapped frame (the MacBook's do:
+each pass about as long as the whole frame), they're counting waits, and the table says to read the uncapped column. The
 cases: calm and storm at 720p, 1080p, 1440p and 4K, then the stormy 1080p frame with each kind of mesh left out.
 
 Sol checked the method on the RX 570 (#6): the timers' total agrees with the uncapped frame within a millisecond at every
@@ -224,12 +228,45 @@ this machine, about 18 was expected), and the leaves look the same with `equal` 
 Intel's GPU paints the reflection slower at equal depth (here it was a little faster), so the reflection now paints at
 nearer-or-equal, and only the main view's leaves at equal: about 20.1 ms there, 0.1 more here.
 
-**Still to do, from Sol's experiments:**
-- the grass's brush baked into 7 directions at 2 scales, 1024² (56 MB), each blade blending its own two; about 2.6 ms
-  here alone;
-- the wheat's brush baked, 2048²; about 1.1 ms.
+### The grass's and the crops' brush, baked by place (#6, part 5)
 
-Together with this part they measured 11.3 ms here.
+The grass and the crops worked their brush out in every pixel every frame, as the ground did. On the flat it depends only
+on where it is (x and z), the brush's scale and its angle, and the brush only ever blends two of seven fixed angles (0°,
+30°, ... 180°). So at load, for each brush scale the grass and the crops use, seven layers are baked over the ground's
+square, one per angle: the dabs, the strokes, the fine strokes and the colour's drift. A blade or a crop's top reads the
+two layers either side of its own angle and blends them as the live brush does (Sol's design, #6). The light, the
+shadows and the wind stay live.
+
+- **By place, not by mesh**, unlike the ground's: in the game a field is built anywhere, its crop changes stage every few
+  seconds and goes back to bare soil at harvest, so a bake of the crop's shape would be stale at once. This one holds for
+  any field, at any stage, anywhere on the map, and needs re-baking only for a new brush scale. A crop's sides (its edges,
+  whatever their height) are worked out live.
+- **1024² a layer**: 28 MB a brush scale; the farm uses three (two for the grass, one for the wheat), 84 MB.
+- **The picture is nearly the same:** in 11 views the mean difference is under 0.08 of 255, and at most about one pixel
+  in 700 differs by more than 8. Those sit on the edges of light and shade bands (most on the wheat in the panels'
+  shadows), which a small change in the brush moves by a pixel. `grass=live` and `crop=live` put back the live brush;
+  both together give main's frame exactly.
+
+RX 570, 1080p, storm, GPU ms:
+
+| | shadow | under | reflect | main | post | frame |
+|---|---:|---:|---:|---:|---:|---:|
+| farm, before (live) | 3.30 | 0.27 | 1.74 | 8.21 | 0.26 | 13.8 |
+| farm, the wheat baked | 3.30 | 0.27 | 1.70 | 7.52 | 0.26 | 13.1 |
+| farm, the grass baked | 3.30 | 0.27 | 1.41 | 7.15 | 0.26 | 12.4 |
+| farm, both | 3.29 | 0.27 | 1.37 | 6.46 | 0.26 | **11.7** |
+| meadow, both (before: 6.5) | 0.18 | 0.38 | 0.68 | 3.44 | 0.19 | **4.9** |
+
+On the laptop (`?profile` on #27's preview, 1080p storm, GPU ms), the farm went from 20.3 to **17.5 ms** (56 fps),
+within half a millisecond of the scene's 17:
+
+| | shadow | under | reflect | main | post | frame |
+|---|---:|---:|---:|---:|---:|---:|
+| `grass=live&crop=live` | 2.83 | 0.44 | 2.01 | 14.49 | 0.50 | 20.3 |
+| both baked | 2.66 | 0.40 | 1.89 | 12.04 | 0.47 | **17.5** |
+
+On the MacBook Air (`?profile` on #27's preview, Chrome, uncapped ms; its GPU timers don't work), the farm at 1080p in a
+storm: **19.0 live → 15.0 baked**. At 1440p 26.7 → 21.0, at 4K 46.9 → 36.9.
 
 **Tried and dropped:**
 - shadows of still things kept between frames: with a 3-to-10-minute day the sun moves a texel every frame or two, so

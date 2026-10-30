@@ -323,6 +323,27 @@ varying float vViewDepth;
 ${GBUFFER_OUT}
 vec3 toCamera() { return normalize(vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2])); }
 
+#ifdef BASIS
+// The brush by place, baked at load (basisBakeMaterial): for each of the BASIS brush scales, seven layers over the ground's
+// square, the brush on the flat at 0°, 30°, ... 180°. paintDabs and paintStrokes only ever blend two of those angles, so
+// the two either side of 'angle', blended as they blend them, give the brush there: dabs, strokes, fine strokes, drift.
+uniform highp sampler2DArray uBasis;
+uniform mat3 uFieldsMap;
+uniform float uBasisScales[BASIS];
+vec4 basisFields(vec2 xz, float scale, float angle) {
+  float k = angle / 0.5235988, k0 = floor(k), w = smoothstep(0.3, 0.7, k - k0);
+  // The nearest scale baked.
+  float layers = 0.0, nearest = abs(scale - uBasisScales[0]);
+  for (int i = 1; i < BASIS; i++) {
+    float d = abs(scale - uBasisScales[i]);
+    if (d < nearest) { nearest = d; layers = float(i * 7); }
+  }
+  k0 += layers;
+  vec2 uv = (uFieldsMap * vec3(xz, 1.0)).xy;
+  return (mix(texture(uBasis, vec3(uv, k0)), texture(uBasis, vec3(uv, k0 + 1.0)), w) - 0.5) / 0.45;
+}
+#endif
+
 // Where the brush runs on a surface: across the ground on flat faces, up the sides on steep ones, blended between the three
 // world planes by the normal, so curved surfaces (stones, trunks, the wheat's rounded edge) carry no seam. The top plane's
 // strokes follow the contours, the sides' run at the surface's set angle.
@@ -392,6 +413,15 @@ void main() {
   vec3 p = vRestPos;
 #ifdef FIELDS
   vec4 fields = texture(uFields, (uFieldsMap * vec3(p.xz, 1.0)).xy) * 2.0 - 1.0;
+#elif defined(BASIS)
+  // A crop's brush: on top, read by place; down its sides (a field's edges, whatever its height), worked out live. As
+  // brushFields, term by term.
+  vec3 w = planeWeights(n);
+  vec4 top = basisFields(p.xz, vPaint.y, contourAngle(n, vPaint.z));
+  vec4 fields = vec4(w.y * top.xyz, top.w);
+  float s = vPaint.y, side = vPaint.z;
+  if (w.x > 0.0) fields.xyz += w.x * vec3(paintDabs(p.zy, s, side), paintStrokes(p.zy * s * 0.6, side), paintStrokes(p.zy * s * 1.3, side));
+  if (w.z > 0.0) fields.xyz += w.z * vec3(paintDabs(p.xy, s, side), paintStrokes(p.xy * s * 0.6, side), paintStrokes(p.xy * s * 1.3, side));
 #else
   vec4 fields = brushFields(p, n);
 #endif
@@ -505,9 +535,16 @@ void main() {
   vec3 n = normalize(vNormal);
   vec3 p = vRestPos;
   float angle = contourAngle(n, vPaint.z);
+#ifdef BASIS
+  vec4 fields = basisFields(p.xz, vPaint.y, angle);
+  float dab = fields.x * 0.6;
+  float br = fields.y;
+  vec3 base = driftColorOf(vColor, fields.w, vPaint.x, dab);
+#else
   float dab = paintDabs(p.xz, vPaint.y, angle) * 0.6;
   float br = paintStrokes(p.xz * vPaint.y * 0.6, angle);
   vec3 base = driftColor(vColor, p, vPaint.x, dab);
+#endif
   float vis = sunVisibility(vWorldPos, n, br);
   float light = sunLight(n, 0.3) * mix(0.18, 1.0, vis) + dab * 0.07 + br * 0.04;
   // Tips catch a little more light than roots.
@@ -790,6 +827,54 @@ export function groundBakeMaterial(shared: SharedUniforms, map: THREE.Matrix3): 
     uniforms: { ...shared, uFieldsMap: { value: map } },
     vertexShader: BRUSH_BAKE_VERT,
     fragmentShader: BRUSH_BAKE_FRAG,
+    side: THREE.DoubleSide,
+    depthTest: false,
+    depthWrite: false,
+  });
+}
+
+// The brush by place, baked: on the flat (the grass, the tops of crops) the brush depends only on where it is (x and z), its
+// scale and its angle, and paintDabs and paintStrokes only ever blend two of seven fixed angles. So each scale gets seven
+// layers over the ground's square, one per angle, read by basisFields. Kept by place, not by mesh: a crop growing, harvested
+// or newly sown needs no new bake. Drawn as one quad over the square; 'position' is the quad's corner, -1 to 1.
+const BASIS_BAKE_VERT = /* glsl */ `
+uniform mat3 uFieldsUnmap;
+varying vec3 vRestPos;
+// The rest of the painting's inputs, unused here.
+varying vec3 vWorldPos;
+varying vec3 vNormal;
+varying vec3 vColor;
+varying vec4 vPaint;
+varying float vViewDepth;
+void main() {
+  vec2 xz = (uFieldsUnmap * vec3(position.xy * 0.5 + 0.5, 1.0)).xy;
+  vRestPos = vec3(xz.x, 0.0, xz.y);
+  vWorldPos = vRestPos; vNormal = vec3(0.0, 1.0, 0.0); vColor = vec3(0.0); vPaint = vec4(0.0); vViewDepth = 0.0;
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}
+`;
+const BASIS_BAKE_FRAG = /* glsl */ `
+${FRAG_HEAD}
+uniform float uBakeScale;
+uniform float uBakeLayer;
+void main() {
+  // As paintDabs and paintStrokes work them out at the layer's angle. Stored as 0.5 + 0.45 value: dabs reach a little
+  // past 1.
+  float angle = uBakeLayer * 0.5235988;
+  vec2 p = vRestPos.xz;
+  float s = uBakeScale;
+  gColor = vec4(dabLayer(p, s, angle), strokes(p * s * 0.6, angle), strokes(p * s * 1.3, angle), driftField(vRestPos)) * 0.45 + 0.5;
+  gAux = vec4(0.0);
+}
+`;
+
+/** Bakes one layer of the brush by place (see BASIS_BAKE_VERT); `unmap` takes 0 to 1 across the square back to x, z. */
+export function basisBakeMaterial(shared: SharedUniforms, unmap: THREE.Matrix3, scale: number, layer: number): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    uniforms: { ...shared, uFieldsUnmap: { value: unmap }, uBakeScale: { value: scale }, uBakeLayer: { value: layer } },
+    vertexShader: BASIS_BAKE_VERT,
+    fragmentShader: BASIS_BAKE_FRAG,
     side: THREE.DoubleSide,
     depthTest: false,
     depthWrite: false,
