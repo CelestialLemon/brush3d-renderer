@@ -616,5 +616,5 @@ function grass(r: BrushRenderer) {
       (x, z) => !blocked(x, z));
   }
   r.add(g.build(), 'grass', { castShadow: false });
-  r.add(flowers.build(), 'foliage', { castShadow: false });
+  r.add(flowers.build(), 'foliage', { castShadow: false, cover: 'none' });
 }

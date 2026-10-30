@@ -227,7 +227,7 @@ function grass(r: BrushRenderer) {
     addFlowers(flowers, ground, cx, cz, col, 6 + Math.floor(rand() * 14), rand, (x, z) => !blocked(x, z) && Math.abs(x) <= half && Math.abs(z) <= half);
   }
   r.add(g.build(), 'grass', { castShadow: false });
-  r.add(flowers.build(), 'foliage', { castShadow: false });
+  r.add(flowers.build(), 'foliage', { castShadow: false, cover: 'none' });
 }
 
 /** One solar panel on brass legs: white ceramic frame, blue cells. Inked. */

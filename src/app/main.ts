@@ -21,6 +21,8 @@ import { SPEEDS, timelineAt, timelinePhase } from './timeline';
 //   prepass=0 (paint without drawing the silhouettes first)  scissor=0 (the water's passes over the whole screen)
 //   equal=0 (paint at or nearer the silhouettes' depth, not only at it)
 //   ground=live, crop=live, grass=live (that kind's brush worked out in every pixel, as before it was baked at load)
+//   shelter (show the shelter map over the frame: what's under a roof, under a crown, the roofs' tops; the map in the corner)
+//   shelterSize (its texels across: 1024, or 512 reduced)
 //   profile: time the frame pass by pass, on whatever machine opens it (see profile.ts)
 
 const params = new URLSearchParams(location.search);
@@ -32,6 +34,7 @@ const renderer = new BrushRenderer(canvas, {
   shadowRadius: farm ? 48 : 34, shadowMapSize: num('shadowMap', farm ? 4096 : 2048),
   pixelRatio: params.has('dpr') ? num('dpr', 1) : params.has('profile') ? 1 : undefined,
   samples: params.has('samples') ? num('samples', 4) : undefined,
+  shelterSize: num('shelterSize', 1024),
 });
 // On a high-DPI screen the frame is drawn at 1080p's pixel count and scaled up: the budget's, and to the developer's eye
 // on the MacBook no softer than 1440p's (#6, #28). Not with dpr or profile, which set the pixels themselves.
@@ -47,6 +50,7 @@ renderer.settings.shadows = num('shadows', 1) !== 0;
 renderer.settings.prepass = num('prepass', 1) !== 0;
 renderer.settings.waterScissor = num('scissor', 1) !== 0;
 renderer.settings.equalDepth = num('equal', 1) !== 0;
+renderer.settings.shelterDebug = params.has('shelter') && params.get('shelter') !== '0';
 // The ground's brush, baked at load into a 2048² texture: the developer's pick (#6, #23), the same to the eye as live
 // and as 4096², at a quarter of 4096's memory. The grass's and crops' brush by place, 1024² at seven angles a scale.
 const bakes = { ground: 2048, crop: 1024, grass: 1024 };
@@ -128,6 +132,11 @@ function hud() {
   lines.textContent = 'Lines'; lines.className = renderer.settings.lines ? 'on' : '';
   lines.onclick = () => { renderer.settings.lines = !renderer.settings.lines; hud(); };
   hudEl.append(lines);
+  const shelter = document.createElement('button');
+  shelter.textContent = 'Shelter'; shelter.className = renderer.settings.shelterDebug ? 'on' : '';
+  shelter.title = 'What\'s under cover: blue under a roof, teal under a crown, yellow the roofs\' tops; the map from above in the corner';
+  shelter.onclick = () => { renderer.settings.shelterDebug = !renderer.settings.shelterDebug; hud(); };
+  hudEl.append(shelter);
   const windSet = (f: (v: number) => void) => (v: number) => { f(v); renderer.setWind(wind); };
   hudEl.append(slider('Wind', 0, 45, 0.5, () => wind.speed, windSet((v) => { wind.speed = v; }), (v) => `${windName(v)} ${v.toFixed(1)} m/s`));
   hudEl.append(slider('towards', 0, 360, 5, () => (wind.direction * 180) / Math.PI, windSet((v) => { wind.direction = (v * Math.PI) / 180; }), (v) => `${v.toFixed(0)}°`));
