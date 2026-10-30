@@ -213,7 +213,7 @@ export class BrushRenderer {
     if (kind !== 'ground') {
       const scales = [...new Set(meshes.flatMap((m) => {
         const a = m.geometry.getAttribute('aPaint');
-        return Array.from({ length: a.count }, (_, i) => Math.round(a.getY(i) * 1e4) / 1e4);
+        return Array.from({ length: a.count }, (_, i) => Math.round(a.getY(i) * 1e3) / 1e3);
       }))];
       if (scales.length === 0 || scales.length > 8) return false;
       target = new THREE.WebGLArrayRenderTarget(size, size, scales.length * 7, options);
