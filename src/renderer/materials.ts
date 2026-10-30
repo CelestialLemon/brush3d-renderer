@@ -457,6 +457,9 @@ void main() {
   if (alpha < 0.02) discard;
 #ifdef PREPASS
   // Only the dab's shape and coverage: the painting comes after, where the dab shows.
+#ifdef MIRROR_CLIP
+  if (vWorldPos.y < uMirrorY - 0.01) discard;
+#endif
   gColor = vec4(0.0, 0.0, 0.0, alpha);
   gAux = vec4(0.0);
   return;
@@ -659,7 +662,17 @@ void main() {
 const PREPASS_FRAG = /* glsl */ `
 layout(location = 0) out vec4 gColor;
 layout(location = 1) out vec4 gAux;
-void main() { gColor = vec4(0.0); gAux = vec4(0.0); }
+#ifdef MIRROR_CLIP
+uniform float uMirrorY;
+varying vec3 vWorldPos;
+#endif
+void main() {
+#ifdef MIRROR_CLIP
+  // As writeGBuffer does in the reflection: what's under the water isn't reflected.
+  if (vWorldPos.y < uMirrorY - 0.01) discard;
+#endif
+  gColor = vec4(0.0); gAux = vec4(0.0);
+}
 `;
 
 const DEPTH_FRAG = /* glsl */ `
@@ -706,17 +719,18 @@ export function sceneMaterial(kind: MaterialKind, shared: SharedUniforms): THREE
 }
 
 /**
- * The silhouette variant of a kind, drawn into the main view before the painting: depth only, no colour. The painting
- * after it then runs only where a surface shows, not under the leaves in front of it. Same vertex shader, side and
- * coverage as the main material, so the depths match exactly (HEAD declares gl_Position invariant).
+ * The silhouette variant of a kind, drawn into the main view (and, `mirror` set, the reflection) before the painting:
+ * depth only, no colour. The painting after it then runs only where a surface shows, not under the leaves in front of it.
+ * Same vertex shader, side and coverage as the main material, so the depths match exactly (HEAD declares gl_Position
+ * invariant). In the reflection it leaves out what's under the water, as the painting does.
  */
-export function prepassMaterial(kind: MaterialKind, shared: SharedUniforms): THREE.ShaderMaterial {
+export function prepassMaterial(kind: MaterialKind, shared: SharedUniforms, mirror = false): THREE.ShaderMaterial {
   const m = new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3,
     uniforms: { ...shared },
     vertexShader: VERT[kind],
     fragmentShader: DABS(kind) ? FRAG[kind] : PREPASS_FRAG,
-    defines: { ...DEFINES[kind], PREPASS: 1 },
+    defines: { ...DEFINES[kind], PREPASS: 1, ...(mirror ? { MIRROR_CLIP: 1 } : {}) },
     vertexColors: true,
     side: sideOf(kind),
     colorWrite: false,
@@ -734,6 +748,8 @@ export function depthMaterial(kind: MaterialKind, shared: SharedUniforms): THREE
     defines: { ...DEFINES[kind], SHADOW_PASS: 1 },
     vertexColors: true,
     side: THREE.DoubleSide,
+    // Only the depth is read.
+    colorWrite: false,
   });
 }
 

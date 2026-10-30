@@ -190,6 +190,54 @@ On the laptop (`?profile` on #23's preview, two runs each, 1080p storm): the far
 frame without the ground at all is 22.5 ms, so the ground has little more to give on the farm; the trees (about 6.5 ms)
 and the grass (about 5) are what's left, with the shadow pass's 3.4.
 
-- **Still to try:** a texture for the grass's own brush fields (they aren't the ground's), the leaves' colour work that is
-  exact to move out of the pixel shader, tighter leaf cards, and culling whole clumps of trees off screen.
+
+### Painting over the silhouettes (#6, part 4)
+
+Sol's second round of experiments (#6) found that the silhouettes weren't yet saving all they could. The painting still
+wrote depth, which the silhouettes had already written, and on most GPUs a pass that writes depth from a shader that can
+discard pixels (the leaves') must paint a pixel before it knows whether it's hidden. So now:
+
+- **The main view only reads depth** after its silhouettes, and the **leaves paint only at their silhouette's exact
+  depth** (`equal=0` turns that part off: nearer-or-equal instead, the same picture, slower).
+- **The reflection has silhouettes too** (leaving out what's under the water, as its painting does), and paints at
+  nearer-or-equal depth (equal was slower there on the laptop, below).
+- **The sun's shadow pass writes no colour**: only its depth is read.
+
+Frames are byte-for-byte main's, with `equal` on and off, in 11 views (both scenes, all four views, zoomed in and out,
+dawn, noon, dusk, night, a storm). RX 570, 1080p, storm, GPU ms:
+
+| | shadow | under | reflect | main | post | frame |
+|---|---:|---:|---:|---:|---:|---:|
+| farm, before | 3.43 | 0.27 | 2.66 | 13.52 | 0.26 | 20.1 |
+| farm, after | 3.29 | 0.27 | 1.72 | 8.20 | 0.26 | **13.7** |
+| farm, after, `equal=0` | 3.30 | 0.27 | 1.73 | 9.77 | 0.26 | 15.3 |
+| meadow, after (before: 7.7) | 0.18 | 0.38 | 0.90 | 4.65 | 0.19 | **6.3** |
+
+On the laptop (`?profile` on #26's preview, 1080p storm, GPU ms), the farm went from 26.6 to **about 20 ms** (scaled from
+this machine, about 18 was expected), and the leaves look the same with `equal` on and off:
+
+| | shadow | under | reflect | main | post | frame |
+|---|---:|---:|---:|---:|---:|---:|
+| equal depth in the reflection and the leaves | 2.64 | 0.43 | 3.09 | 14.59 | 0.65 | 21.4 |
+| `equal=0`: neither | 2.66 | 0.40 | 1.94 | 14.86 | 0.48 | 20.4 |
+
+Intel's GPU paints the reflection slower at equal depth (here it was a little faster), so the reflection now paints at
+nearer-or-equal, and only the main view's leaves at equal: about 20.1 ms there, 0.1 more here.
+
+**Still to do, from Sol's experiments:**
+- the grass's brush baked into 7 directions at 2 scales, 1024² (56 MB), each blade blending its own two; about 2.6 ms
+  here alone;
+- the wheat's brush baked, 2048²; about 1.1 ms.
+
+Together with this part they measured 11.3 ms here.
+
+**Tried and dropped:**
+- shadows of still things kept between frames: with a 3-to-10-minute day the sun moves a texel every frame or two, so
+  it saved nothing and its held shadows stepped;
+- octagonal leaf cards: slower;
+- tighter rectangular cards: change edge pixels, deferred;
+- leaving kinds out of the reflection: visible, and the reflection's silhouettes save more.
+
+**Visible, if still needed:** a 2048² shadow map about 2.3 ms on the laptop, 2× MSAA about 1.5, a quarter-size
+reflection about 1.2.
 - Each cut is measured on the laptop too, with `?profile` on its PR's preview.
