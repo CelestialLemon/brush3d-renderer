@@ -140,13 +140,25 @@ memory). On the meadow they save less (it has few trees, and its stream crosses 
 either scene. Frames with them on and off are byte-for-byte the same in both scenes, all four views, zoomed in and out,
 at noon, dusk and dawn and in a storm.
 
-- **The pre-pass's saving won't last.** With the painting made cheap it saves nothing (10.5 ms with it, 10.4 without), so
-  check it again as the shaders change, and on the laptop, where repeating the vertex work may cost more.
+On the laptop (`?profile` on #22's preview, 2026-10-30), at 1080p in a storm, GPU ms:
+
+| | cuts off | cuts on | saved |
+|---|---:|---:|---:|
+| farm | 49.6 | **28.6** (35 fps) | 21.0 |
+| meadow | 26.9 | **23.3** (42 fps) | 3.6 |
+
+The cuts save more there than here (the farm's 14 ms here is 21 there): the stacked leaf cards cost more on the laptop
+than this machine's numbers suggested. Both scenes are now within about 6 ms of the laptop's 22 ms, but the weather
+still needs its 5 ms on top of that.
+
+- **The pre-pass's saving may shrink.** With the painting made cheap it saves nothing here (10.5 ms with it, 10.4
+  without), so check it again, on the laptop too, as the shaders change. It costs nothing to the laptop today.
 - **9 ms here may not come from tidying alone.** From the 18 ms frame, removing all the leaves' and the grass's painting (a
   ceiling, not a cut) still leaves 10.5 ms. The rest may take changes that show (fewer leaf cards far off, a cheaper paint
   recipe, a softer ground up close); the developer chooses from side-by-side comparisons.
-- **On the laptop the ground's paint costs the most** (see "On integrated graphics"), so the baked ground may save more
-  there than the 2.7 ms measured here.
+- **On the laptop the ground's paint costs the most**, now more than ever: with the cuts in, the frame without the
+  ground is 9.6 ms on the meadow (of 23.3) and 21.3 on the farm (of 28.6). So baking the ground's brush fields may save
+  much more there than the 2.7 ms measured here.
 - **Still to try:** a texture for the grass's own brush fields (they aren't the ground's), the leaves' colour work that is
   exact to move out of the pixel shader, tighter leaf cards, and culling whole clumps of trees off screen.
 - Each cut is measured on the laptop too, with `?profile` on its PR's preview.
