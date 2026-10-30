@@ -9,7 +9,7 @@ import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } fr
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
 //   view=0..3  zoom=16..96 (screen px per metre)  hour=0..24  x, z (camera target)  t (seconds: freeze the clock there)
-//   scene=farm|meadow  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
+//   scene=farm|meadow  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)  pixels=1080|1440|full (see PIXELS)
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
 //   prepass=0 (paint without drawing the silhouettes first)  scissor=0 (the water's passes over the whole screen)
@@ -27,6 +27,13 @@ const renderer = new BrushRenderer(canvas, {
   pixelRatio: params.has('dpr') ? num('dpr', 1) : params.has('profile') ? 1 : undefined,
   samples: params.has('samples') ? num('samples', 4) : undefined,
 });
+// The most pixels the frame is drawn at, to compare on a high-DPI screen (#6): `pixels=1080` (1080p's count, the budget's),
+// `1440`, or `full` (the screen's own). Not with dpr or profile, which set the pixels themselves.
+const PIXELS: Record<string, number> = { 1080: 1920 * 1080, 1440: 2560 * 1440, full: Infinity };
+let pixels = params.get('pixels') ?? '1080';
+if (!(pixels in PIXELS)) pixels = '1080';
+const fixedPixels = params.has('dpr') || params.has('profile');
+if (!fixedPixels) renderer.maxPixels = PIXELS[pixels];
 const scene = farm ? buildFarm(renderer) : buildMeadow(renderer);
 renderer.setWaterLevel(scene.waterLevel);
 const view = renderer.view;
@@ -59,7 +66,7 @@ if (params.has('still') || params.has('profile')) document.body.classList.add('s
 // While profiling, the cases set the size and the camera: the window and the controls leave them alone.
 let profiling = false;
 function resize() { if (!profiling) renderer.resize(canvas.clientWidth, canvas.clientHeight); }
-addEventListener('resize', resize);
+addEventListener('resize', () => { resize(); hud(); });
 resize();
 
 // Controls: drag to pan, wheel to zoom, Q/E to turn, 1-5 for the hour, L lines, S shadows.
@@ -101,6 +108,19 @@ function hud() {
   lines.textContent = 'Lines'; lines.className = renderer.settings.lines ? 'on' : '';
   lines.onclick = () => { renderer.settings.lines = !renderer.settings.lines; hud(); };
   hudEl.append(lines);
+  if (!fixedPixels) {
+    // Which pixel count, and what it draws at on this screen.
+    const b = document.createElement('button');
+    b.textContent = `Pixels: ${pixels} (${renderer.width}×${renderer.height})`;
+    b.onclick = () => {
+      const names = Object.keys(PIXELS);
+      pixels = names[(names.indexOf(pixels) + 1) % names.length];
+      renderer.maxPixels = PIXELS[pixels];
+      resize();
+      hud();
+    };
+    hudEl.append(b);
+  }
   hudEl.append(slider('Wind', 0, 45, 0.5, wind.speed, (v) => { wind.speed = v; }, (v) => `${windName(v)} ${v.toFixed(1)} m/s`));
   hudEl.append(slider('towards', 0, 360, 5, (wind.direction * 180) / Math.PI, (v) => { wind.direction = (v * Math.PI) / 180; }, (v) => `${v.toFixed(0)}°`));
   const info = document.createElement('span');

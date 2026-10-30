@@ -62,7 +62,15 @@ export class BrushRenderer {
   readonly shared: SharedUniforms = createSharedUniforms();
   readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true };
   width = 1; height = 1;
-  readonly pixelRatio: number;
+  /** Device pixels per CSS pixel asked for (see RendererOptions). */
+  private readonly screenRatio: number;
+  /** Device pixels per CSS pixel drawn: screenRatio, or less where that would draw more than maxPixels. */
+  pixelRatio: number;
+  /**
+   * The most pixels to draw: on a high-DPI screen (the MacBook's) the frame is drawn at fewer pixels than the screen's and
+   * scaled up to it, so it costs what the budget was set at. Set it before resize. No limit by default.
+   */
+  maxPixels = Infinity;
   /** Times each pass when set (tools/profile.ts, the demo's ?profile). */
   timer: PassTimer | null = null;
   /**
@@ -99,7 +107,8 @@ export class BrushRenderer {
   constructor(readonly canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true });
     this.gl.autoClear = false;
-    this.pixelRatio = options.pixelRatio ?? Math.min(window.devicePixelRatio || 1, 2);
+    this.screenRatio = options.pixelRatio ?? Math.min(window.devicePixelRatio || 1, 2);
+    this.pixelRatio = this.screenRatio;
     const samples = options.samples ?? 4;
     this.gbuffer = new THREE.WebGLRenderTarget(1, 1, {
       count: 2, samples, type: THREE.HalfFloatType, format: THREE.RGBAFormat, depthBuffer: true,
@@ -280,10 +289,12 @@ export class BrushRenderer {
   setWaterLevel(y: number) { this.shared.uMirrorY.value = y; }
 
   resize(cssWidth: number, cssHeight: number) {
+    this.pixelRatio = Math.min(this.screenRatio, Math.sqrt(this.maxPixels / Math.max(1, cssWidth * cssHeight)));
     this.gl.setPixelRatio(this.pixelRatio);
     this.gl.setSize(cssWidth, cssHeight, false);
-    this.width = Math.round(cssWidth * this.pixelRatio);
-    this.height = Math.round(cssHeight * this.pixelRatio);
+    // The canvas's own size (three rounds a fractional ratio down).
+    this.width = this.canvas.width;
+    this.height = this.canvas.height;
     this.gbuffer.setSize(this.width, this.height);
     const hw = Math.max(1, Math.round(this.width / 2)), hh = Math.max(1, Math.round(this.height / 2));
     this.underTarget.setSize(hw, hh);
