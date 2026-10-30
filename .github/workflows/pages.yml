@@ -51,16 +51,18 @@ jobs:
       - if: env.BUILD == 'true'
         run: npm run build
 
+      # Runs can start out of order: pages.sh skips a change that is no longer wanted (an old head, a reopened pull request).
       - name: Publish main
         if: github.event_name == 'push'
-        run: |
-          # Runs can start out of order: leave main/ to the run for main's head.
-          if [ "$(git ls-remote origin refs/heads/main | cut -f1)" != "$GITHUB_SHA" ]; then echo "main has moved on; skipping"; exit 0; fi
-          .github/scripts/pages.sh main dist
+        run: .github/scripts/pages.sh main dist
       - name: Publish the preview
+        id: preview
         if: github.event_name == 'pull_request' && github.event.action != 'closed'
+        env:
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
         run: .github/scripts/pages.sh "pr-$PR" dist
       - name: Remove the preview
+        id: removed
         if: github.event_name == 'pull_request' && github.event.action == 'closed'
         run: .github/scripts/pages.sh "pr-$PR"
       - name: Clean up
@@ -68,7 +70,7 @@ jobs:
         run: .github/scripts/pages.sh
 
       - name: Comment on the pull request
-        if: github.event_name == 'pull_request'
+        if: steps.preview.outputs.done == 'true' || steps.removed.outputs.done == 'true'
         env:
           SHA: ${{ github.event.pull_request.head.sha }}
           CLOSED: ${{ github.event.action == 'closed' }}
