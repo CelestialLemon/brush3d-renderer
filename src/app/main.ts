@@ -1,10 +1,9 @@
-import { NIGHTS, PRESETS, lookAt, setNight, type NightName } from '../renderer/look';
+import { PRESETS, lookAt } from '../renderer/look';
 import { BrushRenderer } from '../renderer/renderer';
 import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
 import type { MaterialKind } from '../renderer/materials';
-import { OVERCAST } from '../renderer/overcast';
 import { WEATHER_PRESETS, type Haze, type Weather, type WeatherName } from '../renderer/weather';
 import { WIND_SCALE, windName, type Wind, type WindStrength } from '../renderer/wind';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
@@ -17,8 +16,6 @@ import { SPEEDS, timelineAt, timelinePhase } from './timeline';
 //   weather (clear|scattered|overcast|soft-rain|storm|fog|dust|heat-wave|snow|blizzard), then each value over it:
 //     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop (metres)
 //   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
-//   overcast=pearl|slate|silver (the overcast look's candidates, #7: to choose between)
-//   night=blue|green (the night's colour, #7: to choose between)
 //   falling=0 (leave out the things in the air: the wind's leaves, and rain, snow and dust to come)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
 //   prepass=0 (paint without drawing the silhouettes first)  scissor=0 (the water's passes over the whole screen)
@@ -86,12 +83,6 @@ const weather: Required<Weather> & { haze: Haze } = {
 if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop'].some((k) => params.has(k))) presetName = null;
 renderer.setWeather(weather, true);
 renderer.settings.falling = num('falling', 1) !== 0;
-let overcastName = params.get('overcast') ?? 'pearl';
-if (!Object.hasOwn(OVERCAST, overcastName)) overcastName = 'pearl';
-renderer.overcast = OVERCAST[overcastName];
-let nightName = (params.get('night') ?? 'blue') as NightName;
-if (!Object.hasOwn(NIGHTS, nightName)) nightName = 'blue';
-setNight(nightName);
 // The scripted timeline, at a game speed: it sends the weather as the game would, a few times a second.
 let playing = params.has('timeline'), speed = Number(params.get('timeline')) || 1;
 if (playing) presetName = null;
@@ -203,17 +194,6 @@ function hud() {
     speed = next; pace.textContent = `${speed}× speed`;
   };
   hudEl.append(play, pace, timelineEl);
-  // The overcast look's candidates (#7), to flip between.
-  for (const name of Object.keys(OVERCAST)) {
-    const b = Object.assign(document.createElement('button'), { textContent: `Overcast: ${name}`, className: name === overcastName ? 'on' : '' });
-    b.onclick = () => { overcastName = name; renderer.overcast = OVERCAST[name]; hud(); };
-    hudEl.append(b);
-  }
-  for (const name of Object.keys(NIGHTS) as NightName[]) {
-    const b = Object.assign(document.createElement('button'), { textContent: `Night: ${name}`, className: name === nightName ? 'on' : '' });
-    b.onclick = () => { nightName = name; setNight(name); hud(); };
-    hudEl.append(b);
-  }
 }
 const timelineEl = document.createElement('span');
 /** The weather controls' values, put back to what they show (the timeline moves them). */
@@ -309,7 +289,7 @@ function profilePanel() {
   // Everything that sets the work, as it is when Run is pressed, so pasted results from different settings can't be
   // mistaken for each other.
   const about = () => `scene ${sceneName} · GPU ${gpu} · ${timers ? 'GPU timers' : 'no GPU timers (only the uncapped frame and the CPU)'}\n`
-    + `hour ${hour} · x ${view.target.x.toFixed(2)} · z ${view.target.z.toFixed(2)} · zoom ${view.zoom.toFixed(1)} · view ${view.view} · samples ${num('samples', 4)} · shadow map ${num('shadowMap', farm ? 4096 : 2048)} · lines ${renderer.settings.lines ? 'on' : 'off'} · shadows ${renderer.settings.shadows ? 'on' : 'off'} · prepass ${renderer.settings.prepass ? 'on' : 'off'} · water scissor ${renderer.settings.waterScissor ? 'on' : 'off'} · equal depth ${renderer.settings.equalDepth ? 'on' : 'off'} · ground ${bakeName('ground')} · crop ${bakeName('crop')} · grass ${bakeName('grass')} · weather ${presetName ?? JSON.stringify(weather)} · overcast ${overcastName} · night ${nightName}\n`
+    + `hour ${hour} · x ${view.target.x.toFixed(2)} · z ${view.target.z.toFixed(2)} · zoom ${view.zoom.toFixed(1)} · view ${view.view} · samples ${num('samples', 4)} · shadow map ${num('shadowMap', farm ? 4096 : 2048)} · lines ${renderer.settings.lines ? 'on' : 'off'} · shadows ${renderer.settings.shadows ? 'on' : 'off'} · prepass ${renderer.settings.prepass ? 'on' : 'off'} · water scissor ${renderer.settings.waterScissor ? 'on' : 'off'} · equal depth ${renderer.settings.equalDepth ? 'on' : 'off'} · ground ${bakeName('ground')} · crop ${bakeName('crop')} · grass ${bakeName('grass')} · weather ${presetName ?? JSON.stringify(weather)}\n`
     + `${location.href}\n${navigator.userAgent}`;
   const out = Object.assign(document.createElement('pre'), { textContent: `${about()}\n\nPlug the laptop in, close other apps, then Run. It takes a minute or two.` });
   const run = Object.assign(document.createElement('button'), { textContent: 'Run' });

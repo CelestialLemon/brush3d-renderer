@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CAMERA_DISTANCE, ViewCamera } from './camera';
 import type { Look } from './look';
-import { OVERCAST, overcastLook, skyShare, type OvercastRecipe } from './overcast';
+import { OVERCAST, overcastLook, skyShare } from './overcast';
 import {
   createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
 } from './materials';
@@ -130,8 +130,6 @@ export class BrushRenderer {
    * call shelter.changed() after moving cover; adding a mesh or showing or hiding a kind does it already.
    */
   readonly shelter: ShelterMap;
-  /** How cloud cover changes the light (see overcast.ts). */
-  overcast: OvercastRecipe = OVERCAST.pearl;
 
   constructor(readonly canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true });
@@ -360,7 +358,7 @@ export class BrushRenderer {
 
   /** Sets the light's uniforms from the hour's look under the weather as drawn. */
   private applyLook(clear: Look) {
-    const cover = this.weather.overcast, r = this.overcast;
+    const cover = this.weather.overcast, r = OVERCAST;
     const look = overcastLook(clear, cover, r);
     const s = this.shared;
     const shape = skyShare(cover);

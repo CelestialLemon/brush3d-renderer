@@ -113,6 +113,11 @@ Before the cuts, the scene was 47 ms on the laptop on the farm and 26 on the mea
 
 ## The weather, piece by piece
 
+### The overcast light (#7)
+
+No line in the budget: it changes the light's numbers and two shader terms, with no new pass, and measures the same as
+clear (the farm at 1080p in a storm, 11.64 ms clear, 11.65 overcast, here).
+
 ### The shelter map (#10)
 
 Two depth maps of the land from straight above, 1024² each (10 MB, with the byte a texel of colour a target must have):
