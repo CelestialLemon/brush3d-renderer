@@ -3,6 +3,7 @@ import { CAMERA_DISTANCE, ViewCamera } from './camera';
 import type { Look } from './look';
 import { createSharedUniforms, depthMaterial, sceneMaterial, type MaterialKind, type SharedUniforms } from './materials';
 import { POST_FRAG, POST_VERT } from './post';
+import { leafStorm, WindState, type Wind } from './wind';
 
 // The renderer: a sun shadow map; for the water, the bed drawn without it and the scene mirrored in it (both at half size);
 // a multisampled G-buffer (colour plus view normal, depth and ink); and a post pass that inks the lines, hazes the distance
@@ -53,6 +54,8 @@ export class BrushRenderer {
   private underTarget: THREE.WebGLRenderTarget;
   private reflectTarget: THREE.WebGLRenderTarget;
   private look: Look | null = null;
+  /** The wind as drawn, easing towards what the game last asked for (see setWind). */
+  readonly wind = new WindState();
 
   constructor(readonly canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true });
@@ -91,7 +94,15 @@ export class BrushRenderer {
       },
     });
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.post));
+    // Leaves in the air, for strong winds: the renderer's own, round wherever the camera is.
+    this.add(leafStorm(), 'debris', { castShadow: false });
   }
+
+  /**
+   * The wind the game wants: speed in m/s (see WIND_SCALE), the direction it blows towards, and how gusty. The drawn wind
+   * eases towards it over a second or two; 'immediate' puts it there at once (a new scene, a screenshot).
+   */
+  setWind(wind: Wind, immediate = false) { this.wind.set(wind, immediate); }
 
   /** The shared material of a kind (one per renderer, so meshes of a kind batch their state). */
   material(kind: MaterialKind) {
@@ -181,9 +192,17 @@ export class BrushRenderer {
 
   render(time: number) {
     if (!this.look) throw new Error('setLook before render');
-    this.shared.uTime.value = time;
+    const s = this.shared, w = this.wind;
+    s.uTime.value = time;
+    w.update(time);
+    s.uWindDir.value.set(w.dirX, w.dirZ);
+    s.uWindSpeed.value = w.speed;
+    s.uWindGustiness.value = w.gust;
+    s.uWindDrift.value.set(w.driftX, w.driftZ);
+    s.uWindFlutter.value = w.flutter;
     this.view.apply(this.width, this.height);
-    this.shared.uViewBack.value.copy(this.view.backward());
+    s.uViewBack.value.copy(this.view.backward());
+    s.uViewTarget.value.copy(this.view.target);
     const gl = this.gl;
 
     // The sun's shadow map: redrawn every frame, because foliage and grass move in the wind.

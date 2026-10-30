@@ -10,12 +10,16 @@ export const PLAIN: Paint = [0, 1, 0, 0];
 export class MeshBuilder {
   private pos: number[] = []; private nrm: number[] = []; private col: number[] = []; private paint: number[] = [];
   private uv: number[] = []; private extra: number[] = []; private index: number[] = [];
+  /** Each vertex's tree for the wind (its foot's x and z, its height, how much of the crown's movement the vertex takes); zero
+   * where it isn't part of one. Wood and leaves only. */
+  private tree: number[] | null;
   private readonly extraName: string | null;
   private readonly extraSize: number;
 
   constructor(readonly kind: MaterialKind) {
     this.extraName = kind === 'foliage' ? 'aCard' : kind === 'grass' ? 'aBlade' : null;
     this.extraSize = kind === 'foliage' || kind === 'grass' ? 4 : 0;
+    this.tree = kind === 'paint' || kind === 'foliage' ? [] : null;
   }
 
   get vertexCount() { return this.pos.length / 3; }
@@ -24,7 +28,24 @@ export class MeshBuilder {
     this.pos.push(p.x, p.y, p.z); this.nrm.push(n.x, n.y, n.z); this.col.push(c.r, c.g, c.b);
     this.paint.push(...paint); this.uv.push(...uv);
     for (let i = 0; i < this.extraSize; i++) this.extra.push(extra[i] ?? 0);
+    this.tree?.push(0, 0, 0, 0);
     return this.vertexCount - 1;
+  }
+
+  /**
+   * Makes the vertices from 'start' on part of one tree with its foot at (x, z), 'height' tall, so they move in the wind with
+   * it; 'share' says how much of the crown's movement a vertex takes, from its height (1 by default: all of it).
+   */
+  markTree(start: number, x: number, z: number, height: number, share: (y: number) => number = () => 1) {
+    if (!this.tree) throw new Error(`a ${this.kind} mesh has no trees`);
+    for (let i = start; i < this.vertexCount; i++) this.tree.splice(i * 4, 4, x, z, height, share(this.pos[i * 3 + 1]));
+  }
+
+  /** The heights of the vertices from 'start' on. */
+  heightsSince(start: number) {
+    const ys: number[] = [];
+    for (let i = start; i < this.vertexCount; i++) ys.push(this.pos[i * 3 + 1]);
+    return ys;
   }
 
   tri(a: number, b: number, c: number) { this.index.push(a, b, c); }
@@ -54,6 +75,7 @@ export class MeshBuilder {
     g.setAttribute('aPaint', new THREE.Float32BufferAttribute(this.paint, 4));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     if (this.extraName) g.setAttribute(this.extraName, new THREE.Float32BufferAttribute(this.extra, this.extraSize));
+    if (this.tree) g.setAttribute('aTree', new THREE.Float32BufferAttribute(this.tree, 4));
     if (this.vertexCount > 65535) g.setIndex(new THREE.Uint32BufferAttribute(this.index, 1));
     else g.setIndex(this.index);
     return g;

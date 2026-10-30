@@ -150,7 +150,11 @@ uniform float uShadeDepth;   // lightness taken off in shade
 uniform float uLitHue;       // OKLab hue the lit band leans to
 uniform float uLitLean;
 uniform float uTime;
-uniform float uWind;
+uniform vec2 uWindDir;       // where the wind blows towards, a unit vector in xz
+uniform float uWindSpeed;    // m/s, eased
+uniform float uWindGustiness;
+uniform vec2 uWindDrift;     // how far the gusts have rolled downwind (metres)
+uniform float uWindFlutter;  // the leaves' flutter phase (radians)
 uniform vec3 uViewBack;     // the main camera's backward direction (wind moves things only across it)
 uniform sampler2D uShadowMap;
 uniform mat4 uShadowMatrix;  // world -> shadow-map uv and depth

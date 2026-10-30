@@ -1,5 +1,6 @@
 // Records the camera moving as a video, to judge motion by eye: crawl, shimmer and popping show only in moving pictures.
-//   node tools/video.ts [out-dir] [move ...]      moves: pan, pan-wide, pan-up, turn, zoom, wind (default: all)
+//   node tools/video.ts [out-dir] [move ...]      moves: pan, pan-wide, pan-up, turn, zoom, wind (default: all but the
+//   wind strengths), wind-calm, wind-breeze, wind-gale, wind-storm, wind-hurricane, wind-ramp (calm to hurricane and back)
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5"). See tools/browser.ts for the rest.
 import { execFileSync } from 'node:child_process';
@@ -11,8 +12,11 @@ import { launch, open } from './browser.ts';
 const FPS = 30;
 const PITCH = (30 * Math.PI) / 180;
 interface Cam { x: number; z: number; zoom: number; view: number }
-/** A move: how long it lasts and where the camera is at time t (seconds). */
-const MOVES: Record<string, { seconds: number; at: (t: number) => Cam }> = {
+const STRENGTHS = { calm: 0, breeze: 5, gale: 17, storm: 25, hurricane: 35 };
+/** A move: how long it lasts, where the camera is at time t (seconds), and the wind if not the demo's (eased if 'ease'). */
+interface Move { seconds: number; at: (t: number) => Cam; wind?: (t: number) => number; ease?: boolean; extra?: boolean }
+const STILL = { x: -1, z: 4, zoom: 48, view: 0 };
+const MOVES: Record<string, Move> = {
   // A slow drag to the right and a little up, at an everyday zoom: 60 px a second.
   pan: { seconds: 5, at: (t) => pan({ x: 0, z: 0, zoom: 40, view: 0 }, 60 * t, 15 * t) },
   // Zoomed out, faster.
@@ -24,7 +28,10 @@ const MOVES: Record<string, { seconds: number; at: (t: number) => Cam }> = {
   // Zoom from wide to close and back, smoothly.
   zoom: { seconds: 6, at: (t) => ({ x: -1, z: 4, zoom: 24 * Math.pow(64 / 24, 0.5 - 0.5 * Math.cos((t / 6) * 2 * Math.PI)), view: 0 }) },
   // The camera still, the wind moving.
-  wind: { seconds: 5, at: () => ({ x: -1, z: 4, zoom: 48, view: 0 }) },
+  wind: { seconds: 5, at: () => STILL },
+  // The camera still, at each strength of wind; and the wind rising from calm to a hurricane and dying down again.
+  ...Object.fromEntries(Object.entries(STRENGTHS).map(([k, v]) => [`wind-${k}`, { seconds: 5, at: () => STILL, wind: () => v, extra: true }])),
+  'wind-ramp': { seconds: 16, at: () => STILL, wind: (t) => 35 * Math.sin(Math.min(1, t / 14) * Math.PI), ease: true, extra: true },
 };
 
 /** The camera moved by screen pixels (right, up), as dragging does. */
@@ -42,17 +49,18 @@ await mkdir(out, { recursive: true });
 const { browser, page } = await launch();
 try {
   await open(page, process.env.QUERY ?? '');
-  for (const name of names.length ? names : Object.keys(MOVES)) {
+  for (const name of names.length ? names : Object.keys(MOVES).filter((k) => !MOVES[k].extra)) {
     const move = MOVES[name];
     if (!move) throw new Error(`No move ${name}: ${Object.keys(MOVES).join(', ')}`);
     const dir = await mkdtemp(join(tmpdir(), `brush3d-${name}-`));
     const frames = Math.round(move.seconds * FPS);
     for (let i = 0; i < frames; i++) {
       const t = i / FPS;
-      const png = await page.evaluate((cam, time) => {
-        (window as any).__draw(cam, { time });
+      const wind = move.wind ? { speed: move.wind(t) } : undefined;
+      const png = await page.evaluate((cam, time, wind, ease) => {
+        (window as any).__draw(cam, { time, wind, ease });
         return document.querySelector('canvas')!.toDataURL('image/png');
-      }, move.at(t), 3 + t);
+      }, move.at(t), 3 + t, wind, !!move.ease);
       await writeFile(join(dir, `${String(i).padStart(4, '0')}.png`), Buffer.from(png.split(',')[1], 'base64'));
     }
     const file = join(out, `${name}.mp4`);

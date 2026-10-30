@@ -24,7 +24,7 @@ const PANS: { name: string; right: number; up: number }[] = [
   { name: 'right 2px', right: 2, up: 0 },
   { name: 'up 0.5px', right: 0, up: 0.5 },
 ];
-const KINDS = ['grass', 'foliage', 'ink', 'water'];
+const KINDS = ['grass', 'foliage', 'crop', 'ink', 'water', 'debris'];
 // Which pan the A/B runs use: AB=2 picks the 1-pixel pan (whatever changes there isn't sub-pixel crawl but something not fixed to the world).
 const AB = PANS[Number(process.env.AB ?? 0)];
 const SS = Number(process.env.SS ?? 1);

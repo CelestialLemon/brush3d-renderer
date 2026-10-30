@@ -212,7 +212,7 @@ function water(r: BrushRenderer) {
  * edges, banded in the long rows of a harvest-ready field. Stalks with ears stand out of it only along its edges.
  */
 function wheat(r: BrushRenderer) {
-  const b = new MeshBuilder('paint');
+  const b = new MeshBuilder('crop');
   const u0 = WHEAT_LEFT - 1, v0 = 4, nu = Math.round((HALF - u0) / STEP) + 1, nv = Math.round((HALF - v0) / STEP) + 1;
   const tall = (u: number, v: number) => 0.8 * smooth(0, 1.1, wheatInside(u, v)) + 0.04 * noise2(u * 0.5, v * 0.5) - 0.06;
   const top = (u: number, v: number) => { const [x, z] = W(u, v); return height(x, z) + tall(u, v); };
@@ -238,7 +238,7 @@ function wheat(r: BrushRenderer) {
     const a = j * nu + i;
     if (keep[a] || keep[a + 1] || keep[a + nu] || keep[a + nu + 1]) b.quad(a, a + 1, a + nu + 1, a + nu);
   }
-  r.add(fixWinding(b.build()), 'paint');
+  r.add(fixWinding(b.build()), 'crop');
 
   // Stalks along the edge, to break it.
   const g = new MeshBuilder('grass');
