@@ -4,6 +4,20 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 
 ## Now
 
+- **Wind, issue #2** (2026-10-30), awaiting review: `renderer.setWind({ speed, direction, gust })`, eased, from calm to a
+  hurricane (0, 5, 17, 25, 35 m/s), with a slider and direction in the demo and a `tools/video.ts` move per strength plus
+  `wind-ramp`.
+  - Trees lean downwind and rock about the lean (big trees slowly, shrubs quickly), stronger in a gust. Each crown moves as
+    one piece, never turning or bending (that reorders its dabs), and the trunk and limbs bend up into it. The movement is
+    drawn only across the view, which puts it on the same pixels without changing depth, so neighbouring trees never swap
+    their overlapping edges; it's lit and casts its shadow in full 3D. Paint is keyed to where things rest, so it rides
+    with them.
+  - Leaves flutter (across the view only, as before), and from a gale up turn over in waves to show pale undersides.
+  - Gusts roll over the grass and through the wheat, which shows them as travelling bands of light; the water chops, with
+    whitecaps in a storm. From a gale up leaves fly through the air (the renderer's own, round the camera).
+  - `tools/pops.ts` finds patches that change colour all at once between frames 4 ms apart. Breeze and gale: none in either
+    scene. Storm and hurricane: none bar the flying leaves, which are moving, not popping. A one-pixel pan is unchanged from
+    before (farm 0.290, meadow 0.144).
 - **Water, step 1 of issue #1** (2026-10-29), awaiting review: we don't copy the reference's near-white stream, which read
   as glass. The see-through water of the first pass is back (the bed, stones and depth show, the colour deepens to
   blue-green, a little sky where it's deep), grass and reeds are reflected again, so the banks' green fringe is back in the
@@ -70,7 +84,8 @@ reflections in the water), fog, rain, dust and frost, each changing the whole pi
 First round done 2026-10-29: `tools/motion.ts` measures crawl (sub-pixel pans, frames lined back up), `tools/video.ts`
 records moves to judge by eye. The wheat's crawl went with the painted mass; blades turn to the camera; dab edges and the
 panel cells are antialiased; the brush blends between planes instead of switching. Wind moves leaves and grass only across
-the view, never nearer or farther, so overlapping dabs no longer swap and swatches no longer pop. Left, most visible first (Sol's ranking):
+the view, never nearer or farther, so overlapping dabs no longer swap and swatches no longer pop (trees' lean and sway too,
+since #2). Left, most visible first (Sol's ranking):
 
 - **Thin vegetation coverage.** Grass blades and the wheat's fringe are still the largest share of sub-pixel crawl: 4x
   multisampling on long thin edges. Try coverage-aware tapering, or easing tufts into painted masses as the camera pulls back.
@@ -84,6 +99,14 @@ the view, never nearer or farther, so overlapping dabs no longer swap and swatch
   camera's would, and that is kept on purpose; report their slow change apart from crawl.
 - Measure better: several starting phases and directions, views and hours, local crops and percentiles (a mean hides sparse
   pops), and wind-only videos apart from camera moves.
+
+### Wind (first pass shipped with #2)
+
+- **The flying leaves are fast.** In a hurricane they cross several pixels a frame, which may read as confetti; slow them
+  if it does. They also ignore the ground and the trees (they fly at a few metres, round the camera).
+- **The game's half** isn't drawn yet: snapped branches, fallen trees, a field flattened by a storm. The renderer will take
+  them as states (a fallen pose, how flat a field is) when the game has them.
+- **Weather (#3)** should drive `setWind` along with the water (#1); rain belongs there.
 
 ### Looks
 

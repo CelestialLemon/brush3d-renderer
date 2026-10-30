@@ -148,10 +148,10 @@ function field(r: BrushRenderer) {
 
   // Wheat: a painted golden mass filling the bed, and stalks with heavy ears standing out of it and round its edge. The mass
   // carries the field's colour; the stalks only break its top and sides, so little of the field is thin, crawling geometry.
-  const mass = new MeshBuilder('paint');
+  const mass = new MeshBuilder('crop');
   mass.addGeometry(new THREE.BoxGeometry(w - 0.5, 0.36, d - 0.5), new THREE.Matrix4().makeTranslation(cx, y0 + 0.16 + 0.3, cz),
     C.wheatTip.clone().lerp(C.wheatRoot, 0.35), [1, 3.0, 0.4, 0]);
-  r.add(mass.build(), 'paint');
+  r.add(mass.build(), 'crop');
   const g = new MeshBuilder('grass');
   const rand = rng(5);
   const up = new THREE.Vector3(0, 1, 0);

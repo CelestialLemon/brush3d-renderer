@@ -4,10 +4,12 @@ import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
 import type { MaterialKind } from '../renderer/materials';
+import { WIND_SCALE, windName, type Wind, type WindStrength } from '../renderer/wind';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
 //   view=0..3  zoom=16..96 (screen px per metre)  hour=0..24  x, z (camera target)  t (seconds: freeze the clock there)
 //   scene=farm|meadow  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
+//   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 
 const params = new URLSearchParams(location.search);
 const num = (k: string, d: number) => (params.has(k) ? Number(params.get(k)) : d);
@@ -26,6 +28,13 @@ view.update(0, true);
 renderer.settings.lines = num('lines', 1) !== 0;
 renderer.settings.shadows = num('shadows', 1) !== 0;
 let hour = num('hour', 12);
+const windParam = params.get('wind');
+const wind: Wind = {
+  speed: windParam === null ? WIND_SCALE.breeze : windParam in WIND_SCALE ? WIND_SCALE[windParam as WindStrength] : Number(windParam),
+  direction: (num('windDir', 31) * Math.PI) / 180,
+  gust: num('gust', 0.5),
+};
+renderer.setWind(wind, true);
 const frozen = params.has('t') ? num('t', 0) : null;
 if (params.has('still')) document.body.classList.add('still');
 
@@ -70,18 +79,33 @@ function hud() {
   lines.textContent = 'Lines'; lines.className = renderer.settings.lines ? 'on' : '';
   lines.onclick = () => { renderer.settings.lines = !renderer.settings.lines; hud(); };
   hudEl.append(lines);
+  hudEl.append(slider('Wind', 0, 45, 0.5, wind.speed, (v) => { wind.speed = v; }, (v) => `${windName(v)} ${v.toFixed(1)} m/s`));
+  hudEl.append(slider('towards', 0, 360, 5, (wind.direction * 180) / Math.PI, (v) => { wind.direction = (v * Math.PI) / 180; }, (v) => `${v.toFixed(0)}°`));
   const info = document.createElement('span');
   info.textContent = 'drag to pan · wheel to zoom · Q/E to turn';
   hudEl.append(info);
+}
+function slider(name: string, min: number, max: number, step: number, value: number, set: (v: number) => void, show: (v: number) => string) {
+  const label = document.createElement('label');
+  const input = Object.assign(document.createElement('input'), { type: 'range', min, max, step, value });
+  const out = document.createElement('output');
+  out.textContent = show(value);
+  input.oninput = () => { const v = Number(input.value); set(v); out.textContent = show(v); renderer.setWind(wind); };
+  input.onkeydown = (e) => e.stopPropagation();
+  label.append(name, input, out);
+  return label;
 }
 hud();
 
 // Shot mode (tools/): no loop; the tools ask for frames. __shot draws one and returns it as a PNG; __draw puts the camera
 // somewhere (a fractional view turns part way), leaves some kinds out, and draws, leaving the frame on the canvas.
 if (params.has('shot')) {
-  const draw = (cam?: { x: number; z: number; zoom: number; view: number }, options: { hide?: MaterialKind[]; grain?: boolean; time?: number } = {}) => {
+  // options.wind sets the wind (at once, unless ease is set: then it eases as the clock runs).
+  const draw = (cam?: { x: number; z: number; zoom: number; view: number },
+    options: { hide?: MaterialKind[]; grain?: boolean; time?: number; wind?: Partial<Wind>; ease?: boolean } = {}) => {
     if (cam) { view.target.set(cam.x, 0, cam.z); view.zoom = cam.zoom; view.view = cam.view; view.update(0, true); }
-    const kinds: MaterialKind[] = ['paint', 'ink', 'water', 'foliage', 'grass'];
+    if (options.wind) renderer.setWind({ ...wind, ...options.wind }, !options.ease);
+    const kinds: MaterialKind[] = ['paint', 'crop', 'ink', 'water', 'foliage', 'grass', 'debris'];
     for (const k of kinds) renderer.setVisible(k, !options.hide?.includes(k));
     const grain = renderer.settings.grain;
     if (options.grain === false) renderer.settings.grain = 0;

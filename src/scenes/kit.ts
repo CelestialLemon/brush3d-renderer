@@ -65,14 +65,16 @@ export function growTree(wood: MeshBuilder, leaves: MeshBuilder, ground: Ground,
   const s = t.scale ?? 1;
   const y0 = ground.height(t.x, t.z) - 0.05;
   const base = new THREE.Vector3(t.x, y0, t.z);
+  const wood0 = wood.vertexCount, leaves0 = leaves.vertexCount;
   const cypress = t.kind === 'cypress', bush = t.kind === 'bush', round = t.kind === 'round';
   const barkPaint: Paint = [0.4, 2.5, 1.57, 0];
   const trunkH = (cypress ? 1.2 : bush ? 0.25 : round ? 0.9 : 1.45) * s;
   const r0 = (cypress ? 0.16 : bush ? 0.06 : round ? 0.1 : 0.2) * Math.sqrt(s);
-  const trunk = new THREE.CylinderGeometry(r0 * 0.65, r0, trunkH + 0.4 * s, 9, 1);
+  // In rings up the trunk, so it can curve as it bends in the wind.
+  const trunk = new THREE.CylinderGeometry(r0 * 0.65, r0, trunkH + 0.4 * s, 9, 5);
   wood.addGeometry(trunk, new THREE.Matrix4().makeTranslation(t.x, y0 + (trunkH + 0.4 * s) / 2, t.z), C.bark, barkPaint);
   const limb = (from: THREE.Vector3, to: THREE.Vector3, a: number, b: number) => {
-    const g = new THREE.CylinderGeometry(b * Math.sqrt(s), a * Math.sqrt(s), from.distanceTo(to), 6, 1);
+    const g = new THREE.CylinderGeometry(b * Math.sqrt(s), a * Math.sqrt(s), from.distanceTo(to), 6, 3);
     const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
     wood.addGeometry(g, new THREE.Matrix4().compose(from.clone().lerp(to, 0.5), q, new THREE.Vector3(1, 1, 1)), C.bark, barkPaint);
   };
@@ -188,6 +190,13 @@ export function growTree(wood: MeshBuilder, leaves: MeshBuilder, ground: Ground,
       addDab(leaves, p, dir, fc, (0.1 + rand() * 0.04) * Math.min(1.2, dabScale), rand(), [0.2, 1, -1, 0.5]);
     }
   }
+  // In the wind the crown moves as one piece (see treeWind), and the wood bends into it from the foot: by the square of the
+  // height up to where the crown starts (most of its strokes above), and the limbs in the crown moving with it.
+  const ys = leaves.heightsSince(leaves0).sort((a, b) => a - b);
+  const height = Math.max(ys[ys.length - 1], ...wood.heightsSince(wood0)) - y0;
+  const crown = Math.max(ys[Math.floor(ys.length * 0.1)] - y0, height * 0.2);
+  wood.markTree(wood0, t.x, t.z, height, (y) => Math.min(Math.max(y - y0, 0) / crown, 1) ** 2);
+  leaves.markTree(leaves0, t.x, t.z, height);
 }
 
 /** A stone: a lumpy, flattened ball, sunk partway into the ground, mossy on top when it's dry. */

@@ -18,10 +18,17 @@ npm run typecheck
 npm run shot -- out "hour=12" "hour=17.5&view=2"     # headless frames as PNGs (needs the dev server)
 node tools/motion.ts out "zoom=40"                     # how steady the picture is under sub-pixel pans
 node tools/video.ts out pan turn wind                  # moves recorded as mp4 (needs ffmpeg)
+node tools/video.ts out wind-ramp                      # the wind rising from calm to a hurricane and dying down again
+node tools/pops.ts out "wind=storm"                    # swatch pops in the wind: patches that change colour all at once
 ```
 
 The demo's URL takes `scene` (`farm`, the default, or `meadow`), `view` (0-3), `zoom` (screen px per metre, 16-96), `hour`, `x`/`z` (the camera's target), `t` (freeze
-the clock), `lines=0`, `shadows=0` and `still` (hide the buttons).
+the clock), `lines=0`, `shadows=0`, `still` (hide the buttons), and the wind: `wind` (m/s, or `calm`, `breeze`,
+`gale`, `storm`, `hurricane`), `windDir` (degrees it blows towards) and `gust` (0-1).
+
+The game sets the wind with `renderer.setWind({ speed, direction, gust })`; the drawn wind eases towards it. Trees lean and
+rock as whole crowns, leaves flutter, gusts roll over the grass and through the wheat, the water chops, and from a gale up
+leaves show their pale undersides and blow through the air. `src/renderer/wind.ts` has the scale and the curves.
 
 ## How it draws
 
@@ -40,5 +47,6 @@ the clock), `lines=0`, `shadows=0` and `still` (hide the buttons).
 - `src/scenes/`: demo scenes, built in TypeScript: `farm.ts` (the *Dear Alice* aerial, rebuilt), `meadow.ts` (the first slice),
   and `kit.ts`, the pieces both are made of (trees, stones, grass, reeds, lines on the map, water).
 - `src/app/`: the demo viewer.
-- `tools/`: headless capture (`shot.ts`), motion measurement (`motion.ts`) and videos (`video.ts`), on `browser.ts`.
+- `tools/`: headless capture (`shot.ts`), motion measurement (`motion.ts`), pops in the wind (`pops.ts`) and videos
+  (`video.ts`), on `browser.ts`.
 - `reference/`: how to pull frames from the reference film (kept out of git: they're copyrighted).

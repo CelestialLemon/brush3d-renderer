@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GBUFFER_OUT, LIGHT_UNIFORMS, NOISE, OKLAB, PAINT, SHADOW } from './glsl';
+import { WIND_GLSL } from './wind';
 
 // The scene's materials. Each has a main variant (writes colour and the G-buffer) and a depth variant for the sun's
 // shadow map, built from the same vertex code so wind and billboarding cast the shadows they should.
@@ -21,8 +22,13 @@ export function createSharedUniforms() {
     uLitHue: { value: 1.3 },
     uLitLean: { value: 0.1 },
     uTime: { value: 0 },
-    uWind: { value: 1 },
+    uWindDir: { value: new THREE.Vector2(1, 0) },
+    uWindSpeed: { value: 0 },
+    uWindGustiness: { value: 0.5 },
+    uWindDrift: { value: new THREE.Vector2() },
+    uWindFlutter: { value: 0 },
     uViewBack: { value: new THREE.Vector3(0, 0, 1) },
+    uViewTarget: { value: new THREE.Vector3() },
     uShadowMap: { value: null as THREE.Texture | null },
     uShadowMatrix: { value: new THREE.Matrix4() },
     uShadowTexel: { value: new THREE.Vector2(1 / 2048, 1 / 2048) },
@@ -40,7 +46,11 @@ export function createSharedUniforms() {
 }
 export type SharedUniforms = ReturnType<typeof createSharedUniforms>;
 
-export type MaterialKind = 'paint' | 'foliage' | 'grass' | 'ink' | 'water';
+/**
+ * paint: the ground, stones and trees' wood (which bends in the wind with its tree); crop: a field's painted mass, which
+ * shows the gusts; debris: leaves blown through the air in a storm, drawn by the renderer itself.
+ */
+export type MaterialKind = 'paint' | 'crop' | 'foliage' | 'grass' | 'ink' | 'water' | 'debris';
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Vertex shaders
@@ -49,12 +59,15 @@ export type MaterialKind = 'paint' | 'foliage' | 'grass' | 'ink' | 'water';
 const HEAD = /* glsl */ `
 ${LIGHT_UNIFORMS}
 ${NOISE}
+${WIND_GLSL}
 attribute vec4 aPaint;
 varying vec3 vWorldPos;
 varying vec3 vNormal;
 varying vec3 vColor;
 varying vec4 vPaint;
 varying float vViewDepth;
+// Where the point is with no wind: the brush is keyed to it, so the paint moves with what moves, not through it.
+varying vec3 vRestPos;
 // Puts a world position on screen, mirrored in the water when drawing its reflection. The surface is still lit where it
 // really is (vWorldPos and the normal stay unmirrored), so a tree in the water shows its shaded underside.
 // A movement with its part along the main camera's view taken out: on screen it looks the same, but nothing comes nearer or
@@ -64,6 +77,35 @@ varying float vViewDepth;
 vec3 acrossView(vec3 d) {
   vec3 b = uMirror > 0.5 ? uViewBack * vec3(1.0, -1.0, 1.0) : uViewBack;
   return d - b * dot(d, b);
+}
+// How a point of a tree moves in the wind (tree: its foot's x and z, its height, and how much of its crown's movement this
+// point takes; a height of 0 is no tree): the whole crown moves as one piece, leaning downwind and rocking about the lean,
+// and the trunk bends into it from the foot. The crown only moves, never turns or bends: any turn or bend changes which of
+// its overlapping dabs is in front, and the swatches pop, where a shift leaves their order alone.
+vec3 treeWind(vec4 tree) {
+  if (tree.z <= 0.0) return vec3(0.0);
+  float height = tree.z, seed = hash12(tree.xy * 1.7);
+  // A gust, sampled at the tree's foot, blows it a little harder.
+  float u = uWindSpeed * (1.0 + 0.36 * uWindGustiness * (windGust(tree.xy) * 2.0 - 1.0));
+  // Big trees rock slowly, shrubs quickly, each a little differently.
+  float w = 6.2831853 * clamp(0.6 * pow(5.0 / height, 0.75), 0.35, 1.8) * (0.85 + 0.3 * seed);
+  float sway = windSway(u);
+  float along = windLean(u) + sway * sin(uTime * w + seed * 6.2831853);
+  float across = sway * 0.2 * sin(uTime * w * 1.27 + seed * 17.0);
+  vec3 d = (windDir3() * along + vec3(-uWindDir.y, 0.0, uWindDir.x) * across) * height;
+  // The top dips a little as the tree leans over.
+  d.y -= dot(d, d) / (1.4 * height);
+  return d * tree.w;
+}
+// A tree's movement as drawn. It's real 3D where it's lit (vWorldPos) and in the sun's shadow pass, so it shades and casts
+// its shadow where it really is; for the eye only its part across the view is drawn (see acrossView), which puts it on the
+// same pixels without changing its depth, so neighbouring trees rocking out of step never swap their overlapping edges.
+vec3 drawnShift(vec3 d) {
+#ifdef SHADOW_PASS
+  return d;
+#else
+  return acrossView(d);
+#endif
 }
 void place(vec3 world) {
   if (uMirror > 0.5) world.y = 2.0 * uMirrorY - world.y;
@@ -76,9 +118,27 @@ void place(vec3 world) {
 const STATIC_VERT = /* glsl */ `
 ${HEAD}
 varying vec2 vUv;
+#ifdef TREES
+attribute vec4 aTree;
+#endif
+#ifdef CROP
+varying float vGust;
+#endif
 void main() {
   vec4 wp = modelMatrix * vec4(position, 1.0);
+  vRestPos = wp.xyz;
+#ifdef CROP
+  // The field gives a little under each gust: its top sinks and drifts downwind.
+  vGust = windGust(wp.xz);
+  float give = vGust * windForce();
+  wp.xyz += (windDir3() * 0.1 - vec3(0.0, 0.14, 0.0)) * give;
+#endif
   vWorldPos = wp.xyz;
+#ifdef TREES
+  vec3 tree = treeWind(aTree);
+  vWorldPos += tree;
+  wp.xyz += drawnShift(tree);
+#endif
   vNormal = normalize(mat3(modelMatrix) * normal);
   vColor = color;
   vPaint = aPaint;
@@ -97,10 +157,12 @@ void main() {
 const FOLIAGE_VERT = /* glsl */ `
 ${HEAD}
 attribute vec4 aCard;
+attribute vec4 aTree;
 uniform vec2 uScreen;
 varying vec4 vCard;
 varying vec3 vDabNormal;
 varying float vCardPx;
+varying float vFlash;
 void main() {
   vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
   vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
@@ -108,11 +170,26 @@ void main() {
   float a = aPaint.z >= 0.0 ? aPaint.z + (aCard.w - 0.5) * 0.7 : aCard.w * 6.2831853;
   vec2 c = mat2(cos(a), sin(a), -sin(a), cos(a)) * aCard.xy;
   vec4 wc = modelMatrix * vec4(position, 1.0);
-  // Wind: the whole crown leans gently, each dab flutters a little on its own.
-  float sway = sin(uTime * 1.3 + wc.x * 0.4 + wc.z * 0.3) * 0.04 + sin(uTime * 3.7 + aCard.w * 40.0) * 0.015;
-  wc.xyz += acrossView(vec3(sway, 0.0, sway * 0.6) * uWind * max(wc.y, 0.0) * 0.4);
+  vec3 rest = wc.xyz + (right * c.x + up * c.y) * aCard.z;
+  // Wind: the crown moves with its tree (see treeWind and drawnShift); each dab flutters on its own, faster and wider as the
+  // wind rises (though leaves turn edge-on and stop flapping, so not much), never more than a little of its size, and only
+  // across the view (see acrossView).
+  float s = uWindSpeed, seed = aCard.w;
+  float g = windGust(aTree.z > 0.0 ? aTree.xy : wc.xz);
+  float amp = min(0.004 + 0.045 * s / (s + 12.0), 0.15 * aCard.z) * (0.7 + 0.6 * g);
+  float ph = uWindFlutter * (0.8 + 0.4 * fract(seed * 7.13)) + seed * 40.0;
+  vec3 flutter = (windDir3() * sin(ph) + vec3(-uWindDir.y, 0.0, uWindDir.x) * 0.5 * sin(ph * 1.31 + seed * 9.0)
+    + vec3(0.0, 0.5 * cos(ph * 0.87 + seed * 21.0), 0.0)) * amp;
+  vec3 tree = treeWind(aTree);
+  wc.xyz += acrossView(flutter);
+  // In a gale and up, leaves on the windward side turn over in the gusts and show their pale undersides. Slowly, a few at a
+  // time, in waves that travel with the gusts, so no dab blinks.
+  float windward = smoothstep(-0.3, 0.6, -dot(normalize(mat3(modelMatrix) * normal), windDir3()));
+  float turn = g + 0.35 * sin(uWindFlutter * 0.13 * (0.8 + 0.4 * fract(seed * 3.7)) + seed * 51.0);
+  vFlash = smoothstep(0.35, 0.8, windForce()) * smoothstep(0.55, 0.95, turn) * (0.35 + 0.65 * windward);
   vec3 world = wc.xyz + (right * c.x + up * c.y) * aCard.z;
-  vWorldPos = world;
+  vWorldPos = world + tree;
+  vRestPos = rest;
   vNormal = normalize(mat3(modelMatrix) * normal);
   // Each dab bulges towards the viewer a little; kept faint, so turning the camera doesn't relight the crown.
   vDabNormal = normalize(right * c.x * 0.55 + up * c.y * 0.55 + toCam * 0.45);
@@ -121,7 +198,7 @@ void main() {
   vCard = aCard;
   // Screen pixels per unit of the card, for its edge's antialiasing (orthographic: the same everywhere on screen).
   vCardPx = aCard.z * projectionMatrix[0][0] * uScreen.x * 0.5;
-  place(world);
+  place(world + drawnShift(tree));
 }
 `;
 
@@ -157,16 +234,70 @@ void main() {
     wp.xz += axis * sign(aBlade.z) * max(halfWidth, 0.6 / pxPerMetre) - dir * aBlade.z * stretch;
   }
 #endif
-  float h = aBlade.x * aBlade.x;
-  float gust = snoise(wp.xz * 0.12 - vec2(uTime * 0.35, uTime * 0.2)) * 0.5 + 0.5;
-  float sway = (sin(uTime * 2.1 + aBlade.y * 6.283 + wp.x * 0.7) * 0.35 + gust * 0.9) * uWind;
-  wp.xyz += acrossView(vec3(0.09, 0.0, 0.05) * sway * h);
+  // Wind: each blade bends downwind, more towards the tip, further in a gust and with the square of the speed, and rocks
+  // about that; the tip dips as it bends. Across the view only, so blades never swap which is in front.
+  vRestPos = wp.xyz;
+  float h = aBlade.x * aBlade.x, s = uWindSpeed;
+  float gust = windGust(wp.xz);
+  float bend = (0.02 + 0.0035 * s + 2.4e-4 * s * s) * mix(1.0, 0.3 + 1.4 * gust, 0.4 + 0.6 * uWindGustiness);
+  float rock = sin(uWindFlutter * 0.8 * (0.85 + 0.3 * aBlade.y) + aBlade.y * 6.283 + wp.x * 0.7) * (0.012 + 0.0025 * s);
+  float d = min(bend + rock, 0.6) * h;
+  wp.xyz += acrossView(windDir3() * d - vec3(0.0, d * d * 1.2, 0.0));
   vWorldPos = wp.xyz;
   vNormal = normalize(mat3(modelMatrix) * normal);
   vColor = color;
   vPaint = aPaint;
   vBlade = aBlade.xy;
   place(wp.xyz);
+}
+`;
+
+/**
+ * Leaves in the air, drawn as foliage dabs. Each card is one leaf; 'position' holds three random numbers (the same at its four
+ * corners) for where it is in a box round the camera's target and how high. The leaves ride the gusts downwind, wrap round
+ * the box (fading out near its edges, out of sight), bob and tumble. Only a share of them fly, growing from a gale to a
+ * hurricane; a leaf joining in grows from nothing rather than popping in. aCard as for foliage.
+ */
+const DEBRIS_VERT = /* glsl */ `
+${HEAD}
+attribute vec4 aCard;
+uniform vec2 uScreen;
+uniform vec3 uViewTarget;
+varying vec4 vCard;
+varying vec3 vDabNormal;
+varying float vCardPx;
+varying float vFlash;
+const float BOX = 128.0;
+void main() {
+  vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+  vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+  vec3 toCam = vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+  float seed = aCard.w, k = fract(seed * 13.71);
+  float share = smoothstep(14.0, 40.0, uWindSpeed);
+  float show = smoothstep(k, k + 0.08, share * 1.08);
+  // Carried by the gusts, some leaves faster than others, wandering a little across the wind.
+  vec2 side = vec2(-uWindDir.y, uWindDir.x);
+  float ph = uWindFlutter * (0.2 + 0.15 * fract(seed * 5.3)) + seed * 30.0;
+  vec2 xz = position.xy * BOX + uWindDrift * (1.0 + 0.6 * fract(seed * 3.1)) + side * sin(ph * 0.7) * 1.5;
+  vec2 rel = mod(xz - uViewTarget.xz + BOX * 0.5, BOX) - BOX * 0.5;
+  float fade = 1.0 - smoothstep(0.4 * BOX, 0.48 * BOX, max(abs(rel.x), abs(rel.y)));
+  float size = aCard.z * show * fade;
+  vec3 c0 = vec3(uViewTarget.x + rel.x, uViewTarget.y + 1.0 + position.z * 6.0 + sin(ph) * 0.8, uViewTarget.z + rel.y);
+  // Tumbling: the leaf turns on the screen, and narrows and widens as it flips over.
+  float a = seed * 6.2831853 + ph * 1.7;
+  vec2 c = mat2(cos(a), sin(a), -sin(a), cos(a)) * (aCard.xy * vec2(1.0, max(abs(cos(ph * 2.3)), 0.2)));
+  vec3 world = c0 + (right * c.x + up * c.y) * size;
+  vWorldPos = world;
+  // Its paint is the leaf's own, wherever it flies.
+  vRestPos = position * BOX;
+  vNormal = normalize(vec3(sin(ph * 2.3), 1.0, cos(ph * 1.9)));
+  vDabNormal = toCam;
+  vColor = color;
+  vPaint = aPaint;
+  vCard = aCard;
+  vCardPx = max(size, 1e-4) * projectionMatrix[0][0] * uScreen.x * 0.5;
+  vFlash = 0.0;
+  place(world);
 }
 `;
 
@@ -179,7 +310,9 @@ ${NOISE}
 ${OKLAB}
 ${SHADOW}
 ${PAINT}
+${WIND_GLSL}
 varying vec3 vWorldPos;
+varying vec3 vRestPos;
 varying vec3 vNormal;
 varying vec3 vColor;
 varying vec4 vPaint;
@@ -229,9 +362,12 @@ float rimLight(vec3 n, float amount) {
 const PAINT_FRAG = /* glsl */ `
 ${FRAG_HEAD}
 varying vec2 vUv;
+#ifdef CROP
+varying float vGust;
+#endif
 void main() {
   vec3 n = normalize(vNormal);
-  vec3 p = vWorldPos;
+  vec3 p = vRestPos;
   vec3 w = planeWeights(n);
   float angle = contourAngle(n, vPaint.z);
   // aPaint.x is how much brushwork shows here: a painter works the banks, edges and turns of the land and leaves the
@@ -240,7 +376,7 @@ void main() {
   float dab = dabsOn(p, w, vPaint.y, angle, vPaint.z) * detail;
   float br = strokesOn(p * vPaint.y * 0.6, w, angle, vPaint.z);
   vec3 base = driftColor(vColor, p, 1.0, dab);
-  float vis = sunVisibility(p, n, br);
+  float vis = sunVisibility(vWorldPos, n, br);
   // Cast shadows on the ground fall to half-tone rather than deep shade: the land stays light and calm.
   float floor_ = mix(0.18, 0.3, smoothstep(0.5, 0.7, abs(n.y)));
   float light = sunLight(n, 0.3) * mix(floor_, 1.0, vis) + dab * 0.07 + br * 0.04 * detail;
@@ -249,6 +385,14 @@ void main() {
   vec3 fp = p * vPaint.y * 1.3;
   float fine = strokesOn(fp, w, angle, vPaint.z) * (1.0 - smoothstep(0.12, 0.4, length(fwidth(fp))));
   light += fine * 0.04;
+#ifdef CROP
+  // Wind in a field, the way a painter shows it: the gusts roll through as long bands of light (the stalks bent over,
+  // showing their paler sides to the sky), with a little shade in the troughs between, stronger as the wind rises.
+  float force = smoothstep(0.0, 0.6, windForce());
+  float sheen = smoothstep(0.45, 0.85, vGust) - (1.0 - smoothstep(0.1, 0.4, vGust)) * 0.5;
+  light += sheen * force * 0.16;
+  base = mix(base, oklabToLin(lchShift(linToOklab(base), 0.05, 0.8, 0.0)), max(sheen, 0.0) * force * 0.6);
+#endif
   vec3 col = paintBands(base, light, 0.05, n.y * 0.5 + 0.5);
   col += uRimColor * rimLight(n, vPaint.w);
   writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
@@ -273,6 +417,7 @@ ${DAB_SHAPE}
 varying vec4 vCard;
 varying vec3 vDabNormal;
 varying float vCardPx;
+varying float vFlash;
 void main() {
   vec2 c = vCard.xy;
   float seed = vCard.w * 91.0;
@@ -287,11 +432,15 @@ void main() {
   if (alpha < 0.02) discard;
   vec3 nCanopy = normalize(vNormal);
   vec3 n = normalize(nCanopy + vDabNormal * 0.2);
-  vec3 p = vWorldPos;
+  vec3 p = vRestPos;
   // Strokes follow the dab, so each one carries a couple of brush marks.
   float br = strokes(c * 1.6 + seed, seed);
   vec3 base = driftColor(vColor, p, vPaint.x, br * 0.35 * vPaint.x);
-  float vis = sunVisibility(p, nCanopy, br);
+  // A leaf turned over by the wind shows its underside: paler, greyer and cooler, a silvery green.
+  vec3 under = linToOklab(base);
+  under = hueToward(lchShift(under, 0.13, 0.5, 0.0), uShadeHue, 0.25);
+  base = mix(base, oklabToLinFit(under), vFlash * 0.75);
+  float vis = sunVisibility(vWorldPos, nCanopy, br);
   // In the crown's own shadow the lumps still read: the shadow lowers the light rather than flattening it.
   float lit = sunLight(n, 0.35);
   // Out of the sun, a mass is still lit by the sky from above: tops lighter than undersides, so the shade keeps its form.
@@ -320,12 +469,12 @@ varying vec2 vBlade;
 void main() {
   // Grass is lit like the ground it grows from (its normal is the ground's), so a meadow reads as one painted surface.
   vec3 n = normalize(vNormal);
-  vec3 p = vWorldPos;
+  vec3 p = vRestPos;
   float angle = contourAngle(n, vPaint.z);
   float dab = paintDabs(p.xz, vPaint.y, angle) * 0.6;
   float br = paintStrokes(p.xz * vPaint.y * 0.6, angle);
   vec3 base = driftColor(vColor, p, vPaint.x, dab);
-  float vis = sunVisibility(p, n, br);
+  float vis = sunVisibility(vWorldPos, n, br);
   float light = sunLight(n, 0.3) * mix(0.18, 1.0, vis) + dab * 0.07 + br * 0.04;
   // Tips catch a little more light than roots.
   light += (vBlade.x - 0.5) * 0.1;
@@ -412,6 +561,15 @@ void main() {
   float r1 = strokes(q * 1.3, flowA), r2 = strokes(q * 2.9 + 7.0, flowA + 0.3);
   float ripple = r1 * 0.65 + r2 * 0.35;
   vec2 nudge = vec2(snoise(q * 1.7), snoise(q * 1.7 + 19.0)) * 0.0035;
+  // Chop: the wind raises short wavelets across its direction that run downwind, rougher in the gusts. They break up the
+  // reflection, and in a storm their crests whiten. They travel as short waves do, about a metre a second in a storm, far
+  // slower than the gusts: any faster and they flicker, and the glints and whitecaps keyed to them blink.
+  float windA = atan(uWindDir.y, uWindDir.x);
+  float chopAmt = smoothstep(0.03, 0.7, windForce()) * (0.5 + windGust(p.xz));
+  vec2 cq = p.xz - uWindDrift * 0.1;
+  float chop = strokes(cq * 3.2, windA + 1.5707963) * 0.6 + strokes(cq * 6.5 + 3.0, windA + 1.3) * 0.4;
+  ripple = mix(ripple, chop, clamp(chopAmt * 0.8, 0.0, 0.8)) + chop * chopAmt * 0.25;
+  nudge += vec2(snoise(cq * 4.0), snoise(cq * 4.0 + 7.0)) * 0.006 * chopAmt;
 
   // Under the water.
   vec2 uvBed = uv + nudge;
@@ -451,6 +609,9 @@ void main() {
   float crest = smoothstep(-0.15, 0.35, ripple);
   float spark = (1.0 - smoothstep(0.5, 1.0, length(f / vec2(0.15, 0.3)))) * step(0.5, h) * wink * crest;
   col = mix(col, mix(vec3(1.0), sunTint(), 0.5), spark * vis * (0.2 + depthy * 0.4));
+  // Whitecaps on the chop's crests in a storm.
+  float caps = smoothstep(0.55, 0.9, chop) * smoothstep(0.45, 1.0, windForce()) * smoothstep(0.4, 0.9, windGust(p.xz) + 0.2);
+  col = mix(col, mix(uSkyBottom, vec3(1.0), 0.6) * skyTint(), caps * 0.45);
   writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
 }
 `;
@@ -471,11 +632,16 @@ void main() {
 `;
 
 const VERT: Record<MaterialKind, string> = {
-  paint: STATIC_VERT, ink: STATIC_VERT, water: STATIC_VERT, foliage: FOLIAGE_VERT, grass: GRASS_VERT,
+  paint: STATIC_VERT, crop: STATIC_VERT, ink: STATIC_VERT, water: STATIC_VERT, foliage: FOLIAGE_VERT, grass: GRASS_VERT,
+  debris: DEBRIS_VERT,
 };
 const FRAG: Record<MaterialKind, string> = {
-  paint: PAINT_FRAG, ink: INK_FRAG, water: WATER_FRAG, foliage: FOLIAGE_FRAG, grass: GRASS_FRAG,
+  paint: PAINT_FRAG, crop: PAINT_FRAG, ink: INK_FRAG, water: WATER_FRAG, foliage: FOLIAGE_FRAG, grass: GRASS_FRAG,
+  debris: FOLIAGE_FRAG,
 };
+/** Painted wood bends with its tree; a crop shows the gusts. */
+const DEFINES: Partial<Record<MaterialKind, Record<string, number>>> = { paint: { TREES: 1 }, crop: { CROP: 1 } };
+const DABS = (kind: MaterialKind) => kind === 'foliage' || kind === 'debris';
 
 /** The main material of a kind. */
 export function sceneMaterial(kind: MaterialKind, shared: SharedUniforms): THREE.ShaderMaterial {
@@ -484,10 +650,11 @@ export function sceneMaterial(kind: MaterialKind, shared: SharedUniforms): THREE
     uniforms: { ...shared },
     vertexShader: VERT[kind],
     fragmentShader: FRAG[kind],
+    defines: { ...DEFINES[kind] },
     vertexColors: true,
-    side: kind === 'grass' || kind === 'foliage' || kind === 'ink' ? THREE.DoubleSide : THREE.FrontSide,
+    side: kind === 'grass' || DABS(kind) || kind === 'ink' ? THREE.DoubleSide : THREE.FrontSide,
   });
-  if (kind === 'foliage') m.alphaToCoverage = true;
+  if (DABS(kind)) m.alphaToCoverage = true;
   return m;
 }
 
@@ -496,8 +663,8 @@ export function depthMaterial(kind: MaterialKind, shared: SharedUniforms): THREE
   return new THREE.ShaderMaterial({
     uniforms: { ...shared },
     vertexShader: VERT[kind],
-    fragmentShader: kind === 'foliage' ? FOLIAGE_DEPTH_FRAG : DEPTH_FRAG,
-    defines: { SHADOW_PASS: 1 },
+    fragmentShader: DABS(kind) ? FOLIAGE_DEPTH_FRAG : DEPTH_FRAG,
+    defines: { ...DEFINES[kind], SHADOW_PASS: 1 },
     vertexColors: true,
     side: THREE.DoubleSide,
   });
