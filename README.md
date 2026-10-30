@@ -29,7 +29,7 @@ node tools/profile.ts out                              # what a frame costs, pas
 The demo's URL takes `scene` (`farm`, the default, or `meadow`), `view` (0-3), `zoom` (screen px per metre, 16-96), `hour`, `x`/`z` (the camera's target), `t` (freeze
 the clock), `lines=0`, `shadows=0`, `still` (hide the buttons), and the wind: `wind` (m/s, or `calm`, `breeze`,
 `gale`, `storm`, `hurricane`), `windDir` (degrees it blows towards) and `gust` (0-1). `samples` (MSAA) and `shadowMap`
-(texels) try quality settings, `prepass=0` and `scissor=0` turn off two speed-ups (for comparing), `ground=live`
+(texels) try quality settings, `prepass=0`, `scissor=0` and `equal=0` turn off speed-ups (for comparing), `ground=live`
 works the ground's brush out in every pixel rather than reading it from the texture baked at load, and `profile` times
 the frame on whatever machine opens it.
 

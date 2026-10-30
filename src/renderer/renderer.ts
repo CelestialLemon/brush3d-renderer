@@ -31,6 +31,12 @@ export interface Settings {
   prepass: boolean;
   /** Draw the water's two passes only round the water on screen. */
   waterScissor: boolean;
+  /**
+   * With the silhouettes drawn first: paint the leaves in the main view, and everything in the reflection, only where its
+   * depth is the silhouette's own (rather than at it or nearer). The same picture; it lets the GPU skip hidden leaf pixels
+   * before painting them, where it can. Off for comparing, or for a GPU whose depths don't match exactly.
+   */
+  equalDepth: boolean;
 }
 
 /** How a mesh takes part in the passes. */
@@ -53,7 +59,7 @@ export class BrushRenderer {
   readonly scene = new THREE.Scene();
   readonly view = new ViewCamera();
   readonly shared: SharedUniforms = createSharedUniforms();
-  readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true };
+  readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true };
   width = 1; height = 1;
   readonly pixelRatio: number;
   /** Times each pass when set (tools/profile.ts, the demo's ?profile). */
@@ -66,12 +72,14 @@ export class BrushRenderer {
   private post: THREE.ShaderMaterial;
   private postScene = new THREE.Scene();
   private postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  private materials = new Map<MaterialKind, { main: THREE.ShaderMaterial; depth: THREE.ShaderMaterial; prepass: THREE.ShaderMaterial }>();
+  private materials = new Map<MaterialKind, {
+    main: THREE.ShaderMaterial; depth: THREE.ShaderMaterial; prepass: THREE.ShaderMaterial; mirrorPrepass: THREE.ShaderMaterial;
+  }>();
   private casters: THREE.Mesh[] = [];
   /**
-   * Each mesh's silhouette twin (the same geometry, depth only), drawn in the main view just before the painted meshes, in
-   * the same render: three resolves a multisampled target after every render, and a full-size resolve costs a millisecond
-   * or so on integrated graphics. Hidden in every other pass.
+   * Each mesh's silhouette twin (the same geometry, depth only), drawn in the main view and the reflection just before
+   * the painted meshes, in the same render: three resolves a multisampled target after every render, and a full-size
+   * resolve costs a millisecond or so on integrated graphics. Hidden in the other passes.
    */
   private silhouettes = new THREE.Group();
   private twins: [THREE.Mesh, THREE.Mesh][] = [];
@@ -135,7 +143,10 @@ export class BrushRenderer {
   material(kind: MaterialKind) {
     let m = this.materials.get(kind);
     if (!m) {
-      m = { main: sceneMaterial(kind, this.shared), depth: depthMaterial(kind, this.shared), prepass: prepassMaterial(kind, this.shared) };
+      m = {
+        main: sceneMaterial(kind, this.shared), depth: depthMaterial(kind, this.shared),
+        prepass: prepassMaterial(kind, this.shared), mirrorPrepass: prepassMaterial(kind, this.shared, true),
+      };
       this.materials.set(kind, m);
     }
     return m.main;
@@ -203,6 +214,18 @@ export class BrushRenderer {
       main.defines.FIELDS = 1;
     }
     main.needsUpdate = true;
+  }
+
+  /**
+   * Sets how the painting meets the depth: after the silhouettes it only reads it (they wrote it already, and a pass that
+   * doesn't write depth lets the GPU throw hidden pixels away before painting them), at equal depth for the kinds `equal`
+   * picks; without them, the usual nearer-or-equal test, writing.
+   */
+  private paintOver(silhouettes: boolean, equal: (kind: MaterialKind) => boolean) {
+    for (const [kind, m] of this.materials) {
+      m.main.depthWrite = !silhouettes;
+      m.main.depthFunc = silhouettes && equal(kind) ? THREE.EqualDepth : THREE.LessEqualDepth;
+    }
   }
 
   /** Shows or hides every mesh of a kind (for A/B comparisons). */
@@ -325,13 +348,13 @@ export class BrushRenderer {
     s.uViewBack.value.copy(this.view.backward());
     s.uViewTarget.value.copy(this.view.target);
     this.scene.updateMatrixWorld();
+    for (const [mesh, twin] of this.twins) twin.matrixWorld.copy(mesh.matrixWorld);
     const gl = this.gl;
 
     // The sun's shadow map: redrawn every frame, because foliage and grass move in the wind.
     t?.mark('shadow');
     gl.setRenderTarget(this.shadowTarget);
-    gl.setClearColor(0xffffff, 1);
-    gl.clear(true, true, false);
+    gl.clear(false, true, false);
     if (this.settings.shadows) {
       const saved = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
       const hidden: THREE.Object3D[] = [];
@@ -351,13 +374,23 @@ export class BrushRenderer {
     const nudge = (WATER_REACH.ripple + WATER_REACH.chop * WATER_REACH.chopMax) * 1.1;
     if (water) this.drawOnly(this.underTarget, (m) => m.userData.under, this.waterRect(water, this.underTarget, nudge, 0));
     t?.mark('reflect');
+    const pre = this.settings.prepass, equal = this.settings.equalDepth;
     if (water) {
       this.shared.uMirror.value = 1;
+      // Its silhouettes first too, of what the water mirrors.
+      this.silhouettes.visible = pre;
+      if (pre) {
+        for (const [mesh, twin] of this.twins) {
+          twin.visible = mesh.visible && mesh.userData.reflect;
+          twin.material = this.materials.get(mesh.userData.kind)!.mirrorPrepass;
+        }
+      }
+      this.paintOver(pre, () => equal);
       // Mirroring flips the winding, so one-sided surfaces show their back faces.
-      const flipped = [...this.materials.values()].map((m) => m.main).filter((m) => m.side === THREE.FrontSide);
+      const flipped = [...this.materials.values()].flatMap((m) => [m.main, m.mirrorPrepass]).filter((m) => m.side === THREE.FrontSide);
       for (const m of flipped) m.side = THREE.BackSide;
       const rect = this.waterRect(water, this.reflectTarget, nudge * WATER_REACH.reflectNudge, WATER_REACH.blurPx);
-      this.drawOnly(this.reflectTarget, (m) => m.userData.reflect, rect);
+      this.drawOnly(this.reflectTarget, (m) => m.userData.reflect || m === this.silhouettes, rect);
       for (const m of flipped) m.side = THREE.FrontSide;
       this.shared.uMirror.value = 0;
     }
@@ -367,12 +400,19 @@ export class BrushRenderer {
     t?.mark('main');
     gl.setRenderTarget(this.gbuffer);
     gl.clear(true, true, false);
-    this.silhouettes.visible = this.settings.prepass;
-    if (this.settings.prepass) {
-      for (const [mesh, twin] of this.twins) { twin.visible = mesh.visible; twin.matrixWorld.copy(mesh.matrixWorld); }
+    this.silhouettes.visible = pre;
+    if (pre) {
+      for (const [mesh, twin] of this.twins) {
+        twin.visible = mesh.visible;
+        twin.material = this.materials.get(mesh.userData.kind)!.prepass;
+      }
     }
+    // The leaves gain most from equal depth; for the rest it made no difference worth the risk of a GPU's depths not
+    // matching to the last bit (#6).
+    this.paintOver(pre, (kind) => equal && kind === 'foliage');
     gl.render(this.scene, this.view.camera);
     this.silhouettes.visible = false;
+    this.paintOver(false, () => false);
 
     t?.mark('post');
     gl.setRenderTarget(null);
