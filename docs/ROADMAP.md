@@ -135,5 +135,7 @@ since #2). Left, most visible first (Sol's ranking):
 Targets (decided 2026-10-30): 60 fps at 1080p, and at least 45 fps on weak integrated graphics, so about 80–90 fps on the
 RX 570 (11–12 ms a frame). Measuring and budgeting is #6; the weather comes with quality tiers.
 
-- Profile: the frame now draws the scene four times (shadow, under-water, reflection, main). Measure on the RX 570 and cull
-  the extra passes to what the water can see.
+- Measured 2026-10-30 (#6, `docs/PERFORMANCE.md`): the farm takes 37 ms a frame at 1080p on the RX 570, the meadow 14,
+  nearly all of it the GPU painting pixels (the trees above all, then the ground and the grass). Cuts that keep the picture
+  reach about 18 ms; the rest is the developer's choice from side-by-side comparisons. `node tools/profile.ts` measures
+  here, `?profile` on any machine.

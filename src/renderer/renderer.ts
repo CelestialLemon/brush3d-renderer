@@ -3,6 +3,7 @@ import { CAMERA_DISTANCE, ViewCamera } from './camera';
 import type { Look } from './look';
 import { createSharedUniforms, depthMaterial, sceneMaterial, type MaterialKind, type SharedUniforms } from './materials';
 import { POST_FRAG, POST_VERT } from './post';
+import type { PassTimer } from './timer';
 import { leafStorm, WindState, type Wind } from './wind';
 
 // The renderer: a sun shadow map; for the water, the bed drawn without it and the scene mirrored in it (both at half size);
@@ -40,7 +41,9 @@ export class BrushRenderer {
   readonly shared: SharedUniforms = createSharedUniforms();
   readonly settings: Settings = { lines: true, shadows: true, grain: 0.012 };
   width = 1; height = 1;
-  private pixelRatio: number;
+  readonly pixelRatio: number;
+  /** Times each pass when set (tools/profile.ts, the demo's ?profile). */
+  timer: PassTimer | null = null;
   private gbuffer: THREE.WebGLRenderTarget;
   private shadowTarget: THREE.WebGLRenderTarget;
   private sunCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.5, 400);
@@ -192,6 +195,8 @@ export class BrushRenderer {
 
   render(time: number) {
     if (!this.look) throw new Error('setLook before render');
+    const t = this.timer;
+    t?.mark('setup', false);
     const s = this.shared, w = this.wind;
     s.uTime.value = time;
     w.update(time);
@@ -206,6 +211,7 @@ export class BrushRenderer {
     const gl = this.gl;
 
     // The sun's shadow map: redrawn every frame, because foliage and grass move in the wind.
+    t?.mark('shadow');
     gl.setRenderTarget(this.shadowTarget);
     gl.setClearColor(0xffffff, 1);
     gl.clear(true, true, false);
@@ -221,8 +227,10 @@ export class BrushRenderer {
     this.shadowDirty = false;
 
     // What the water shows: the bed without it, and the scene mirrored in it.
+    t?.mark('under');
     gl.setClearColor(0x000000, 0);
     this.drawOnly(this.underTarget, (m) => m.userData.under);
+    t?.mark('reflect');
     this.shared.uMirror.value = 1;
     // Mirroring flips the winding, so one-sided surfaces show their back faces.
     const flipped = [...this.materials.values()].map((m) => m.main).filter((m) => m.side === THREE.FrontSide);
@@ -231,10 +239,12 @@ export class BrushRenderer {
     for (const m of flipped) m.side = THREE.FrontSide;
     this.shared.uMirror.value = 0;
 
+    t?.mark('main');
     gl.setRenderTarget(this.gbuffer);
     gl.clear(true, true, false);
     gl.render(this.scene, this.view.camera);
 
+    t?.mark('post');
     gl.setRenderTarget(null);
     const u = this.post.uniforms;
     u.uLines.value = this.settings.lines ? 1 : 0;
@@ -242,5 +252,6 @@ export class BrushRenderer {
     // Lines thin as the camera zooms out, so a busy farm doesn't turn into a comic.
     u.uLineWidth.value = THREE.MathUtils.clamp(0.6 + this.view.zoom / 48, 0.8, 2.2) * this.pixelRatio * 0.75;
     gl.render(this.postScene, this.postCamera);
+    t?.endFrame();
   }
 }
