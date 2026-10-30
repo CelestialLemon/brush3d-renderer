@@ -374,7 +374,7 @@ export class BrushRenderer {
     const nudge = (WATER_REACH.ripple + WATER_REACH.chop * WATER_REACH.chopMax) * 1.1;
     if (water) this.drawOnly(this.underTarget, (m) => m.userData.under, this.waterRect(water, this.underTarget, nudge, 0));
     t?.mark('reflect');
-    const pre = this.settings.prepass, equal = this.settings.equalDepth;
+    const pre = this.settings.prepass;
     if (water) {
       this.shared.uMirror.value = 1;
       // Its silhouettes first too, of what the water mirrors.
@@ -385,7 +385,8 @@ export class BrushRenderer {
           twin.material = this.materials.get(mesh.userData.kind)!.mirrorPrepass;
         }
       }
-      this.paintOver(pre, () => equal);
+      // Nearer-or-equal here, not equal: on the laptop's Intel GPU equal depth made this pass slower, 1.9 → 3.1 ms (#6).
+      this.paintOver(pre, () => false);
       // Mirroring flips the winding, so one-sided surfaces show their back faces.
       const flipped = [...this.materials.values()].flatMap((m) => [m.main, m.mirrorPrepass]).filter((m) => m.side === THREE.FrontSide);
       for (const m of flipped) m.side = THREE.BackSide;
@@ -409,7 +410,7 @@ export class BrushRenderer {
     }
     // The leaves gain most from equal depth; for the rest it made no difference worth the risk of a GPU's depths not
     // matching to the last bit (#6).
-    this.paintOver(pre, (kind) => equal && kind === 'foliage');
+    this.paintOver(pre, (kind) => this.settings.equalDepth && kind === 'foliage');
     gl.render(this.scene, this.view.camera);
     this.silhouettes.visible = false;
     this.paintOver(false, () => false);

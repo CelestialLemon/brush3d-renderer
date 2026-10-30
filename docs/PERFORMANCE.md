@@ -199,8 +199,8 @@ discard pixels (the leaves') must paint a pixel before it knows whether it's hid
 
 - **The main view only reads depth** after its silhouettes, and the **leaves paint only at their silhouette's exact
   depth** (`equal=0` turns that part off: nearer-or-equal instead, the same picture, slower).
-- **The reflection has silhouettes too** (leaving out what's under the water, as its painting does), and paints at equal
-  depth.
+- **The reflection has silhouettes too** (leaving out what's under the water, as its painting does), and paints at
+  nearer-or-equal depth (equal was slower there on the laptop, below).
 - **The sun's shadow pass writes no colour**: only its depth is read.
 
 Frames are byte-for-byte main's, with `equal` on and off, in 11 views (both scenes, all four views, zoomed in and out,
@@ -209,19 +209,27 @@ dawn, noon, dusk, night, a storm). RX 570, 1080p, storm, GPU ms:
 | | shadow | under | reflect | main | post | frame |
 |---|---:|---:|---:|---:|---:|---:|
 | farm, before | 3.43 | 0.27 | 2.66 | 13.52 | 0.26 | 20.1 |
-| farm, after | 3.30 | 0.27 | 1.57 | 8.24 | 0.26 | **13.6** |
+| farm, after | 3.29 | 0.27 | 1.72 | 8.20 | 0.26 | **13.7** |
 | farm, after, `equal=0` | 3.30 | 0.27 | 1.73 | 9.77 | 0.26 | 15.3 |
 | meadow, after (before: 7.7) | 0.18 | 0.38 | 0.90 | 4.65 | 0.19 | **6.3** |
 
-Scaled pass by pass by the laptop's ratios, the farm should go from 26.6 to about 18 ms there. To check on the laptop,
-with `equal=0` as the fallback if Intel's depths don't match to the last bit (that would show as missing leaf pixels).
+On the laptop (`?profile` on #26's preview, 1080p storm, GPU ms), the farm went from 26.6 to **about 20 ms** (scaled from
+this machine, about 18 was expected), and the leaves look the same with `equal` on and off:
+
+| | shadow | under | reflect | main | post | frame |
+|---|---:|---:|---:|---:|---:|---:|
+| equal depth in the reflection and the leaves | 2.64 | 0.43 | 3.09 | 14.59 | 0.65 | 21.4 |
+| `equal=0`: neither | 2.66 | 0.40 | 1.94 | 14.86 | 0.48 | 20.4 |
+
+Intel's GPU paints the reflection slower at equal depth (here it was a little faster), so the reflection now paints at
+nearer-or-equal, and only the main view's leaves at equal: about 20.1 ms there, 0.1 more here.
 
 **Still to do, from Sol's experiments:**
 - the grass's brush baked into 7 directions at 2 scales, 1024² (56 MB), each blade blending its own two; about 2.6 ms
   here alone;
 - the wheat's brush baked, 2048²; about 1.1 ms.
 
-Together with this part they measured 11.3 ms here (about 14.6 on the laptop).
+Together with this part they measured 11.3 ms here.
 
 **Tried and dropped:**
 - shadows of still things kept between frames: with a 3-to-10-minute day the sun moves a texel every frame or two, so

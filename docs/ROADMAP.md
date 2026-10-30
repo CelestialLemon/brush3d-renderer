@@ -144,5 +144,6 @@ RX 570. `docs/PERFORMANCE.md` has the budget.
   Done (#6, part 3): the ground's brush baked into a 2048² texture at load (the developer's pick; the same to the eye):
   the farm 20 ms here and 27 on the laptop, the meadow 8 here.
   Done (#6, part 4): the painting only reads the silhouettes' depth (the leaves at equal depth), and the reflection has
-  silhouettes too: the farm 14 ms here, the meadow 6, byte-for-byte the same picture.
+  silhouettes too: the farm 14 ms here and about 20 on the laptop (from 26.6), the meadow 6 here, byte-for-byte the same
+  picture.
   `node tools/profile.ts` measures here, `?profile` on any machine.
