@@ -132,10 +132,11 @@ since #2). Left, most visible first (Sol's ranking):
 
 ### Performance
 
-Targets (decided 2026-10-30): 60 fps at 1080p, and at least 45 fps on weak integrated graphics, so about 80–90 fps on the
-RX 570 (11–12 ms a frame). Measuring and budgeting is #6; the weather comes with quality tiers.
+Targets (decided 2026-10-30, #6): at least 45 fps at 1080p, weather included, on the developer's three machines (the RX 570
+PC, a laptop with an Intel Arc 140T, a MacBook Air M4). The laptop is the floor: 22 ms a frame there, about 12 ms on the
+RX 570. `docs/PERFORMANCE.md` has the budget.
 
 - Measured 2026-10-30 (#6, `docs/PERFORMANCE.md`): the farm takes 37 ms a frame at 1080p on the RX 570, the meadow 14,
-  nearly all of it the GPU painting pixels (the trees above all, then the ground and the grass). Cuts that keep the picture
-  reach about 18 ms; the rest is the developer's choice from side-by-side comparisons. `node tools/profile.ts` measures
-  here, `?profile` on any machine.
+  nearly all of it the GPU painting pixels (the trees above all, then the ground and the grass); on the laptop 47 and 26.
+  Cuts that keep the picture reach about 18 ms here; the rest is the developer's choice from side-by-side comparisons.
+  `node tools/profile.ts` measures here, `?profile` on any machine.
