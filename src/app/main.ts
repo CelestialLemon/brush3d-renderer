@@ -43,13 +43,15 @@ renderer.setWind(wind, true);
 const frozen = params.has('t') ? num('t', 0) : null;
 if (params.has('still') || params.has('profile')) document.body.classList.add('still');
 
-function resize() { renderer.resize(canvas.clientWidth, canvas.clientHeight); }
+// While profiling, the cases set the size and the camera: the window and the controls leave them alone.
+let profiling = false;
+function resize() { if (!profiling) renderer.resize(canvas.clientWidth, canvas.clientHeight); }
 addEventListener('resize', resize);
 resize();
 
 // Controls: drag to pan, wheel to zoom, Q/E to turn, 1-5 for the hour, L lines, S shadows.
 let drag: { x: number; y: number } | null = null;
-canvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointerdown', (e) => { if (profiling) return; drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener('pointermove', (e) => {
   if (!drag) return;
   view.pan(e.clientX - drag.x, e.clientY - drag.y);
@@ -58,9 +60,11 @@ canvas.addEventListener('pointermove', (e) => {
 canvas.addEventListener('pointerup', () => { drag = null; });
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
+  if (profiling) return;
   view.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, view.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
 }, { passive: false });
 addEventListener('keydown', (e) => {
+  if (profiling) return;
   const k = e.key.toLowerCase();
   if (k === 'q') view.turn(-1);
   else if (k === 'e') view.turn(1);
@@ -127,13 +131,12 @@ if (params.has('shot')) {
 } else requestAnimationFrame(frame);
 
 // Profiling (tools/profile.ts, or ?profile on any machine): the demo's own loop waits while the cases run.
-let profiling = false;
 async function profile(cases = defaultCases(), progress?: (row: ProfileRow, i: number) => void) {
   profiling = true;
   try {
     return await runProfile(renderer, (t) => { renderer.setLook(lookAt(hour)); renderer.render(t); },
-      () => { resize(); renderer.setWind(wind, true); }, cases, progress);
-  } finally { profiling = false; }
+      () => renderer.setWind(wind, true), cases, progress);
+  } finally { profiling = false; resize(); }
 }
 if (params.has('profile')) profilePanel();
 
@@ -145,7 +148,9 @@ function profilePanel() {
   const debug = gl.getExtension('WEBGL_debug_renderer_info');
   const gpu = String(gl.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
   const timers = gl.getExtension('EXT_disjoint_timer_query_webgl2') !== null;
-  const about = `scene ${sceneName} · GPU ${gpu} · ${timers ? 'GPU timers' : 'no GPU timers (only the uncapped frame and the CPU)'}\n${navigator.userAgent}`;
+  // Everything that sets the work, so pasted results from different settings can't be mistaken for each other.
+  const setup = `hour ${hour} · zoom ${view.zoom} · view ${view.view} · samples ${num('samples', 4)} · shadow map ${num('shadowMap', farm ? 4096 : 2048)} · lines ${renderer.settings.lines ? 'on' : 'off'} · shadows ${renderer.settings.shadows ? 'on' : 'off'}`;
+  const about = `scene ${sceneName} · GPU ${gpu} · ${timers ? 'GPU timers' : 'no GPU timers (only the uncapped frame and the CPU)'}\n${setup}\n${location.href}\n${navigator.userAgent}`;
   const out = Object.assign(document.createElement('pre'), { textContent: `${about}\n\nPlug the laptop in, close other apps, then Run. It takes a minute or two.` });
   const run = Object.assign(document.createElement('button'), { textContent: 'Run' });
   const copy = Object.assign(document.createElement('button'), { textContent: 'Copy', disabled: true });

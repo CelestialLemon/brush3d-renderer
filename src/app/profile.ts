@@ -14,6 +14,7 @@ export interface ProfileRow {
   label: string; width: number; height: number;
   /** Median ms per pass and in all ('frame'); null where the browser has no GPU timer. */
   gpu: Record<string, number> | null;
+  /** Median ms per pass, and 'frame': the median of whole frames, the look and the renderer's waiting included. */
   cpu: Record<string, number>;
   /** Mean ms a frame, drawn back to back. */
   uncapped: number;
@@ -64,12 +65,18 @@ export async function runProfile(
       renderer.timer = timer;
       timer.reset();
       // In bursts, so the GPU never waits on the page between passes (a query would count the wait).
-      for (let f = 0; f < frames; f++) { draw((time += 1 / 60)); if (f % 6 === 5) await nextFrame(); }
+      const whole: number[] = [];
+      for (let f = 0; f < frames; f++) {
+        const t0 = performance.now();
+        draw((time += 1 / 60));
+        whole.push(performance.now() - t0);
+        if (f % 6 === 5) await nextFrame();
+      }
       renderer.timer = null;
       await timer.settle();
       const timed = timer.frames.filter((t) => t.gpu);
       const gpu = timer.gpu && timed.length ? medians(timed.map((t) => t.gpu!)) : null;
-      const cpu = medians(timer.frames.map((t) => t.cpu));
+      const cpu = { ...medians(timer.frames.map((t) => t.cpu)), frame: median(whole) };
       // Uncapped: back to back, then wait for the GPU to finish.
       sync();
       const n = 30, start = performance.now();
