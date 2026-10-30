@@ -11,6 +11,9 @@ surface, teal and violet shadows, gold rim light, blue distance), and the things
 crisp cel bands). In a builder that split does real work: everything the player placed or that moves stands out from the land.
 `docs/DIRECTION.md` has the rules.
 
+**Try it:** [the demo as on `main`](https://celestiallemon.github.io/brush3d-renderer/main/). Every open pull request has its own
+preview at `.../pr-<number>/`, linked in a comment on it and removed when it closes (`.github/workflows/pages.yml`).
+
 ```sh
 npm install
 npm run dev          # http://127.0.0.1:5190: drag to pan, wheel to zoom, Q/E to turn, 1-5 for the hour, L for lines

@@ -1,0 +1,86 @@
+name: Pages
+
+# The demo on GitHub Pages (the gh-pages branch, written by .github/scripts/pages.sh):
+#   main -> https://celestiallemon.github.io/brush3d-renderer/main/
+#   each open pull request -> .../pr-<number>/, linked in a comment on it, and removed when it closes
+# Every run also removes the previews of closed pull requests, and a daily run cleans up after any that were missed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write          # push gh-pages
+  pages: write             # request the Pages build
+  pull-requests: write     # the preview comment
+
+concurrency:
+  # One run at a time per pull request (a newer push replaces its older run), and per kind of run otherwise. Runs in different
+  # groups can overlap: pages.sh retries if gh-pages moved under it.
+  group: pages-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  publish:
+    # Pull requests from forks get a read-only token, so they get no preview.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+      BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # A preview builds the pull request's own head; anything else runs main's copy of the script.
+          ref: ${{ env.BUILD == 'true' && (github.event.pull_request.head.sha || github.sha) || github.event.repository.default_branch }}
+      - uses: actions/setup-node@v4
+        if: env.BUILD == 'true'
+        with:
+          node-version: 26
+          cache: npm
+      - if: env.BUILD == 'true'
+        run: npm ci
+      - if: env.BUILD == 'true'
+        run: npm run typecheck
+      - if: env.BUILD == 'true'
+        run: npm run build
+
+      # Runs can start out of order: pages.sh skips a change that is no longer wanted (an old head, a reopened pull request).
+      - name: Publish main
+        if: github.event_name == 'push'
+        run: .github/scripts/pages.sh main dist
+      - name: Publish the preview
+        id: preview
+        if: github.event_name == 'pull_request' && github.event.action != 'closed'
+        env:
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: .github/scripts/pages.sh "pr-$PR" dist
+      - name: Remove the preview
+        id: removed
+        if: github.event_name == 'pull_request' && github.event.action == 'closed'
+        run: .github/scripts/pages.sh "pr-$PR"
+      - name: Clean up
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: .github/scripts/pages.sh
+
+      - name: Comment on the pull request
+        if: steps.preview.outputs.done == 'true' || steps.removed.outputs.done == 'true'
+        env:
+          SHA: ${{ github.event.pull_request.head.sha }}
+          CLOSED: ${{ github.event.action == 'closed' }}
+        run: |
+          url="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/pr-$PR/"
+          if [ "$CLOSED" = true ]; then
+            body="<!-- pages-preview -->"$'\n'"The preview has been removed: this pull request is closed."
+          else
+            body="<!-- pages-preview -->"$'\n'"**Preview:** $url (at ${SHA::7}; give Pages a minute or two to update). The demo's URL parameters work here too, e.g. [\`?scene=meadow&hour=17.5\`](${url}?scene=meadow&hour=17.5)."
+          fi
+          id="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate --jq '.[] | select(.body | startswith("<!-- pages-preview -->")) | .id' | head -1)"
+          if [ -n "$id" ]; then gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$body" --silent
+          else gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="$body" --silent; fi
