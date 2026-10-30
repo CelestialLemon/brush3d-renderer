@@ -175,18 +175,19 @@ function shed(r: BrushRenderer) {
   const place = new THREE.Matrix4().compose(new THREE.Vector3(x, y / n, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, SHED.yaw, 0)),
     new THREE.Vector3(1, 1, 1));
   const models = new Map<ShedStyle, Promise<THREE.Object3D>>();
-  let mesh: THREE.Mesh | null = null, asked: ShedStyle | null = null;
-  return async (style: ShedStyle) => {
+  let mesh: THREE.Mesh | null = null, asked: ShedStyle | null = null, latest: Promise<void> = Promise.resolve();
+  const put = async (style: ShedStyle): Promise<void> => {
     asked = style;
     if (!models.has(style)) models.set(style, loadModel(SHED_STYLES[style]));
     const model = await models.get(style)!;
-    // Only the last style asked for goes up.
-    if (asked !== style) return;
+    // Only the last style asked for goes up; one asked for before it settles when that one is up.
+    if (asked !== style) return latest;
     const b = new MeshBuilder('ink');
     addModel(b, model, place);
     if (mesh) { r.remove(mesh); mesh.geometry.dispose(); }
     mesh = r.add(b.build(), 'ink');
   };
+  return (style: ShedStyle) => (latest = put(style));
 }
 
 /** How near a point is to the rows of the orchard and the nursery: 1 on a row, falling off over the alley. */
