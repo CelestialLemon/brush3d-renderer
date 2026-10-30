@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CAMERA_DISTANCE, ViewCamera } from './camera';
 import type { Look } from './look';
+import { OVERCAST, overcastLook, skyShare, type OvercastRecipe } from './overcast';
 import {
   createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
 } from './materials';
@@ -129,6 +130,8 @@ export class BrushRenderer {
    * call shelter.changed() after moving cover; adding a mesh or showing or hiding a kind does it already.
    */
   readonly shelter: ShelterMap;
+  /** How cloud cover changes the light (see overcast.ts). */
+  overcast: OvercastRecipe = OVERCAST.pearl;
 
   constructor(readonly canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true });
@@ -165,7 +168,7 @@ export class BrushRenderer {
         uResolution: { value: new THREE.Vector2(1, 1) }, uLineWidth: { value: 1.5 }, uLines: { value: 1 },
         uTargetDepth: { value: CAMERA_DISTANCE }, uHazeColor: { value: new THREE.Color() }, uHazeDensity: { value: 0.02 },
         uHazeMax: { value: 0.4 }, uHazeFloor: { value: 0 }, uSkyTop: { value: new THREE.Color() }, uSkyBottom: { value: new THREE.Color() },
-        uExposure: { value: 1 }, uSaturation: { value: 1 }, uShadeHue: { value: 0 }, uGrain: { value: 0.012 },
+        uExposure: { value: 1 }, uSaturation: { value: 1 }, uNightShift: { value: 0 }, uShadeHue: { value: 0 }, uGrain: { value: 0.012 },
       },
     });
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.post));
@@ -352,11 +355,21 @@ export class BrushRenderer {
     (this.post.uniforms.uResolution.value as THREE.Vector2).set(this.width, this.height);
   }
 
-  setLook(look: Look) {
-    this.look = look;
+  /** The hour's look; the weather is laid over it as each frame is drawn. */
+  setLook(look: Look) { this.look = look; }
+
+  /** Sets the light's uniforms from the hour's look under the weather as drawn. */
+  private applyLook(clear: Look) {
+    const cover = this.weather.overcast, r = this.overcast;
+    const look = overcastLook(clear, cover, r);
     const s = this.shared;
+    const shape = skyShare(cover);
+    s.uOvercast.value.set(shape * r.sky, shape * r.shadowFade, shape * r.shadowBlur);
     const az = THREE.MathUtils.degToRad(look.sunAz), el = THREE.MathUtils.degToRad(Math.max(look.sunEl, 4));
     s.uSunDir.value.set(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
+    // The shadows that are left fall from the sky's brightest part, overhead, the thicker the cloud.
+    this.shadowDir.copy(s.uSunDir.value);
+    if (shape * r.shadowLift > 0) this.shadowDir.lerp(new THREE.Vector3(0, 1, 0), shape * r.shadowLift).normalize();
     // Below the horizon the sun still lights the scene from low down, dimmed: dusk and dawn stay readable.
     const dim = THREE.MathUtils.smoothstep(look.sunEl, -8, 6);
     s.uSunColor.value.copy(look.sunColor).lerp(look.skyColor, 1 - dim);
@@ -369,16 +382,16 @@ export class BrushRenderer {
     u.uHazeColor.value.copy(look.hazeColor); u.uHazeDensity.value = look.hazeDensity; u.uHazeMax.value = look.hazeMax; u.uHazeFloor.value = look.hazeFloor;
     u.uSkyTop.value.copy(look.skyTop); u.uSkyBottom.value.copy(look.skyBottom);
     s.uSkyTop.value.copy(look.skyTop); s.uSkyBottom.value.copy(look.skyBottom);
-    u.uExposure.value = look.exposure; u.uSaturation.value = look.saturation; u.uShadeHue.value = rad(look.shadeHue);
+    u.uExposure.value = look.exposure; u.uSaturation.value = look.saturation; u.uNightShift.value = look.nightShift; u.uShadeHue.value = rad(look.shadeHue);
     this.updateSunCamera();
   }
 
   private updateSunCamera() {
     const r = this.shadowRadius, c = this.sunCamera;
     c.left = -r; c.right = r; c.top = r; c.bottom = -r; c.near = 1; c.far = 300;
-    c.position.copy(this.shadowCenter).addScaledVector(this.shared.uSunDir.value, 150);
+    c.position.copy(this.shadowCenter).addScaledVector(this.shadowDir, 150);
     c.up.set(0, 1, 0);
-    if (Math.abs(this.shared.uSunDir.value.y) > 0.999) c.up.set(0, 0, 1);
+    if (Math.abs(this.shadowDir.y) > 0.999) c.up.set(0, 0, 1);
     c.lookAt(this.shadowCenter);
     c.updateProjectionMatrix();
     c.updateMatrixWorld();
@@ -387,6 +400,8 @@ export class BrushRenderer {
     this.shadowDirty = true;
   }
   private shadowDirty = true;
+  /** Where the shadows fall from: the sun, turned towards overhead under cloud. */
+  private shadowDir = new THREE.Vector3(0, 1, 0);
 
   /** Draws only the meshes `keep` picks into a target, from the view camera; only inside `scissor` (pixels) if given. */
   private drawOnly(target: THREE.WebGLRenderTarget, keep: (m: THREE.Object3D) => boolean, scissor: THREE.Vector4 | null) {
@@ -469,6 +484,7 @@ export class BrushRenderer {
     s.uWindDrift.value.set(w.driftX, w.driftZ);
     s.uWindFlutter.value = w.flutter;
     this.weather.update(time);
+    this.applyLook(this.look);
     const grounded: THREE.Object3D[] = [];
     if (!this.settings.falling) {
       for (const o of this.scene.children) if (o.visible && FALLING.includes(o.userData.kind)) { o.visible = false; grounded.push(o); }

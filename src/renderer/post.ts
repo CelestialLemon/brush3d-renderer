@@ -23,6 +23,7 @@ uniform vec3 uSkyTop;
 uniform vec3 uSkyBottom;
 uniform float uExposure;
 uniform float uSaturation;
+uniform float uNightShift;
 uniform float uShadeHue;
 uniform float uGrain;
 varying vec2 vUv;
@@ -82,6 +83,8 @@ void main() {
   c = c / (1.0 + max(c - 0.8, 0.0) * 0.9);
   vec3 lab = linToOklab(c);
   lab.yz *= uSaturation;
+  // At night, from yellow-green towards blue (the 'blue' night).
+  lab.yz += vec2(0.005, -0.035) * uNightShift;
   c = oklabToLinFit(lab);
 
   vec3 o = toSrgb(c);

@@ -21,6 +21,7 @@ export function createSharedUniforms() {
     uShadeDepth: { value: 0.3 },
     uLitHue: { value: 1.3 },
     uLitLean: { value: 0.1 },
+    uOvercast: { value: new THREE.Vector3() },
     uTime: { value: 0 },
     uWindDir: { value: new THREE.Vector2(1, 0) },
     uWindSpeed: { value: 0 },
