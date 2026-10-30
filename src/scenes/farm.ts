@@ -186,7 +186,8 @@ function terrain(r: BrushRenderer) {
     // Map rows run up the screen; in the world that turns the grid, so wind its quads to face up.
     b.quad(a, a + 1, a + n + 1, a + n);
   }
-  r.add(fixWinding(b.build()), 'paint', { under: true });
+  // The map's square: u runs along (x - z), so it's the world turned an eighth of a turn.
+  r.add(fixWinding(b.build()), 'ground', { under: true, fields: { x: 0, z: 0, side: 2 * HALF, turn: Math.PI / 4 } });
 }
 
 /** Turns a mesh's triangles to face up where they face down (for a grid laid in map coordinates). */

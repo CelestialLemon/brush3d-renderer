@@ -29,7 +29,8 @@ node tools/profile.ts out                              # what a frame costs, pas
 The demo's URL takes `scene` (`farm`, the default, or `meadow`), `view` (0-3), `zoom` (screen px per metre, 16-96), `hour`, `x`/`z` (the camera's target), `t` (freeze
 the clock), `lines=0`, `shadows=0`, `still` (hide the buttons), and the wind: `wind` (m/s, or `calm`, `breeze`,
 `gale`, `storm`, `hurricane`), `windDir` (degrees it blows towards) and `gust` (0-1). `samples` (MSAA) and `shadowMap`
-(texels) try quality settings, `prepass=0` and `scissor=0` turn off two speed-ups (for comparing), and `profile` times
+(texels) try quality settings, `prepass=0` and `scissor=0` turn off two speed-ups (for comparing), `ground` (`live`,
+`2048` or `4096`) picks how the ground's brush is worked out (#6, to compare), and `profile` times
 the frame on whatever machine opens it.
 
 The game sets the wind with `renderer.setWind({ speed, direction, gust })`; the drawn wind eases towards it. Trees lean and

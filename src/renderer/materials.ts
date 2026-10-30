@@ -47,10 +47,11 @@ export function createSharedUniforms() {
 export type SharedUniforms = ReturnType<typeof createSharedUniforms>;
 
 /**
- * paint: the ground, stones and trees' wood (which bends in the wind with its tree); crop: a field's painted mass, which
- * shows the gusts; debris: leaves blown through the air in a storm, drawn by the renderer itself.
+ * paint: stones and trees' wood (which bends in the wind with its tree); ground: the land, painted as paint is, its brush
+ * read from fields baked at load (see groundBakeMaterial); crop: a field's painted mass, which shows the gusts; debris:
+ * leaves blown through the air in a storm, drawn by the renderer itself.
  */
-export type MaterialKind = 'paint' | 'crop' | 'foliage' | 'grass' | 'ink' | 'water' | 'debris';
+export type MaterialKind = 'paint' | 'ground' | 'crop' | 'foliage' | 'grass' | 'ink' | 'water' | 'debris';
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Vertex shaders
@@ -348,12 +349,14 @@ float strokesOn(vec3 p, vec3 w, float top, float side) {
 
 // The surface's own colour, drifting in hue and value across the world (one meadow runs yellow-green to emerald to teal),
 // by 'amount'; 'dab' is the brush mark's own shift, already as strong as the surface wants it.
-vec3 driftColor(vec3 base, vec3 p, float amount, float dab) {
-  float v1 = fbm2(p.xz * 0.06 + 3.1);
+// 'drift' is driftField's value there.
+float driftField(vec3 p) { return fbm2(p.xz * 0.06 + 3.1); }
+vec3 driftColorOf(vec3 base, float drift, float amount, float dab) {
   vec3 lab = linToOklab(base);
-  lab = lchShift(lab, v1 * 0.02 * amount + dab * 0.05, 1.0 + v1 * 0.05 * amount + dab * 0.08, v1 * 0.12 * amount + dab * 0.13);
+  lab = lchShift(lab, drift * 0.02 * amount + dab * 0.05, 1.0 + drift * 0.05 * amount + dab * 0.08, drift * 0.12 * amount + dab * 0.13);
   return oklabToLin(lab);
 }
+vec3 driftColor(vec3 base, vec3 p, float amount, float dab) { return driftColorOf(base, driftField(p), amount, dab); }
 
 float rimLight(vec3 n, float amount) {
   float f = pow(1.0 - clamp(dot(n, toCamera()), 0.0, 1.0), 2.5);
@@ -361,23 +364,43 @@ float rimLight(vec3 n, float amount) {
 }
 `;
 
+// The brush where the paint is: its dabs, its strokes, its fine strokes (scaled 0.6 and 1.3 by the brush scale) and the
+// colour's drift. Worked out in the pixel, or, for the ground, read from the fields baked at load (BRUSH_BAKE_FRAG).
+const BRUSH_FIELDS = /* glsl */ `
+vec4 brushFields(vec3 p, vec3 n) {
+  vec3 w = planeWeights(n);
+  float angle = contourAngle(n, vPaint.z);
+  return vec4(dabsOn(p, w, vPaint.y, angle, vPaint.z), strokesOn(p * vPaint.y * 0.6, w, angle, vPaint.z),
+    strokesOn(p * vPaint.y * 1.3, w, angle, vPaint.z), driftField(p));
+}
+`;
+
 const PAINT_FRAG = /* glsl */ `
 ${FRAG_HEAD}
+${BRUSH_FIELDS}
 varying vec2 vUv;
 #ifdef CROP
 varying float vGust;
 #endif
+#ifdef FIELDS
+// The ground's brush fields, over the square uFieldsMap takes the ground's x and z to; stored as 0.5 + value / 2.
+uniform sampler2D uFields;
+uniform mat3 uFieldsMap;
+#endif
 void main() {
   vec3 n = normalize(vNormal);
   vec3 p = vRestPos;
-  vec3 w = planeWeights(n);
-  float angle = contourAngle(n, vPaint.z);
+#ifdef FIELDS
+  vec4 fields = texture(uFields, (uFieldsMap * vec3(p.xz, 1.0)).xy) * 2.0 - 1.0;
+#else
+  vec4 fields = brushFields(p, n);
+#endif
   // aPaint.x is how much brushwork shows here: a painter works the banks, edges and turns of the land and leaves the
   // open lawn as quiet colour.
   float detail = vPaint.x;
-  float dab = dabsOn(p, w, vPaint.y, angle, vPaint.z) * detail;
-  float br = strokesOn(p * vPaint.y * 0.6, w, angle, vPaint.z);
-  vec3 base = driftColor(vColor, p, 1.0, dab);
+  float dab = fields.x * detail;
+  float br = fields.y;
+  vec3 base = driftColorOf(vColor, fields.w, 1.0, dab);
   float vis = sunVisibility(vWorldPos, n, br);
   // Cast shadows on the ground fall to half-tone rather than deep shade: the land stays light and calm.
   float floor_ = mix(0.18, 0.3, smoothstep(0.5, 0.7, abs(n.y)));
@@ -385,7 +408,7 @@ void main() {
   // A fine, faint layer of strokes everywhere, so close up even the quiet lawn is paint, not airbrush. It fades out (its
   // contrast, not its place) as the camera pulls back and the strokes get too small to read.
   vec3 fp = p * vPaint.y * 1.3;
-  float fine = strokesOn(fp, w, angle, vPaint.z) * (1.0 - smoothstep(0.12, 0.4, length(fwidth(fp))));
+  float fine = fields.z * (1.0 - smoothstep(0.12, 0.4, length(fwidth(fp))));
   light += fine * 0.04;
 #ifdef CROP
   // Wind in a field, the way a painter shows it: the gusts roll through as long bands of light (the stalks bent over,
@@ -655,15 +678,15 @@ void main() {
 `;
 
 const VERT: Record<MaterialKind, string> = {
-  paint: STATIC_VERT, crop: STATIC_VERT, ink: STATIC_VERT, water: STATIC_VERT, foliage: FOLIAGE_VERT, grass: GRASS_VERT,
+  paint: STATIC_VERT, ground: STATIC_VERT, crop: STATIC_VERT, ink: STATIC_VERT, water: STATIC_VERT, foliage: FOLIAGE_VERT, grass: GRASS_VERT,
   debris: DEBRIS_VERT,
 };
 const FRAG: Record<MaterialKind, string> = {
-  paint: PAINT_FRAG, crop: PAINT_FRAG, ink: INK_FRAG, water: WATER_FRAG, foliage: FOLIAGE_FRAG, grass: GRASS_FRAG,
+  paint: PAINT_FRAG, ground: PAINT_FRAG, crop: PAINT_FRAG, ink: INK_FRAG, water: WATER_FRAG, foliage: FOLIAGE_FRAG, grass: GRASS_FRAG,
   debris: FOLIAGE_FRAG,
 };
-/** Painted wood bends with its tree; a crop shows the gusts. */
-const DEFINES: Partial<Record<MaterialKind, Record<string, number>>> = { paint: { TREES: 1 }, crop: { CROP: 1 } };
+/** Painted wood bends with its tree; a crop shows the gusts. (The ground has no trees, but keeps paint's shader exactly.) */
+const DEFINES: Partial<Record<MaterialKind, Record<string, number>>> = { paint: { TREES: 1 }, ground: { TREES: 1 }, crop: { CROP: 1 } };
 const DABS = (kind: MaterialKind) => kind === 'foliage' || kind === 'debris';
 const sideOf = (kind: MaterialKind) => (kind === 'grass' || DABS(kind) || kind === 'ink' ? THREE.DoubleSide : THREE.FrontSide);
 
@@ -711,5 +734,48 @@ export function depthMaterial(kind: MaterialKind, shared: SharedUniforms): THREE
     defines: { ...DEFINES[kind], SHADOW_PASS: 1 },
     vertexColors: true,
     side: THREE.DoubleSide,
+  });
+}
+
+// The ground's brush fields, baked: the ground drawn flat into a square texture, each texel holding brushFields where the
+// ground is there. A heightfield has one surface over each point, so each point of it has its own texel; the same triangles
+// give the same normal, brush scale and angle there as on screen.
+const BRUSH_BAKE_VERT = /* glsl */ `
+attribute vec4 aPaint;
+uniform mat3 uFieldsMap;
+varying vec3 vRestPos;
+varying vec3 vNormal;
+varying vec4 vPaint;
+// The rest of the painting's inputs, unused here.
+varying vec3 vWorldPos;
+varying vec3 vColor;
+varying float vViewDepth;
+void main() {
+  vRestPos = (modelMatrix * vec4(position, 1.0)).xyz;
+  vNormal = normalize(mat3(modelMatrix) * normal);
+  vPaint = aPaint;
+  vWorldPos = vRestPos; vColor = vec3(0.0); vViewDepth = 0.0;
+  gl_Position = vec4((uFieldsMap * vec3(vRestPos.xz, 1.0)).xy * 2.0 - 1.0, 0.0, 1.0);
+}
+`;
+const BRUSH_BAKE_FRAG = /* glsl */ `
+${FRAG_HEAD}
+${BRUSH_FIELDS}
+void main() {
+  gColor = brushFields(vRestPos, normalize(vNormal)) * 0.5 + 0.5;
+  gAux = vec4(0.0);
+}
+`;
+
+/** Bakes the ground's brush fields (see BRUSH_BAKE_VERT), over the square `map` takes its x and z to (0 to 1). */
+export function groundBakeMaterial(shared: SharedUniforms, map: THREE.Matrix3): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    uniforms: { ...shared, uFieldsMap: { value: map } },
+    vertexShader: BRUSH_BAKE_VERT,
+    fragmentShader: BRUSH_BAKE_FRAG,
+    side: THREE.DoubleSide,
+    depthTest: false,
+    depthWrite: false,
   });
 }
