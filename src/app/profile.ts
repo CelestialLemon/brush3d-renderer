@@ -21,7 +21,7 @@ export interface ProfileRow {
 }
 
 export const PASSES = ['setup', 'shadow', 'under', 'reflect', 'main', 'post'];
-const KINDS: MaterialKind[] = ['paint', 'grass', 'foliage', 'crop', 'ink', 'water', 'debris'];
+const KINDS: MaterialKind[] = ['ground', 'paint', 'grass', 'foliage', 'crop', 'ink', 'water', 'debris'];
 const STORM = WIND_SCALE.storm;
 
 /** The usual set: a calm and a stormy frame at 720p, 1080p, 1440p and 4K, then the stormy 1080p frame without each kind. */

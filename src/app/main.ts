@@ -13,6 +13,7 @@ import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } fr
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
 //   prepass=0 (paint without drawing the silhouettes first)  scissor=0 (the water's passes over the whole screen)
+//   ground=live (the ground's brush worked out in every pixel, as before it was baked at load)
 //   profile: time the frame pass by pass, on whatever machine opens it (see profile.ts)
 
 const params = new URLSearchParams(location.search);
@@ -35,6 +36,11 @@ renderer.settings.lines = num('lines', 1) !== 0;
 renderer.settings.shadows = num('shadows', 1) !== 0;
 renderer.settings.prepass = num('prepass', 1) !== 0;
 renderer.settings.waterScissor = num('scissor', 1) !== 0;
+// The ground's brush, baked at load into a 2048² texture: the developer's pick (#6, #23), the same to the eye as live
+// and as 4096², at a quarter of 4096's memory.
+const ground = params.get('ground') === 'live' ? 0 : 2048;
+renderer.setGroundFields(ground);
+const groundName = () => (ground ? `baked ${ground}` : 'live');
 let hour = num('hour', 12);
 const windParam = params.get('wind');
 const wind: Wind = {
@@ -117,7 +123,7 @@ if (params.has('shot')) {
     options: { hide?: MaterialKind[]; grain?: boolean; time?: number; wind?: Partial<Wind>; ease?: boolean } = {}) => {
     if (cam) { view.target.set(cam.x, 0, cam.z); view.zoom = cam.zoom; view.view = cam.view; view.update(0, true); }
     if (options.wind) renderer.setWind({ ...wind, ...options.wind }, !options.ease);
-    const kinds: MaterialKind[] = ['paint', 'crop', 'ink', 'water', 'foliage', 'grass', 'debris'];
+    const kinds: MaterialKind[] = ['ground', 'paint', 'crop', 'ink', 'water', 'foliage', 'grass', 'debris'];
     for (const k of kinds) renderer.setVisible(k, !options.hide?.includes(k));
     const grain = renderer.settings.grain;
     if (options.grain === false) renderer.settings.grain = 0;
@@ -154,7 +160,7 @@ function profilePanel() {
   // Everything that sets the work, as it is when Run is pressed, so pasted results from different settings can't be
   // mistaken for each other.
   const about = () => `scene ${sceneName} · GPU ${gpu} · ${timers ? 'GPU timers' : 'no GPU timers (only the uncapped frame and the CPU)'}\n`
-    + `hour ${hour} · x ${view.target.x.toFixed(2)} · z ${view.target.z.toFixed(2)} · zoom ${view.zoom.toFixed(1)} · view ${view.view} · samples ${num('samples', 4)} · shadow map ${num('shadowMap', farm ? 4096 : 2048)} · lines ${renderer.settings.lines ? 'on' : 'off'} · shadows ${renderer.settings.shadows ? 'on' : 'off'} · prepass ${renderer.settings.prepass ? 'on' : 'off'} · water scissor ${renderer.settings.waterScissor ? 'on' : 'off'}\n`
+    + `hour ${hour} · x ${view.target.x.toFixed(2)} · z ${view.target.z.toFixed(2)} · zoom ${view.zoom.toFixed(1)} · view ${view.view} · samples ${num('samples', 4)} · shadow map ${num('shadowMap', farm ? 4096 : 2048)} · lines ${renderer.settings.lines ? 'on' : 'off'} · shadows ${renderer.settings.shadows ? 'on' : 'off'} · prepass ${renderer.settings.prepass ? 'on' : 'off'} · water scissor ${renderer.settings.waterScissor ? 'on' : 'off'} · ground ${groundName()}\n`
     + `${location.href}\n${navigator.userAgent}`;
   const out = Object.assign(document.createElement('pre'), { textContent: `${about()}\n\nPlug the laptop in, close other apps, then Run. It takes a minute or two.` });
   const run = Object.assign(document.createElement('button'), { textContent: 'Run' });

@@ -110,7 +110,7 @@ function terrain(r: BrushRenderer) {
     const a = j * n + i;
     b.quad(a, a + n, a + n + 1, a + 1);
   }
-  r.add(b.build(), 'paint', { under: true });
+  r.add(b.build(), 'ground', { under: true, fields: { x: 0, z: 0, side: SIZE, turn: 0 } });
 }
 
 function water(r: BrushRenderer) {

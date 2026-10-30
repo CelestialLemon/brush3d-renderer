@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CAMERA_DISTANCE, ViewCamera } from './camera';
 import type { Look } from './look';
 import {
-  createSharedUniforms, depthMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
+  createSharedUniforms, depthMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
 } from './materials';
 import { POST_FRAG, POST_VERT } from './post';
 import type { PassTimer } from './timer';
@@ -41,6 +41,11 @@ export interface MeshOptions {
   under?: boolean;
   /** Is mirrored in the water. */
   reflect?: boolean;
+  /**
+   * For the ground: the square its brush fields are baked over (see setGroundFields), centred at x, z, `side` metres
+   * across and turned `turn` radians about the vertical. It should cover the ground, and not much more.
+   */
+  fields?: { x: number; z: number; side: number; turn: number };
 }
 
 export class BrushRenderer {
@@ -70,6 +75,7 @@ export class BrushRenderer {
    */
   private silhouettes = new THREE.Group();
   private twins: [THREE.Mesh, THREE.Mesh][] = [];
+  private fields: THREE.WebGLRenderTarget | null = null;
   private underTarget: THREE.WebGLRenderTarget;
   private reflectTarget: THREE.WebGLRenderTarget;
   private look: Look | null = null;
@@ -142,6 +148,7 @@ export class BrushRenderer {
     mesh.userData.kind = kind;
     mesh.userData.under = options.under ?? false;
     mesh.userData.reflect = options.reflect ?? kind !== 'water';
+    mesh.userData.fields = options.fields;
     this.scene.add(mesh);
     if (options.castShadow ?? kind !== 'water') this.casters.push(mesh);
     const twin = new THREE.Mesh(geometry, this.materials.get(kind)!.prepass);
@@ -152,6 +159,50 @@ export class BrushRenderer {
     this.silhouettes.add(twin);
     this.twins.push([mesh, twin]);
     return mesh;
+  }
+
+  /**
+   * Bakes the ground's brush fields into a `size`² texture, so its paint reads them rather than working them out in every
+   * pixel every frame (the light stays live); 0 works them out live again. One ground per renderer: the 'ground' mesh
+   * added with `fields`. Call after the scene is built.
+   */
+  setGroundFields(size: number) {
+    const main = this.materials.get('ground')?.main;
+    const ground = this.scene.children.find((o) => o.userData.kind === 'ground' && o.userData.fields) as THREE.Mesh | undefined;
+    this.fields?.dispose();
+    this.fields = null;
+    if (!main) return;
+    delete main.defines.FIELDS;
+    if (size > 0 && ground) {
+      const f = ground.userData.fields as NonNullable<MeshOptions['fields']>;
+      // x and z to 0..1 across the square: take the centre off, turn back, scale.
+      const c = Math.cos(f.turn) / f.side, sn = Math.sin(f.turn) / f.side;
+      const map = new THREE.Matrix3().set(c, -sn, 0.5 - c * f.x + sn * f.z, sn, c, 0.5 - sn * f.x - c * f.z, 0, 0, 1);
+      const target = new THREE.WebGLRenderTarget(size, size, {
+        type: THREE.UnsignedByteType, format: THREE.RGBAFormat, depthBuffer: false,
+        minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false,
+      });
+      const bake = groundBakeMaterial(this.shared, map);
+      const flat = new THREE.Mesh(ground.geometry, bake);
+      flat.frustumCulled = false;
+      ground.updateMatrixWorld();
+      flat.matrixWorld.copy(ground.matrixWorld);
+      flat.matrixAutoUpdate = false;
+      flat.matrixWorldAutoUpdate = false;
+      const scene = new THREE.Scene();
+      scene.add(flat);
+      this.gl.setRenderTarget(target);
+      this.gl.setClearColor(0x808080, 1);
+      this.gl.clear(true, false, false);
+      this.gl.render(scene, this.postCamera);
+      this.gl.setRenderTarget(null);
+      bake.dispose();
+      this.fields = target;
+      main.uniforms.uFields = { value: target.texture };
+      main.uniforms.uFieldsMap = { value: map };
+      main.defines.FIELDS = 1;
+    }
+    main.needsUpdate = true;
   }
 
   /** Shows or hides every mesh of a kind (for A/B comparisons). */

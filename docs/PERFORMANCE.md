@@ -127,7 +127,7 @@ The farm's frame has to drop to the scene's 17 ms on the laptop (about 9 here) b
 | **Done:** the main view's silhouettes first (a depth pre-pass), then paint only what shows (`prepass=0` turns it off) | the same | 9.5 |
 | **Done:** the water's two passes only round the water on screen (a scissor padded by how far the water's lookups reach, `WATER_REACH`; `scissor=0` turns it off) | the same | 4.7 |
 | A 2048² shadow map on the farm, not 4096² | to compare | 2.3 |
-| Bake the ground's brush fields into a texture at load (4096², 64 MB); the light stays live | nearly the same | 2.7 |
+| **Done:** bake the ground's brush fields into a 2048² texture at load; the light stays live (`ground=live` turns it off) | the same to the eye | 2.7 |
 
 The savings are from Sol's chain of experiments, each cut on top of the ones above it: 37.3 ms before, 18.0 with all four.
 The renderer's own numbers for the done cuts are below; the frame with them is 23.1 ms, so the two still to do would
@@ -157,8 +157,39 @@ still needs its 5 ms on top of that.
   ceiling, not a cut) still leaves 10.5 ms. The rest may take changes that show (fewer leaf cards far off, a cheaper paint
   recipe, a softer ground up close); the developer chooses from side-by-side comparisons.
 - **On the laptop the ground's paint costs the most**, now more than ever: with the cuts in, the frame without the
-  ground is 9.6 ms on the meadow (of 23.3) and 21.3 on the farm (of 28.6). So baking the ground's brush fields may save
-  much more there than the 2.7 ms measured here.
+  paint (the ground, with the stones and wood) is 9.6 ms on the meadow (of 23.3) and 21.3 on the farm (of 28.6). So
+  baking the ground's brush fields may save much more there than the 2.7 ms measured here.
+
+### The ground's brush, baked (#6, part 3)
+
+The ground's brush (its dabs, strokes, fine strokes and the colour's drift) depends only on where a point of the ground
+is, so it's worked out once at load, into a texture laid over the ground's square, and read from there. The light,
+shadows and the fine strokes' fading with zoom stay live. The ground is now its own kind (`ground`), so the profile shows
+it apart from the stones and wood (`paint`).
+
+**Decided** (the developer, on #23, 2026-10-30): **2048²**. Flipping between live and 2048 on the preview, no difference
+showed; 4096² looked and ran the same, at four times the memory (64 MB against 16).
+
+RX 570, 1080p, storm, GPU ms (`node tools/profile.ts`):
+
+| | live | baked 4096² (64 MB) | baked 2048² (16 MB) | the frame without the ground |
+|---|---:|---:|---:|---:|
+| farm | 23.1 | 20.2 | 20.2 | 18.4 |
+| meadow | 13.1 | **7.8** | 7.7 | 6.0 |
+
+- **Most of the ground's cost goes.** On the meadow, where the ground fills the screen, the frame nearly halves.
+- **Both sizes cost the same** to draw: the choice between them is the look and the memory. Baking took Sol's prototype about
+  10 ms (2048) to 30 ms (4096) of GPU time at load here.
+- **The picture is nearly the same**: the mean difference is under 0.2 of 255, and at most about one pixel in 2,000 differs by
+  more than 8 (single texels on the edges of brush marks), in both scenes, every view, zoomed in and out. 2048 is a little
+  further off than 4096, but neither shows at the closest zoom. With `ground=live` the frame is today's but for a few
+  pixels (the shader's arithmetic in a different order).
+- **The ground must be a heightfield** (one surface over each point), which both scenes' are; stones and wood stay live.
+
+On the laptop (`?profile` on #23's preview, two runs each, 1080p storm): the farm 28.7 → **26.6 ms** (37 fps). There the
+frame without the ground at all is 22.5 ms, so the ground has little more to give on the farm; the trees (about 6.5 ms)
+and the grass (about 5) are what's left, with the shadow pass's 3.4.
+
 - **Still to try:** a texture for the grass's own brush fields (they aren't the ground's), the leaves' colour work that is
   exact to move out of the pixel shader, tighter leaf cards, and culling whole clumps of trees off screen.
 - Each cut is measured on the laptop too, with `?profile` on its PR's preview.
