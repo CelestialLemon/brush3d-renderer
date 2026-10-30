@@ -5,6 +5,7 @@ import {
   createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
 } from './materials';
 import { POST_FRAG, POST_VERT } from './post';
+import { ShelterMap, type Cover } from './shelter';
 import type { PassTimer } from './timer';
 import { WeatherState, type Weather } from './weather';
 import { leafStorm, WindState, type Wind } from './wind';
@@ -24,6 +25,8 @@ export interface RendererOptions {
   samples?: number;
   /** Device pixels per CSS pixel to draw at; defaults to the screen's, capped at 2. */
   pixelRatio?: number;
+  /** The shelter map's size in texels (1024; 512 to save memory). */
+  shelterSize?: number;
 }
 
 export interface Settings {
@@ -42,6 +45,8 @@ export interface Settings {
    * Draw the things in the air (FALLING): off leaves them out, so the stability tools can measure the land under a storm.
    */
   falling: boolean;
+  /** Show the shelter map over the frame: what's under cover, and the map from above in the corner. */
+  shelterDebug: boolean;
 }
 
 /** The kinds in the air, which settings.falling leaves out: the leaves the wind lifts (rain, snow and dust to come). */
@@ -61,6 +66,12 @@ export interface MeshOptions {
    * is baked over the same square.
    */
   fields?: { x: number; z: number; side: number; turn: number };
+  /**
+   * How it shelters what's under it from rain and snow (see ShelterMap): by default the inked things are roofs ('full': the
+   * things people make, solar panels among them) and leaves are crowns ('partial'); nothing else is cover. Flowers and the
+   * like are leaves, but no cover.
+   */
+  cover?: Cover;
 }
 
 export class BrushRenderer {
@@ -68,7 +79,7 @@ export class BrushRenderer {
   readonly scene = new THREE.Scene();
   readonly view = new ViewCamera();
   readonly shared: SharedUniforms = createSharedUniforms();
-  readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true, falling: true };
+  readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true, falling: true, shelterDebug: false };
   width = 1; height = 1;
   /** Device pixels per CSS pixel asked for (see RendererOptions): the screen's pixels, which the zoom counts in. */
   readonly screenRatio: number;
@@ -113,6 +124,11 @@ export class BrushRenderer {
   readonly wind = new WindState();
   /** The weather as drawn: the cover as the game sent it, the looks easing towards it (see setWeather). */
   readonly weather = new WeatherState();
+  /**
+   * What's under cover, seen from above (see ShelterMap), for rain and snow to stop at. Drawn only when cover changes:
+   * call shelter.changed() after moving cover; adding a mesh or showing or hiding a kind does it already.
+   */
+  readonly shelter: ShelterMap;
 
   constructor(readonly canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true });
@@ -135,6 +151,7 @@ export class BrushRenderer {
       count: 2, type: THREE.HalfFloatType, format: THREE.RGBAFormat, depthBuffer: true,
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
     });
+    this.shelter = new ShelterMap(options.shelterSize ?? 1024);
     this.underTarget = half();
     this.reflectTarget = half();
     this.shared.uUnder.value = this.underTarget.textures[0];
@@ -192,6 +209,8 @@ export class BrushRenderer {
     mesh.userData.under = options.under ?? false;
     mesh.userData.reflect = options.reflect ?? kind !== 'water';
     mesh.userData.fields = options.fields;
+    mesh.userData.cover = options.cover ?? (kind === 'ink' ? 'full' : kind === 'foliage' ? 'partial' : 'none');
+    if (mesh.userData.cover !== 'none') this.shelter.changed();
     this.scene.add(mesh);
     if (options.castShadow ?? kind !== 'water') this.casters.push(mesh);
     const twin = new THREE.Mesh(geometry, this.materials.get(kind)!.prepass);
@@ -299,7 +318,11 @@ export class BrushRenderer {
 
   /** Shows or hides every mesh of a kind (for A/B comparisons). */
   setVisible(kind: MaterialKind, visible: boolean) {
-    for (const o of this.scene.children) if (o.userData.kind === kind) o.visible = visible;
+    for (const o of this.scene.children) {
+      if (o.userData.kind !== kind || o.visible === visible) continue;
+      o.visible = visible;
+      if (o.userData.cover !== 'none') this.shelter.changed();
+    }
   }
 
   /** The height of the water's surface, the plane it mirrors the scene in. */
@@ -403,6 +426,19 @@ export class BrushRenderer {
     return new THREE.Vector4(x0, y0, x1 - x0, y1 - y0);
   }
 
+  /** Draws the shelter map: the cover meshes with their sun-shadow materials, from above, the wind stilled. */
+  private drawShelter() {
+    const cover = this.scene.children.filter((o): o is THREE.Mesh => (o as THREE.Mesh).isMesh && o.userData.cover !== undefined)
+      .map((mesh) => ({ mesh, cover: mesh.userData.cover as Cover, depth: this.materials.get(mesh.userData.kind)!.depth }));
+    const ground = this.scene.children.find((o) => o.userData.kind === 'ground' && o.userData.fields);
+    const s = this.shared;
+    this.shelter.draw(this.gl, this.scene, cover, ground?.userData.fields ?? null, () => {
+      const speed = s.uWindSpeed.value;
+      s.uWindSpeed.value = 0;
+      return () => { s.uWindSpeed.value = speed; };
+    });
+  }
+
   render(time: number) {
     if (!this.look) throw new Error('setLook before render');
     const t = this.timer;
@@ -428,6 +464,10 @@ export class BrushRenderer {
     this.scene.updateMatrixWorld();
     for (const [mesh, twin] of this.twins) twin.matrixWorld.copy(mesh.matrixWorld);
     const gl = this.gl;
+
+    // The shelter map, only when cover has changed: nothing to do most frames.
+    t?.mark('shelter', this.shelter.dirty);
+    if (this.shelter.dirty) this.drawShelter();
 
     // The sun's shadow map: redrawn every frame, because foliage and grass move in the wind.
     t?.mark('shadow');
@@ -501,6 +541,7 @@ export class BrushRenderer {
     // Lines thin as the camera zooms out, so a busy farm doesn't turn into a comic.
     u.uLineWidth.value = THREE.MathUtils.clamp(0.6 + this.view.zoom / 48, 0.8, 2.2) * this.pixelRatio * 0.75;
     gl.render(this.postScene, this.postCamera);
+    if (this.settings.shelterDebug) this.shelter.drawOverlay(gl, this.gbuffer.textures[1], this.view.camera, this.width, this.height);
     for (const o of grounded) o.visible = true;
     t?.endFrame();
   }

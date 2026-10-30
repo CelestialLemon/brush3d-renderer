@@ -12,7 +12,11 @@ import type { MaterialKind } from '../renderer/materials';
 import { PassTimer } from '../renderer/timer';
 import { WIND_SCALE } from '../renderer/wind';
 
-export interface ProfileCase { label: string; width: number; height: number; wind: number; hide?: MaterialKind[] }
+export interface ProfileCase {
+  label: string; width: number; height: number; wind: number; hide?: MaterialKind[];
+  /** Draw the shelter map every frame, to time it (the game draws it only when cover changes). */
+  shelter?: boolean;
+}
 export interface ProfileRow {
   label: string; width: number; height: number;
   /** Median ms per pass and in all ('frame'); null where the browser has no GPU timer. */
@@ -23,7 +27,7 @@ export interface ProfileRow {
   uncapped: number;
 }
 
-export const PASSES = ['setup', 'shadow', 'under', 'reflect', 'main', 'post'];
+export const PASSES = ['setup', 'shelter', 'shadow', 'under', 'reflect', 'main', 'post'];
 const KINDS: MaterialKind[] = ['ground', 'paint', 'grass', 'foliage', 'crop', 'ink', 'water', 'debris'];
 const STORM = WIND_SCALE.storm;
 
@@ -36,6 +40,7 @@ export function defaultCases(): ProfileCase[] {
     cases.push({ label: `${name} storm`, width, height, wind: STORM });
   }
   for (const k of KINDS) cases.push({ label: `1080p storm, no ${k}`, width: 1920, height: 1080, wind: STORM, hide: [k] });
+  cases.push({ label: '1080p storm, shelter every frame', width: 1920, height: 1080, wind: STORM, shelter: true });
   return cases;
 }
 
@@ -65,8 +70,9 @@ export async function runProfile(
       view.update(0, true);
       renderer.setWind({ speed: c.wind, direction: (31 * Math.PI) / 180, gust: 0.5 }, true);
       for (const k of KINDS) renderer.setVisible(k, !c.hide?.includes(k));
+      const frame = (t: number) => { if (c.shelter) renderer.shelter.changed(); draw(t); };
       // Warm up: shaders, the new targets' memory, the GPU's clocks.
-      for (let f = 0; f < 20; f++) { draw((time += 1 / 60)); if (f % 5 === 4) { sync(); await nextFrame(); } }
+      for (let f = 0; f < 20; f++) { frame((time += 1 / 60)); if (f % 5 === 4) { sync(); await nextFrame(); } }
       sync();
       renderer.timer = timer;
       timer.reset();
@@ -74,7 +80,7 @@ export async function runProfile(
       const whole: number[] = [];
       for (let f = 0; f < frames; f++) {
         const t0 = performance.now();
-        draw((time += 1 / 60));
+        frame((time += 1 / 60));
         whole.push(performance.now() - t0);
         if (f % 6 === 5) await nextFrame();
       }
@@ -86,7 +92,7 @@ export async function runProfile(
       // Uncapped: back to back, then wait for the GPU to finish.
       sync();
       const n = 30, start = performance.now();
-      for (let f = 0; f < n; f++) draw((time += 1 / 60));
+      for (let f = 0; f < n; f++) frame((time += 1 / 60));
       sync();
       const row: ProfileRow = { label: c.label, width: c.width, height: c.height, gpu, cpu, uncapped: (performance.now() - start) / n };
       rows.push(row);

@@ -111,6 +111,25 @@ laptop.
 Before the cuts, the scene was 47 ms on the laptop on the farm and 26 on the meadow (37 and 14 here); here it is now 23 and
 13. The scene's 17 ms is the target for the cuts below.
 
+## The weather, piece by piece
+
+### The shelter map (#10)
+
+Two depth maps of the land from straight above, 1024² each (8 MB): the highest roof over each point (the inked things,
+solar panels among them) and the highest crown (the leaves, drawn at rest). Rain and snow will stop at them (#11, #14).
+Nothing in them moves, so they're drawn only when cover changes (a building placed or removed, a kind shown or hidden):
+**no cost on an ordinary frame**. RX 570, 1080p storm, GPU ms, the map drawn every frame to time it
+(`1080p storm, shelter every frame` in `node tools/profile.ts` and `?profile`):
+
+| | shelter, when redrawn | frame |
+|---|---:|---:|
+| farm | 0.58 | 11.62 → 12.19 |
+| meadow | 0.06 | 4.83 → 4.91 |
+
+Nearly all of the farm's 0.58 is its 60,000 leaf cards. On the laptop that's a little over a millisecond in the one frame
+cover changes, against the budget's 0.2 a frame: well within it. Reading the map costs its readers (rain, wetness, snow),
+counted in their own lines.
+
 ## Quality settings
 
 One look on every machine for now. These are the knobs a weather task builds in, so a machine that misses its 45 fps can
