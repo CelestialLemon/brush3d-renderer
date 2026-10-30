@@ -54,6 +54,15 @@ export const OVERCAST: Record<string, OvercastRecipe> = {
     sky: 1, shadowFade: 0.4, shadowLift: 1, shadowBlur: 4, contrast: 0.78, litLean: 0.04, skyChroma: 0.8,
     shadeHue: 270, shadeTurn: 0.8, rim: 0.04, hazeDensity: 0.5, hazeFloor: 0.5, exposure: 0.7, saturation: 1.14,
   },
+  // Slate with less colour (the developer's question on #30: a grey day should lose some): 12% and 21% less.
+  'slate-muted': {
+    sky: 1, shadowFade: 0.4, shadowLift: 1, shadowBlur: 4, contrast: 0.78, litLean: 0.04, skyChroma: 0.8,
+    shadeHue: 270, shadeTurn: 0.8, rim: 0.04, hazeDensity: 0.5, hazeFloor: 0.5, exposure: 0.7, saturation: 1,
+  },
+  'slate-grey': {
+    sky: 1, shadowFade: 0.4, shadowLift: 1, shadowBlur: 4, contrast: 0.78, litLean: 0.04, skyChroma: 0.8,
+    shadeHue: 270, shadeTurn: 0.8, rim: 0.04, hazeDensity: 0.5, hazeFloor: 0.5, exposure: 0.7, saturation: 0.9,
+  },
   // Silver: a bright, soft grey day, the tones closest together.
   silver: {
     sky: 0.88, shadowFade: 0.55, shadowLift: 1, shadowBlur: 4, contrast: 0.48, litLean: 0.14, skyChroma: 0.4,
