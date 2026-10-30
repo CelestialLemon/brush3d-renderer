@@ -13,6 +13,11 @@
     #hud span { color: #fffaf0; text-shadow: 0 1px 2px #0008; margin-left: 6px; }
     #hud label { color: #fffaf0; text-shadow: 0 1px 2px #0008; display: flex; align-items: center; gap: 4px; margin-left: 6px; }
     #hud label output { min-width: 9em; }
+    #hud label output.short { min-width: 3.5em; }
+    #hud label input[type=range] { width: 90px; }
+    #hud .break { flex-basis: 100%; height: 0; }
+    #hud select { background: rgba(255, 252, 240, 0.85); border: 0; border-radius: 6px; padding: 4px 6px; color: #2a2a30; }
+    #hud input[type=color] { width: 28px; height: 22px; padding: 0; border: 0; background: none; }
     body.still #hud { display: none; }
     #profile { position: fixed; left: 12px; top: 12px; right: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
     #profile button { background: rgba(255, 252, 240, 0.9); border: 0; border-radius: 6px; padding: 5px 9px; cursor: pointer; color: #2a2a30; }

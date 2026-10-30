@@ -7,7 +7,9 @@
 // whole patch however short the step. So it reports the patches: how many there are of 16 pixels or more, and the largest,
 // per moment and summed, with each kind of material left out (what drops is that kind's share). STEP sets the step in
 // seconds, and the run is repeated at four times the step: smooth motion's numbers grow with the step, pops' don't.
-// It writes a picture of the worst moment's patches. See tools/browser.ts for the environment it reads.
+// It writes a picture of the worst moment's patches. A query takes the weather like the demo's ("weather=storm"); add
+// falling=0 to leave out the things in the air (rain, snow, dust, the wind's leaves) and measure the land under them.
+// See tools/browser.ts for the environment it reads.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gpuName, launch, open } from './browser.ts';

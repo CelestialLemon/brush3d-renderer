@@ -6,6 +6,7 @@ import {
 } from './materials';
 import { POST_FRAG, POST_VERT } from './post';
 import type { PassTimer } from './timer';
+import { WeatherState, type Weather } from './weather';
 import { leafStorm, WindState, type Wind } from './wind';
 
 // The renderer: a sun shadow map; for the water, the bed drawn without it and the scene mirrored in it (both at half size,
@@ -37,7 +38,14 @@ export interface Settings {
    * before painting them, where it can. Off for comparing, or for a GPU whose depths don't match exactly.
    */
   equalDepth: boolean;
+  /**
+   * Draw the things in the air (FALLING): off leaves them out, so the stability tools can measure the land under a storm.
+   */
+  falling: boolean;
 }
+
+/** The kinds in the air, which settings.falling leaves out: the leaves the wind lifts (rain, snow and dust to come). */
+export const FALLING: readonly MaterialKind[] = ['debris'];
 
 /** How a mesh takes part in the passes. */
 export interface MeshOptions {
@@ -60,7 +68,7 @@ export class BrushRenderer {
   readonly scene = new THREE.Scene();
   readonly view = new ViewCamera();
   readonly shared: SharedUniforms = createSharedUniforms();
-  readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true };
+  readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true, falling: true };
   width = 1; height = 1;
   /** Device pixels per CSS pixel asked for (see RendererOptions): the screen's pixels, which the zoom counts in. */
   readonly screenRatio: number;
@@ -103,6 +111,8 @@ export class BrushRenderer {
   private look: Look | null = null;
   /** The wind as drawn, easing towards what the game last asked for (see setWind). */
   readonly wind = new WindState();
+  /** The weather as drawn: the cover as the game sent it, the looks easing towards it (see setWeather). */
+  readonly weather = new WeatherState();
 
   constructor(readonly canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true });
@@ -153,6 +163,13 @@ export class BrushRenderer {
    * eases towards it over a second or two; 'immediate' puts it there at once (a new scene, a screenshot).
    */
   setWind(wind: Wind, immediate = false) { this.wind.set(wind, immediate); }
+
+  /**
+   * The weather the game wants (see Weather, and WEATHER_PRESETS for shorthands). The cloud cover is drawn exactly as given;
+   * the looks (the light, rain and snow, heat, haze) ease towards it over a second or two, hiding the steps between the
+   * game's updates; 'immediate' puts them there at once (a level loading, a screenshot).
+   */
+  setWeather(weather: Weather, immediate = false) { this.weather.set(weather, immediate); }
 
   /** The shared material of a kind (one per renderer, so meshes of a kind batch their state). */
   material(kind: MaterialKind) {
@@ -398,6 +415,11 @@ export class BrushRenderer {
     s.uWindGustiness.value = w.gust;
     s.uWindDrift.value.set(w.driftX, w.driftZ);
     s.uWindFlutter.value = w.flutter;
+    this.weather.update(time);
+    const grounded: THREE.Object3D[] = [];
+    if (!this.settings.falling) {
+      for (const o of this.scene.children) if (o.visible && FALLING.includes(o.userData.kind)) { o.visible = false; grounded.push(o); }
+    }
     // Framed by the screen's pixels, not the pixels drawn: drawing fewer (maxPixels) makes the frame softer, not nearer.
     const toScreen = this.screenRatio / this.pixelRatio;
     this.view.apply(this.width * toScreen, this.height * toScreen);
@@ -479,6 +501,7 @@ export class BrushRenderer {
     // Lines thin as the camera zooms out, so a busy farm doesn't turn into a comic.
     u.uLineWidth.value = THREE.MathUtils.clamp(0.6 + this.view.zoom / 48, 0.8, 2.2) * this.pixelRatio * 0.75;
     gl.render(this.postScene, this.postCamera);
+    for (const o of grounded) o.visible = true;
     t?.endFrame();
   }
 }
