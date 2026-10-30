@@ -21,7 +21,8 @@ Decided with the developer on 2026-10-30 (#6). The game is played by the develop
   work, so only the uncapped frame counts). Its screen is high-DPI: at full sharpness the game draws two to three times
   1080p's pixels (21 ms at 1440p's, 37 at 4K's). So the game draws at most 1080p's pixel count (`renderer.maxPixels`),
   scaled up to the screen (#6, part 6): the MacBook's 2940×1800 window draws at 1840×1126. At 1080p and below nothing
-  changes. The demo's Pixels button and `pixels=1440` or `pixels=full` compare.
+  changes. The developer's pick (#28): on the MacBook 1440p's count looked no sharper than 1080p's; the screen's own was
+  noticeably sharper, but about 27 ms a frame there, below 45 fps before the weather.
 - If the floor needs it, the look may change, but only as the developer chooses: each change built behind a button on the
   PR's preview, to flip between in any scene, hour and weather.
 

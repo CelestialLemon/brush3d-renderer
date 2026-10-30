@@ -151,5 +151,5 @@ RX 570. `docs/PERFORMANCE.md` has the budget.
   growing, harvest and sowing need no new bake): the farm 11.7 ms here, 17.5 on the laptop (from 20.3) and 15.0 on the MacBook (from 19.0), the meadow
   4.9 here.
   Done (#6, part 6): at most 1080p's pixel count drawn, scaled up to a high-DPI screen (the MacBook's), so it costs what
-  it does at 1080p.
+  it does at 1080p (the developer's pick over 1440p's and the screen's own).
   `node tools/profile.ts` measures here, `?profile` on any machine.
