@@ -26,30 +26,39 @@ git config user.name 'github-actions[bot]'
 git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 site="$(mktemp -d)" repo="$(git rev-parse --absolute-git-dir)"
 done_() { if [ -n "${GITHUB_OUTPUT:-}" ]; then echo "done=$1" >> "$GITHUB_OUTPUT"; fi; }
-pr_state() { gh pr view "$1" --repo "$GITHUB_REPOSITORY" --json state,headRefOid --jq '.state + " " + .headRefOid'; }
+# A pull request's state and head ("OPEN <sha>", "CLOSED <sha>", "MERGED <sha>"). A lookup that fails stops the run: an unknown
+# state must never read as closed and take an open pull request's preview away.
+pr_state() {
+  local out
+  out="$(gh pr view "$1" --repo "$GITHUB_REPOSITORY" --json state,headRefOid --jq '.state + " " + .headRefOid')" || { echo "Couldn't look up pull request $1" >&2; exit 1; }
+  case "${out%% *}" in OPEN|CLOSED|MERGED) echo "$out" ;; *) echo "Pull request $1 is in an unknown state: '$out'" >&2; exit 1 ;; esac
+}
+closed() { case "${1%% *}" in CLOSED|MERGED) return 0 ;; *) return 1 ;; esac; }
 
 # Whether this run's change is still the one wanted.
 wanted() {
   case "$folder" in
     main) [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$GITHUB_SHA" ] || { echo "main has moved on; skipping"; return 1; } ;;
     pr-*)
-      local state; state="$(pr_state "${folder#pr-}")"
+      local state; state="$(pr_state "${folder#pr-}")" || exit 1
       if [ -n "$built" ]; then
         [ "$state" = "OPEN $PR_SHA" ] || { echo "Pull request ${folder#pr-} is now '$state', not open at ${PR_SHA::7}; skipping"; return 1; }
       else
-        [ "${state%% *}" != OPEN ] || { echo "Pull request ${folder#pr-} is open again; keeping its preview"; return 1; }
+        closed "$state" || { echo "Pull request ${folder#pr-} is open again; keeping its preview"; return 1; }
       fi ;;
   esac
 }
 
 for attempt in 1 2 3 4 5; do
-  wanted || { done_ false; exit 0; }
+  # The site is fetched (and the lease taken) before checking the change is wanted: anything published after that check, by a
+  # newer run, moves gh-pages and breaks the lease, so an older run can never write over it.
   rm -rf "$site" && mkdir -p "$site"
   lease=""
   if git fetch --quiet --depth=1 origin gh-pages 2>/dev/null; then
     lease="$(git rev-parse FETCH_HEAD)"
     git archive FETCH_HEAD | tar -x -C "$site"
   fi
+  wanted || { done_ false; exit 0; }
 
   if [ -n "$folder" ]; then
     rm -rf "${site:?}/$folder"
@@ -57,14 +66,15 @@ for attempt in 1 2 3 4 5; do
   fi
   # Listed after the fetch, so any preview fetched was published while its pull request was open: it goes only if it has
   # closed since, which is checked one by one.
-  open_prs=" $(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 500 --json number --jq '.[].number' | tr '\n' ' ') "
+  open_prs="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 500 --json number --jq '.[].number')" || { echo "Couldn't list pull requests"; exit 1; }
+  open_prs=" $(echo $open_prs) "
   for dir in "$site"/pr-*/; do
     [ -d "$dir" ] || continue
     name="$(basename "$dir")" n="${name#pr-}"
     [ "$name" = "$folder" ] && continue
-    if [[ "$open_prs" != *" $n "* ]] && [ "$(pr_state "$n" | cut -d' ' -f1)" != OPEN ]; then
-      echo "Removing $name: its pull request is closed"; rm -rf "$dir"
-    fi
+    [[ "$open_prs" == *" $n "* ]] && continue
+    state="$(pr_state "$n")" || exit 1
+    if closed "$state"; then echo "Removing $name: its pull request is closed"; rm -rf "$dir"; fi
   done
 
   touch "$site/.nojekyll"
@@ -79,7 +89,12 @@ HTML
   # One commit with no parent: the branch only ever holds the site as it is now.
   tree="$(cd "$site" && GIT_DIR="$repo" GIT_INDEX_FILE="$site.index" GIT_WORK_TREE="$site" bash -c 'git add -A . && git write-tree')"
   rm -f "$site.index"
-  if [ -n "$lease" ] && [ "$tree" = "$(git rev-parse "$lease^{tree}")" ]; then echo "Nothing changed"; break; fi
+  if [ -n "$lease" ] && [ "$tree" = "$(git rev-parse "$lease^{tree}")" ]; then
+    # Nothing to change, as long as the site is still the one fetched; if not, look again.
+    if [ "$(git ls-remote origin refs/heads/gh-pages | cut -f1)" = "$lease" ]; then echo "Nothing changed"; break; fi
+    if [ "$attempt" = 5 ]; then echo "Couldn't publish: gh-pages kept moving"; exit 1; fi
+    echo "gh-pages moved on; looking again"; continue
+  fi
   commit="$(git commit-tree "$tree" -m "Site: ${folder:-clean up} (${GITHUB_SHA::7})")"
   if git push --quiet --force-with-lease="refs/heads/gh-pages:$lease" origin "$commit:refs/heads/gh-pages"; then
     echo "Published (attempt $attempt)"; break
