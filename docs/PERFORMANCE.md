@@ -257,6 +257,14 @@ RX 570, 1080p, storm, GPU ms:
 | farm, both | 3.29 | 0.27 | 1.37 | 6.46 | 0.26 | **11.7** |
 | meadow, both (before: 6.5) | 0.18 | 0.38 | 0.68 | 3.44 | 0.19 | **4.9** |
 
+On the laptop (`?profile` on #27's preview, 1080p storm, GPU ms), the farm went from 20.3 to **17.5 ms** (56 fps),
+within half a millisecond of the scene's 17:
+
+| | shadow | under | reflect | main | post | frame |
+|---|---:|---:|---:|---:|---:|---:|
+| `grass=live&crop=live` | 2.83 | 0.44 | 2.01 | 14.49 | 0.50 | 20.3 |
+| both baked | 2.66 | 0.40 | 1.89 | 12.04 | 0.47 | **17.5** |
+
 On the MacBook Air (`?profile` on #27's preview, Chrome, uncapped ms; its GPU timers don't work), the farm at 1080p in a
 storm: **19.0 live → 15.0 baked**. At 1440p 26.7 → 21.0, at 4K 46.9 → 36.9.
 

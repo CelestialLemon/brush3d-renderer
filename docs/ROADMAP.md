@@ -147,6 +147,6 @@ RX 570. `docs/PERFORMANCE.md` has the budget.
   silhouettes too: the farm 14 ms here and about 20 on the laptop (from 26.6), the meadow 6 here, byte-for-byte the same
   picture.
   Done (#6, part 5): the grass's and the crops' brush baked by place at load, seven angles a brush scale (a crop's
-  growing, harvest and sowing need no new bake): the farm 11.7 ms here and 15.0 on the MacBook (from 19.0), the meadow
+  growing, harvest and sowing need no new bake): the farm 11.7 ms here, 17.5 on the laptop (from 20.3) and 15.0 on the MacBook (from 19.0), the meadow
   4.9 here.
   `node tools/profile.ts` measures here, `?profile` on any machine.
