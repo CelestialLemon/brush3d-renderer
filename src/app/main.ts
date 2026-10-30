@@ -4,13 +4,19 @@ import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
 import type { MaterialKind } from '../renderer/materials';
+import { WEATHER_PRESETS, type Haze, type Weather, type WeatherName } from '../renderer/weather';
 import { WIND_SCALE, windName, type Wind, type WindStrength } from '../renderer/wind';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
+import { SPEEDS, timelineAt, timelinePhase } from './timeline';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
 //   view=0..3  zoom=16..96 (screen px per metre)  hour=0..24  x, z (camera target)  t (seconds: freeze the clock there)
 //   scene=farm|meadow  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
+//   weather (clear|scattered|overcast|soft-rain|storm|fog|dust|heat-wave|snow|blizzard), then each value over it:
+//     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop (metres)
+//   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
+//   falling=0 (leave out the things in the air: the wind's leaves, and rain, snow and dust to come)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
 //   prepass=0 (paint without drawing the silhouettes first)  scissor=0 (the water's passes over the whole screen)
 //   equal=0 (paint at or nearer the silhouettes' depth, not only at it)
@@ -56,6 +62,22 @@ const wind: Wind = {
   gust: num('gust', 0.5),
 };
 renderer.setWind(wind, true);
+// The weather: a preset, and any value given over it. Its haze is kept (thinned to nothing) so the controls can thicken it.
+const weatherParam = params.get('weather');
+let presetName: WeatherName | null = weatherParam !== null && weatherParam in WEATHER_PRESETS ? weatherParam as WeatherName : null;
+const preset: Weather = WEATHER_PRESETS[presetName ?? 'clear'];
+const presetHaze: Haze = preset.haze ?? { amount: 0, color: 0xcfd6d8, top: 4 };
+const weather: Required<Weather> & { haze: Haze } = {
+  cloud: num('cloud', preset.cloud), rain: num('rain', preset.rain ?? 0), snow: num('snow', preset.snow ?? 0), heat: num('heat', preset.heat ?? 0),
+  haze: { amount: num('haze', presetHaze.amount), color: params.has('hazeColor') ? parseInt(params.get('hazeColor')!, 16) : presetHaze.color, top: num('hazeTop', presetHaze.top) },
+};
+if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop'].some((k) => params.has(k))) presetName = null;
+renderer.setWeather(weather, true);
+renderer.settings.falling = num('falling', 1) !== 0;
+// The scripted timeline, at a game speed: it sends the weather as the game would, a few times a second.
+let playing = params.has('timeline'), speed = Number(params.get('timeline')) || 1;
+if (playing) presetName = null;
+let timelineStart: number | null = null, timelineSent = '';
 const frozen = params.has('t') ? num('t', 0) : null;
 if (params.has('still') || params.has('profile')) document.body.classList.add('still');
 
@@ -94,6 +116,7 @@ addEventListener('keydown', (e) => {
 const hudEl = document.getElementById('hud')!;
 function hud() {
   hudEl.innerHTML = '';
+  refreshers.length = 0;
   for (const [name, h] of Object.entries(PRESETS)) {
     const b = document.createElement('button');
     b.textContent = name;
@@ -105,32 +128,115 @@ function hud() {
   lines.textContent = 'Lines'; lines.className = renderer.settings.lines ? 'on' : '';
   lines.onclick = () => { renderer.settings.lines = !renderer.settings.lines; hud(); };
   hudEl.append(lines);
-  hudEl.append(slider('Wind', 0, 45, 0.5, wind.speed, (v) => { wind.speed = v; }, (v) => `${windName(v)} ${v.toFixed(1)} m/s`));
-  hudEl.append(slider('towards', 0, 360, 5, (wind.direction * 180) / Math.PI, (v) => { wind.direction = (v * Math.PI) / 180; }, (v) => `${v.toFixed(0)}°`));
+  const windSet = (f: (v: number) => void) => (v: number) => { f(v); renderer.setWind(wind); };
+  hudEl.append(slider('Wind', 0, 45, 0.5, () => wind.speed, windSet((v) => { wind.speed = v; }), (v) => `${windName(v)} ${v.toFixed(1)} m/s`));
+  hudEl.append(slider('towards', 0, 360, 5, () => (wind.direction * 180) / Math.PI, windSet((v) => { wind.direction = (v * Math.PI) / 180; }), (v) => `${v.toFixed(0)}°`));
   const info = document.createElement('span');
   info.textContent = 'drag to pan · wheel to zoom · Q/E to turn';
   hudEl.append(info);
+
+  // The weather: a preset, its values, and the timeline standing in for the game. Moving a value stops the timeline.
+  hudEl.append(Object.assign(document.createElement('div'), { className: 'break' }));
+  const pick = document.createElement('select');
+  for (const name of ['custom', ...Object.keys(WEATHER_PRESETS)]) pick.append(new Option(name.replace('-', ' '), name, false, name === (presetName ?? 'custom')));
+  pick.onchange = () => {
+    if (!(pick.value in WEATHER_PRESETS)) return;
+    const p: Weather = WEATHER_PRESETS[pick.value as WeatherName];
+    Object.assign(weather, { cloud: p.cloud, rain: p.rain ?? 0, snow: p.snow ?? 0, heat: p.heat ?? 0 });
+    weather.haze = p.haze ? { ...p.haze } : { ...weather.haze, amount: 0 };
+    presetName = pick.value as WeatherName; playing = false; timelineEl.textContent = '';
+    renderer.setWeather(weather);
+    hud();
+  };
+  pick.onkeydown = (e) => e.stopPropagation();
+  hudEl.append(Object.assign(document.createElement('label'), { textContent: 'Weather' }), pick);
+  const weatherSet = (f: (v: number) => void) => (v: number) => {
+    f(v); presetName = null; pick.value = 'custom'; playing = false; play.className = ''; timelineEl.textContent = '';
+    renderer.setWeather(weather);
+  };
+  const share = (v: number) => v.toFixed(2);
+  hudEl.append(slider('Cloud', 0, 1, 0.01, () => weather.cloud, weatherSet((v) => { weather.cloud = v; }), share, true));
+  hudEl.append(slider('Rain', 0, 1, 0.01, () => weather.rain, weatherSet((v) => { weather.rain = v; }), share, true));
+  hudEl.append(slider('Snow', 0, 1, 0.01, () => weather.snow, weatherSet((v) => { weather.snow = v; }), share, true));
+  hudEl.append(slider('Heat', 0, 1, 0.01, () => weather.heat, weatherSet((v) => { weather.heat = v; }), share, true));
+  hudEl.append(slider('Haze', 0, 1, 0.01, () => weather.haze.amount, weatherSet((v) => { weather.haze.amount = v; }), share, true));
+  hudEl.append(slider('up to', 0, 30, 0.5, () => weather.haze.top, weatherSet((v) => { weather.haze.top = v; }), (v) => `${v.toFixed(1)} m`, true));
+  const colour = Object.assign(document.createElement('input'), { type: 'color', value: `#${weather.haze.color.toString(16).padStart(6, '0')}` });
+  colour.oninput = () => weatherSet((v) => { weather.haze.color = v; })(parseInt(colour.value.slice(1), 16));
+  hudEl.append(colour);
+  const play = Object.assign(document.createElement('button'), { textContent: 'Timeline', className: playing ? 'on' : '' });
+  play.title = 'Clear, cloud building, a shower, clearing again: sent as the game sends it';
+  play.onclick = () => {
+    playing = !playing; timelineStart = null; timelineSent = '';
+    if (playing) { presetName = null; pick.value = 'custom'; } else timelineEl.textContent = '';
+    play.className = playing ? 'on' : '';
+  };
+  const pace = Object.assign(document.createElement('button'), { textContent: `${speed}× speed` });
+  pace.title = 'The game\'s speed: a day is 4 minutes at 1×';
+  pace.onclick = () => {
+    const next = SPEEDS[(SPEEDS.indexOf(speed as (typeof SPEEDS)[number]) + 1) % SPEEDS.length];
+    // Keep the spell where it is: the game time it has run, at the new speed.
+    if (playing && timelineStart !== null) timelineStart = lastTime - ((lastTime - timelineStart) * speed) / next;
+    speed = next; pace.textContent = `${speed}× speed`;
+  };
+  hudEl.append(play, pace, timelineEl);
 }
-function slider(name: string, min: number, max: number, step: number, value: number, set: (v: number) => void, show: (v: number) => string) {
+const timelineEl = document.createElement('span');
+/** The weather controls' values, put back to what they show (the timeline moves them). */
+const refreshers: (() => void)[] = [];
+function slider(name: string, min: number, max: number, step: number, get: () => number, set: (v: number) => void, show: (v: number) => string, short = false) {
   const label = document.createElement('label');
-  const input = Object.assign(document.createElement('input'), { type: 'range', min, max, step, value });
-  const out = document.createElement('output');
-  out.textContent = show(value);
-  input.oninput = () => { const v = Number(input.value); set(v); out.textContent = show(v); renderer.setWind(wind); };
+  const input = Object.assign(document.createElement('input'), { type: 'range', min: String(min), max: String(max), step: String(step), value: String(get()) });
+  const out = Object.assign(document.createElement('output'), { className: short ? 'short' : '' });
+  out.textContent = show(get());
+  input.oninput = () => { const v = Number(input.value); set(v); out.textContent = show(v); };
   input.onkeydown = (e) => e.stopPropagation();
+  refreshers.push(() => { input.value = String(get()); out.textContent = show(get()); });
   label.append(name, input, out);
   return label;
 }
 hud();
 
+/** A weather with everything it leaves out set to none, as the game sends it. */
+function whole(w: Weather): Required<Weather> {
+  return { cloud: w.cloud, rain: w.rain ?? 0, snow: w.snow ?? 0, heat: w.heat ?? 0, haze: w.haze ?? null };
+}
+
+/** Plays the timeline at a time (seconds): sends the game's weather when it changes, eased, as the game would. */
+let lastTime = 0;
+function playTimeline(time: number) {
+  lastTime = time;
+  if (!playing) return;
+  timelineStart ??= time;
+  const w = timelineAt(time - timelineStart, speed), key = JSON.stringify(w);
+  timelineEl.textContent = timelinePhase(time - timelineStart, speed);
+  if (key === timelineSent) return;
+  timelineSent = key;
+  // The game sends the whole weather: what the spell leaves out is none.
+  Object.assign(weather, whole(w), { haze: { ...weather.haze, amount: 0 } });
+  renderer.setWeather(weather);
+  for (const r of refreshers) r();
+}
+
 // Shot mode (tools/): no loop; the tools ask for frames. __shot draws one and returns it as a PNG; __draw puts the camera
 // somewhere (a fractional view turns part way), leaves some kinds out, and draws, leaving the frame on the canvas.
 if (params.has('shot')) {
-  // options.wind sets the wind (at once, unless ease is set: then it eases as the clock runs).
+  // options.wind sets the wind, options.weather the weather (a preset's name, whole, or values over the demo's), and
+  // options.timeline the scripted weather (whole) at a time (seconds, at a game speed, the demo's by default); all at once, unless ease is
+  // set: then they ease as the clock runs. options.hour sets the hour.
   const draw = (cam?: { x: number; z: number; zoom: number; view: number },
-    options: { hide?: MaterialKind[]; grain?: boolean; time?: number; wind?: Partial<Wind>; ease?: boolean } = {}) => {
+    options: {
+      hide?: MaterialKind[]; grain?: boolean; time?: number; hour?: number; wind?: Partial<Wind>;
+      weather?: Partial<Weather> | WeatherName; timeline?: { time: number; speed?: number }; ease?: boolean;
+    } = {}) => {
     if (cam) { view.target.set(cam.x, 0, cam.z); view.zoom = cam.zoom; view.view = cam.view; view.update(0, true); }
+    if (options.hour !== undefined) hour = options.hour;
     if (options.wind) renderer.setWind({ ...wind, ...options.wind }, !options.ease);
+    if (options.weather) {
+      const w = typeof options.weather === 'string' ? whole(WEATHER_PRESETS[options.weather]) : { ...weather, ...options.weather };
+      renderer.setWeather(w, !options.ease);
+    }
+    if (options.timeline) renderer.setWeather(whole(timelineAt(options.timeline.time, options.timeline.speed ?? speed)), !options.ease);
     const kinds: MaterialKind[] = ['ground', 'paint', 'crop', 'ink', 'water', 'foliage', 'grass', 'debris'];
     for (const k of kinds) renderer.setVisible(k, !options.hide?.includes(k));
     const grain = renderer.settings.grain;
@@ -152,7 +258,7 @@ async function profile(cases = defaultCases(), progress?: (row: ProfileRow, i: n
   profiling = true;
   try {
     return await runProfile(renderer, (t) => { renderer.setLook(lookAt(hour)); renderer.render(t); },
-      () => renderer.setWind(wind, true), cases, progress);
+      () => { renderer.setWind(wind, true); renderer.setWeather(weather, true); }, cases, progress);
   } finally { profiling = false; resize(); }
 }
 if (params.has('profile')) profilePanel();
@@ -168,7 +274,7 @@ function profilePanel() {
   // Everything that sets the work, as it is when Run is pressed, so pasted results from different settings can't be
   // mistaken for each other.
   const about = () => `scene ${sceneName} · GPU ${gpu} · ${timers ? 'GPU timers' : 'no GPU timers (only the uncapped frame and the CPU)'}\n`
-    + `hour ${hour} · x ${view.target.x.toFixed(2)} · z ${view.target.z.toFixed(2)} · zoom ${view.zoom.toFixed(1)} · view ${view.view} · samples ${num('samples', 4)} · shadow map ${num('shadowMap', farm ? 4096 : 2048)} · lines ${renderer.settings.lines ? 'on' : 'off'} · shadows ${renderer.settings.shadows ? 'on' : 'off'} · prepass ${renderer.settings.prepass ? 'on' : 'off'} · water scissor ${renderer.settings.waterScissor ? 'on' : 'off'} · equal depth ${renderer.settings.equalDepth ? 'on' : 'off'} · ground ${bakeName('ground')} · crop ${bakeName('crop')} · grass ${bakeName('grass')}\n`
+    + `hour ${hour} · x ${view.target.x.toFixed(2)} · z ${view.target.z.toFixed(2)} · zoom ${view.zoom.toFixed(1)} · view ${view.view} · samples ${num('samples', 4)} · shadow map ${num('shadowMap', farm ? 4096 : 2048)} · lines ${renderer.settings.lines ? 'on' : 'off'} · shadows ${renderer.settings.shadows ? 'on' : 'off'} · prepass ${renderer.settings.prepass ? 'on' : 'off'} · water scissor ${renderer.settings.waterScissor ? 'on' : 'off'} · equal depth ${renderer.settings.equalDepth ? 'on' : 'off'} · ground ${bakeName('ground')} · crop ${bakeName('crop')} · grass ${bakeName('grass')} · weather ${presetName ?? JSON.stringify(weather)}\n`
     + `${location.href}\n${navigator.userAgent}`;
   const out = Object.assign(document.createElement('pre'), { textContent: `${about()}\n\nPlug the laptop in, close other apps, then Run. It takes a minute or two.` });
   const run = Object.assign(document.createElement('button'), { textContent: 'Run' });
@@ -195,8 +301,10 @@ function frame(now: number) {
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
   view.update(dt);
+  const time = frozen ?? (now - start) / 1000;
+  playTimeline(time);
   renderer.setLook(lookAt(hour));
-  renderer.render(frozen ?? (now - start) / 1000);
+  renderer.render(time);
   if (++frames === 3) (window as unknown as { __ready: boolean }).__ready = true;
   requestAnimationFrame(frame);
 }

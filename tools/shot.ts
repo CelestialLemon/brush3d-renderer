@@ -1,6 +1,7 @@
 // Renders demo frames headlessly and saves them as PNGs: the eyes for iterating on the look.
 //   node tools/shot.ts [out-dir] [query ...]     e.g.  node tools/shot.ts out "hour=12" "hour=17.5&view=2&zoom=24"
-// Each query is added to the demo URL (see src/app/main.ts). See tools/browser.ts for the environment it reads.
+// Each query is added to the demo URL (see src/app/main.ts), the weather too ("weather=overcast&hour=17.5", "cloud=0.6").
+// See tools/browser.ts for the environment it reads.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gpuName, launch, open } from './browser.ts';

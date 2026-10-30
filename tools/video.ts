@@ -1,8 +1,11 @@
 // Records the camera moving as a video, to judge motion by eye: crawl, shimmer and popping show only in moving pictures.
 //   node tools/video.ts [out-dir] [move ...]      moves: pan, pan-wide, pan-up, turn, zoom, wind (default: all but the
-//   wind strengths), wind-calm, wind-breeze, wind-gale, wind-storm, wind-hurricane, wind-ramp (calm to hurricane and back)
+//   wind strengths), wind-calm, wind-breeze, wind-gale, wind-storm, wind-hurricane, wind-ramp (calm to hurricane and back),
+//   weather-ramp (clear to overcast and back, sent in steps as the game sends it), weather-snap (the same, the cover
+//   jumping clear, overcast, clear: what the ease has to hide), timeline (the demo's scripted weather at 3x the game's speed)
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
-// <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5"). See tools/browser.ts for the rest.
+// <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
+// tools/browser.ts for the rest.
 import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -13,8 +16,16 @@ const FPS = 30;
 const PITCH = (30 * Math.PI) / 180;
 interface Cam { x: number; z: number; zoom: number; view: number }
 const STRENGTHS = { calm: 0, breeze: 5, gale: 17, storm: 25, hurricane: 35 };
-/** A move: how long it lasts, where the camera is at time t (seconds), and the wind if not the demo's (eased if 'ease'). */
-interface Move { seconds: number; at: (t: number) => Cam; wind?: (t: number) => number; ease?: boolean; extra?: boolean }
+/**
+ * A move: how long it lasts, where the camera is at time t (seconds), and the wind (m/s), the cloud cover or the timeline's
+ * time if not the demo's (eased if 'ease').
+ */
+interface Move {
+  seconds: number; at: (t: number) => Cam; wind?: (t: number) => number; cloud?: (t: number) => number;
+  timeline?: (t: number) => number; ease?: boolean; extra?: boolean;
+}
+/** The game's updates: a few a second (src/app/timeline.ts), so the weather comes in steps the renderer eases over. */
+const tick = (t: number) => Math.floor(t * 4) / 4;
 const STILL = { x: -1, z: 4, zoom: 48, view: 0 };
 const MOVES: Record<string, Move> = {
   // A slow drag to the right and a little up, at an everyday zoom: 60 px a second.
@@ -32,6 +43,10 @@ const MOVES: Record<string, Move> = {
   // The camera still, at each strength of wind; and the wind rising from calm to a hurricane and dying down again.
   ...Object.fromEntries(Object.entries(STRENGTHS).map(([k, v]) => [`wind-${k}`, { seconds: 5, at: () => STILL, wind: () => v, extra: true }])),
   'wind-ramp': { seconds: 16, at: () => STILL, wind: (t) => 35 * Math.sin(Math.min(1, t / 14) * Math.PI), ease: true, extra: true },
+  // The cover rising from clear to overcast over 6 s, held, and clearing again, at the game's ticks.
+  'weather-ramp': { seconds: 16, at: () => STILL, cloud: (t) => Math.sin(Math.min(1, tick(t) / 14) * Math.PI) ** 0.5, ease: true, extra: true },
+  'weather-snap': { seconds: 12, at: () => STILL, cloud: (t) => (t >= 2 && t < 7 ? 1 : 0), ease: true, extra: true },
+  timeline: { seconds: 40, at: () => STILL, timeline: (t) => t, ease: true, extra: true },
 };
 
 /** The camera moved by screen pixels (right, up), as dragging does. */
@@ -58,10 +73,11 @@ try {
       const t = i / FPS;
       // Each move starts from its own wind (the demo's, if it sets none), not where the last one left it; then eases if asked.
       const wind = move.wind ? { speed: move.wind(t) } : i === 0 ? {} : undefined;
-      const png = await page.evaluate((cam, time, wind, ease) => {
-        (window as any).__draw(cam, { time, wind, ease });
+      const weather = move.cloud ? { cloud: move.cloud(t) } : i === 0 && !move.timeline ? {} : undefined;
+      const png = await page.evaluate((cam, time, wind, weather, timeline, ease) => {
+        (window as any).__draw(cam, { time, wind, weather, timeline, ease });
         return document.querySelector('canvas')!.toDataURL('image/png');
-      }, move.at(t), 3 + t, wind, !!move.ease && i > 0);
+      }, move.at(t), 3 + t, wind, weather, move.timeline ? { time: move.timeline(t), speed: 3 } : undefined, !!move.ease && i > 0);
       await writeFile(join(dir, `${String(i).padStart(4, '0')}.png`), Buffer.from(png.split(',')[1], 'base64'));
     }
     const file = join(out, `${name}.mp4`);
