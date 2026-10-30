@@ -30,6 +30,9 @@ The game sets the wind with `renderer.setWind({ speed, direction, gust })`; the 
 rock as whole crowns, leaves flutter, gusts roll over the grass and through the wheat, the water chops, and from a gale up
 leaves show their pale undersides and blow through the air. `src/renderer/wind.ts` has the scale and the curves.
 
+The renderer is only the presentation layer: the game owns the state and the logic of the wind, the water and the weather, and
+anything they cause, and the renderer draws what it's given. Weather is planned as an epic, #3.
+
 ## How it draws
 
 - **One G-buffer pass** at the screen's resolution, 4× MSAA: colour, plus view normal, view depth and an ink flag.
