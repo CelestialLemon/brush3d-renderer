@@ -65,6 +65,11 @@ export class BrushRenderer {
   readonly pixelRatio: number;
   /** Times each pass when set (tools/profile.ts, the demo's ?profile). */
   timer: PassTimer | null = null;
+  /**
+   * Where the finished frame goes: the canvas (null), or a target. Profiling draws into a target, as the canvas may make
+   * each frame wait for the screen's next refresh (on the MacBook it did).
+   */
+  output: THREE.WebGLRenderTarget | null = null;
   private gbuffer: THREE.WebGLRenderTarget;
   private shadowTarget: THREE.WebGLRenderTarget;
   private sunCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.5, 400);
@@ -454,7 +459,7 @@ export class BrushRenderer {
     this.paintOver(false, () => false);
 
     t?.mark('post');
-    gl.setRenderTarget(null);
+    gl.setRenderTarget(this.output);
     const u = this.post.uniforms;
     u.uLines.value = this.settings.lines ? 1 : 0;
     u.uGrain.value = this.settings.grain;

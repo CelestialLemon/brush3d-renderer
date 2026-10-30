@@ -3,7 +3,10 @@
 // same piece of the world as the demo's view at 1080p (the zoom scales with the height, as on a high-DPI screen: only the
 // pixel count changes), in a set wind, with some kinds of mesh left out if asked, the clock running so the wind moves. It reports each pass's median GPU
 // and CPU time (see src/renderer/timer.ts), and the uncapped frame: frames drawn back to back, the time each takes when
-// neither vsync nor the display waits on it (the larger of the CPU's and the GPU's share, roughly).
+// neither vsync nor the display waits on it (the larger of the CPU's and the GPU's share, roughly). It draws into a target
+// of the canvas's size, not the canvas: on the MacBook the canvas held every frame to the screen's refresh, so the times
+// came out in steps of 16.7 ms.
+import * as THREE from 'three';
 import type { BrushRenderer } from '../renderer/renderer';
 import type { MaterialKind } from '../renderer/materials';
 import { PassTimer } from '../renderer/timer';
@@ -52,9 +55,12 @@ export async function runProfile(
   const rows: ProfileRow[] = [];
   let time = 20;
   const view = renderer.view, zoom = view.zoom;
+  const output = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false });
+  renderer.output = output;
   try {
     for (const [i, c] of cases.entries()) {
       renderer.resize(c.width / renderer.pixelRatio, c.height / renderer.pixelRatio);
+      output.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
       view.zoom = (zoom * c.height) / 1080;
       view.update(0, true);
       renderer.setWind({ speed: c.wind, direction: (31 * Math.PI) / 180, gust: 0.5 }, true);
@@ -87,6 +93,8 @@ export async function runProfile(
       progress(row, i);
     }
   } finally {
+    renderer.output = null;
+    output.dispose();
     renderer.timer = null;
     for (const k of KINDS) renderer.setVisible(k, true);
     view.zoom = zoom;
@@ -125,5 +133,8 @@ export function table(rows: ProfileRow[]) {
   ]);
   const all = [head, ...lines];
   const widths = head.map((_, i) => Math.max(...all.map((l) => l[i].length)));
-  return all.map((l) => l.map((x, i) => (i ? x.padStart(widths[i]) : x.padEnd(widths[i]))).join('  ')).join('\n');
+  const text = all.map((l) => l.map((x, i) => (i ? x.padStart(widths[i]) : x.padEnd(widths[i]))).join('  ')).join('\n');
+  // The GPU's own timers can't take longer than the frames drawn back to back: if they do, they're counting waits.
+  const off = rows.some((r) => r.gpu && r.gpu.frame > r.uncapped * 1.5);
+  return off ? `${text}\n\nThe GPU timers here add up to far more than the uncapped frame: they count waiting, not work. Read the uncapped column.` : text;
 }
