@@ -13,7 +13,7 @@ import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } fr
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
 //   prepass=0 (paint without drawing the silhouettes first)  scissor=0 (the water's passes over the whole screen)
-//   ground=live|2048|4096 (the ground's brush worked out live, or baked at load into a texture that size; to compare, #6)
+//   ground=live (the ground's brush worked out in every pixel, as before it was baked at load)
 //   profile: time the frame pass by pass, on whatever machine opens it (see profile.ts)
 
 const params = new URLSearchParams(location.search);
@@ -36,9 +36,9 @@ renderer.settings.lines = num('lines', 1) !== 0;
 renderer.settings.shadows = num('shadows', 1) !== 0;
 renderer.settings.prepass = num('prepass', 1) !== 0;
 renderer.settings.waterScissor = num('scissor', 1) !== 0;
-// The ground's brush: candidates for the developer to pick from (#6), each a texture size, 0 for live.
-const GROUND = [4096, 2048, 0];
-let ground = params.get('ground') === 'live' ? 0 : num('ground', GROUND[0]);
+// The ground's brush, baked at load into a 2048² texture: the developer's pick (#6, #23), the same to the eye as live
+// and as 4096², at a quarter of 4096's memory.
+const ground = params.get('ground') === 'live' ? 0 : 2048;
 renderer.setGroundFields(ground);
 const groundName = () => (ground ? `baked ${ground}` : 'live');
 let hour = num('hour', 12);
@@ -97,11 +97,6 @@ function hud() {
   lines.textContent = 'Lines'; lines.className = renderer.settings.lines ? 'on' : '';
   lines.onclick = () => { renderer.settings.lines = !renderer.settings.lines; hud(); };
   hudEl.append(lines);
-  const brush = document.createElement('button');
-  brush.textContent = `Ground: ${groundName()}`;
-  brush.title = "The ground's brush: worked out live, or baked at load (#6)";
-  brush.onclick = () => { ground = GROUND[(GROUND.indexOf(ground) + 1) % GROUND.length]; renderer.setGroundFields(ground); hud(); };
-  hudEl.append(brush);
   hudEl.append(slider('Wind', 0, 45, 0.5, wind.speed, (v) => { wind.speed = v; }, (v) => `${windName(v)} ${v.toFixed(1)} m/s`));
   hudEl.append(slider('towards', 0, 360, 5, (wind.direction * 180) / Math.PI, (v) => { wind.direction = (v * Math.PI) / 180; }, (v) => `${v.toFixed(0)}°`));
   const info = document.createElement('span');

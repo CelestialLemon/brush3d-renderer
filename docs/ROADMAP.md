@@ -141,4 +141,6 @@ RX 570. `docs/PERFORMANCE.md` has the budget.
   Cuts that keep the picture reach about 18 ms here; the rest is the developer's choice from side-by-side comparisons.
   Done (#6, part 2): the main view's silhouettes drawn first, and the water's passes only round the water: the farm 23 ms
   here, the meadow 13 (on the laptop 29 and 23, from 50 and 27), the picture unchanged.
+  Done (#6, part 3): the ground's brush baked into a 2048² texture at load (the developer's pick; the same to the eye):
+  the farm 20 ms here and 27 on the laptop, the meadow 8 here.
   `node tools/profile.ts` measures here, `?profile` on any machine.

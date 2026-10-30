@@ -127,7 +127,7 @@ The farm's frame has to drop to the scene's 17 ms on the laptop (about 9 here) b
 | **Done:** the main view's silhouettes first (a depth pre-pass), then paint only what shows (`prepass=0` turns it off) | the same | 9.5 |
 | **Done:** the water's two passes only round the water on screen (a scissor padded by how far the water's lookups reach, `WATER_REACH`; `scissor=0` turns it off) | the same | 4.7 |
 | A 2048² shadow map on the farm, not 4096² | to compare | 2.3 |
-| **In #6 part 3, to pick:** bake the ground's brush fields into a texture at load; the light stays live (`ground=live`, `2048`, `4096`) | nearly the same | 2.7 |
+| **Done:** bake the ground's brush fields into a 2048² texture at load; the light stays live (`ground=live` turns it off) | the same to the eye | 2.7 |
 
 The savings are from Sol's chain of experiments, each cut on top of the ones above it: 37.3 ms before, 18.0 with all four.
 The renderer's own numbers for the done cuts are below; the frame with them is 23.1 ms, so the two still to do would
@@ -167,6 +167,9 @@ is, so it's worked out once at load, into a texture laid over the ground's squar
 shadows and the fine strokes' fading with zoom stay live. The ground is now its own kind (`ground`), so the profile shows
 it apart from the stones and wood (`paint`).
 
+**Decided** (the developer, on #23, 2026-10-30): **2048²**. Flipping between live and 2048 on the preview, no difference
+showed; 4096² looked and ran the same, at four times the memory (64 MB against 16).
+
 RX 570, 1080p, storm, GPU ms (`node tools/profile.ts`):
 
 | | live | baked 4096² (64 MB) | baked 2048² (16 MB) | the frame without the ground |
@@ -182,6 +185,10 @@ RX 570, 1080p, storm, GPU ms (`node tools/profile.ts`):
   further off than 4096, but neither shows at the closest zoom. With `ground=live` the frame is today's but for a few
   pixels (the shader's arithmetic in a different order).
 - **The ground must be a heightfield** (one surface over each point), which both scenes' are; stones and wood stay live.
+
+On the laptop (`?profile` on #23's preview, two runs each, 1080p storm): the farm 28.7 → **26.6 ms** (37 fps). There the
+frame without the ground at all is 22.5 ms, so the ground has little more to give on the farm; the trees (about 6.5 ms)
+and the grass (about 5) are what's left, with the shadow pass's 3.4.
 
 - **Still to try:** a texture for the grass's own brush fields (they aren't the ground's), the leaves' colour work that is
   exact to move out of the pixel shader, tighter leaf cards, and culling whole clumps of trees off screen.
