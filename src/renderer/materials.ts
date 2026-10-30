@@ -288,7 +288,8 @@ void main() {
   vec2 c = mat2(cos(a), sin(a), -sin(a), cos(a)) * (aCard.xy * vec2(1.0, max(abs(cos(ph * 2.3)), 0.2)));
   vec3 world = c0 + (right * c.x + up * c.y) * size;
   vWorldPos = world;
-  vRestPos = world;
+  // Its paint is the leaf's own, wherever it flies.
+  vRestPos = position * BOX;
   vNormal = normalize(vec3(sin(ph * 2.3), 1.0, cos(ph * 1.9)));
   vDabNormal = toCam;
   vColor = color;

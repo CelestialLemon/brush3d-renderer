@@ -61,16 +61,25 @@ export class WindState {
    * breeze, 2.4 in a hurricane; slower than real leaves, which would only blur as painted cards). */
   static flutterRate(speed: number) { return 2 * Math.PI * (0.7 + (2.3 * speed) / (speed + 12)); }
 
-  /** Advances to a time in seconds. A jump back or of more than half a second re-anchors the phases to that time. */
+  /**
+   * Advances to a time in seconds. The first time, and a jump back (a tool seeking), re-anchor the phases to that time. A long
+   * frame (a stall, a tab in the background) is taken in steps, so the wind still eases and its patterns carry on from where
+   * they were.
+   */
   update(time: number) {
     const dt = this.time === null ? -1 : time - this.time;
     this.time = time;
-    if (dt < 0 || dt > 0.5) {
+    if (dt < 0) {
       const d = WindState.driftSpeed(this.speed) * time;
       this.driftX = this.dirX * d; this.driftZ = this.dirZ * d;
       this.flutter = WindState.flutterRate(this.speed) * time;
       return;
     }
+    const n = Math.min(Math.ceil(dt / 0.1), 50);
+    for (let i = 0; i < n; i++) this.step(dt / n);
+  }
+
+  private step(dt: number) {
     const k = 1 - Math.exp(-dt / EASE);
     this.speed += (this.goal.speed - this.speed) * k;
     this.gust += (this.goal.gust - this.gust) * k;
