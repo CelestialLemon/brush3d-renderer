@@ -573,12 +573,32 @@ void main() {
   vec3 base = vColor;
   float vis = sunVisibility(p, n, 0.0);
   float light = sunLight(n, 0.2) * mix(0.2, 1.0, vis);
-  if (finish > 1.5) {
+  if (finish > 1.5 && finish < 2.5) {
     // Timber: a few long grain streaks.
     float g = snoise(vec2(vUv.x * 1.5, vUv.y * 24.0)) * 0.5 + 0.5;
     base = oklabToLin(lchShift(linToOklab(base), (g - 0.5) * 0.05, 1.0, 0.0));
   }
   vec3 col = paintBands(base, light, 0.02, n.y * 0.5 + 0.5);
+  if (finish > 2.5) {
+    // A roof (uv in metres: down the slope, along the ridge): tin's corrugations (3), or shingles (4) in courses with
+    // staggered joints, each shingle its own tone. Tone only, never lines; fading out before they're a few pixels apart,
+    // so they don't crawl.
+    vec2 q = vUv * vPaint.yz;
+    vec2 fw = max(fwidth(q), 1e-4);
+    if (finish < 3.5) {
+      float fade = 1.0 - smoothstep(0.12, 0.3, fw.y);
+      col *= 1.0 - 0.09 * fade * (0.5 + 0.5 * cos(q.y * 6.2831853));
+    } else {
+      float fade = 1.0 - smoothstep(0.1, 0.25, max(fw.x, fw.y));
+      float course = floor(q.x);
+      float along = q.y + 0.5 * mod(course, 2.0);
+      // The shadow under each course's butts, and a thin joint between shingles.
+      float butt = clamp((0.16 - fract(q.x)) / fw.x + 0.5, 0.0, 1.0);
+      float joint = clamp((0.035 - (0.5 - abs(fract(along) - 0.5))) / fw.y + 0.5, 0.0, 1.0);
+      float tone = hash12(vec2(course, floor(along)) + 3.7) - 0.5;
+      col *= 1.0 + fade * (tone * 0.12 - 0.16 * max(butt, joint));
+    }
+  }
   if (finish > 0.5 && finish < 1.5) {
     // Solar glass: deep blue cells under the sky's reflection. Light drifts across the whole array (one sky over all of
     // it, the way the water's is), brightest where the glass turns towards the horizon, with a sheen where the sun is.

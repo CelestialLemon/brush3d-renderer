@@ -223,6 +223,15 @@ export class BrushRenderer {
     return mesh;
   }
 
+  /** Takes out a mesh added before (a building removed): from the scene, the sun's shadow, the silhouettes and the shelter. */
+  remove(mesh: THREE.Mesh) {
+    this.scene.remove(mesh);
+    this.casters = this.casters.filter((m) => m !== mesh);
+    const i = this.twins.findIndex(([m]) => m === mesh);
+    if (i >= 0) { this.silhouettes.remove(this.twins[i][1]); this.twins.splice(i, 1); }
+    if (mesh.userData.cover !== 'none') this.shelter.changed();
+  }
+
   /**
    * Bakes a kind's brush fields into `size`² textures, so its paint reads them rather than working them out in every pixel
    * every frame (the light and the wind stay live); 0 works them out live again. Call after the scene is built.

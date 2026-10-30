@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import type { BrushRenderer } from '../renderer/renderer';
 import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
+import { addModel, loadModel } from './model';
+import shedTimber from './models/shed-timber.glb?url';
+import shedRed from './models/shed-red.glb?url';
+import shedPale from './models/shed-pale.glb?url';
 import {
   C, MapLine, addFlowers, addReeds, addStone, addTuft, addWaterRibbon, groundOf, growTree, smooth, type Tree,
 } from './kit';
@@ -82,8 +86,27 @@ const HIVES: [number, number][] = [[20.5, -7.6], [22, -7.9], [23.5, -8.2], [25, 
 const BALES: [number, number, number][] = [[-24, 9.6, 0.3], [-22.2, 10.8, 1.2], [-26, 11, 2.2]];
 const BARRELS: [number, number][] = [[12.9, -6.2], [13.5, -6.9]];
 const TABLE: [number, number] = [11, -7.5];
-const SHRUBS: [number, number][] = [[-4, -21], [8, -19], [-30, -10], [-33, -20], [-24, -30], [30, -3], [2, -27], [-31, 3]];
+// The first clump moved aside for the shed (#10), to a place where every bush still grows, so the rest are unchanged.
+const SHRUBS: [number, number][] = [[-7.8, -23.6], [8, -19], [-30, -10], [-33, -20], [-24, -30], [30, -3], [2, -27], [-31, 3]];
 const WALL = line([[19.5, -13.5], [24, -12], [28.5, -11]]);
+
+/**
+ * The test shed (#10): a timber field shed with an open porch, below the lane, its porch facing down the screen (the
+ * default view looks into it). Modelled in Blender (tools/blender/shed.py); a style per model, the developer to pick one.
+ */
+export const SHED_STYLES = { timber: shedTimber, red: shedRed, pale: shedPale };
+export type ShedStyle = keyof typeof SHED_STYLES;
+const SHED = { u: -2.5, v: -20.5, yaw: Math.PI / 4 };
+/** A map point in the shed's own frame: x along its front, z out through the porch (local z 1.5 the front wall, 3.5 the posts). */
+function shedLocal(x: number, z: number): [number, number] {
+  const [sx, sz] = W(SHED.u, SHED.v), dx = x - sx, dz = z - sz, c = Math.cos(SHED.yaw), s = Math.sin(SHED.yaw);
+  return [dx * c - dz * s, dx * s + dz * c];
+}
+/** Under the shed's roof (its walls, its porch), with a margin. */
+const underShed = (x: number, z: number, margin = 0) => {
+  const [lx, lz] = shedLocal(x, z);
+  return Math.abs(lx) < 2.3 + margin && lz > -1.7 - margin && lz < 3.6 + margin;
+};
 
 function tree(kind: Tree['kind'], u: number, v: number, scale: number, seed: number): Tree {
   const [x, z] = W(u, v);
@@ -116,9 +139,15 @@ function height(x: number, z: number) {
 }
 const ground = groundOf(height);
 
-export interface Farm { center: THREE.Vector3; radius: number; waterLevel: number; }
+export interface Farm {
+  center: THREE.Vector3; radius: number; waterLevel: number;
+  /** Settles once the models are loaded and in the scene. */
+  ready: Promise<void>;
+  /** Puts the shed up in a style (taking down the last), once loaded. */
+  setShed(style: ShedStyle): Promise<void>;
+}
 
-export function buildFarm(r: BrushRenderer): Farm {
+export function buildFarm(r: BrushRenderer, shedStyle: ShedStyle = 'timber'): Farm {
   terrain(r);
   water(r);
   wheat(r);
@@ -131,7 +160,33 @@ export function buildFarm(r: BrushRenderer): Farm {
   goods(r);
   stones(r);
   grass(r);
-  return { center: new THREE.Vector3(0, 0, 0), radius: HALF * Math.SQRT2, waterLevel: WATER_Y };
+  const setShed = shed(r);
+  return { center: new THREE.Vector3(0, 0, 0), radius: HALF * Math.SQRT2, waterLevel: WATER_Y, ready: setShed(shedStyle), setShed };
+}
+
+/** The shed, loaded in the style asked for; another style replaces it. Its floor sits at the ground's mean height round it. */
+function shed(r: BrushRenderer) {
+  const [x, z] = W(SHED.u, SHED.v);
+  let y = 0, n = 0;
+  for (const lx of [-2, 0, 2]) for (const lz of [-1.5, 0, 1.5]) {
+    const c = Math.cos(SHED.yaw), s = Math.sin(SHED.yaw);
+    y += height(x + lx * c + lz * s, z - lx * s + lz * c); n++;
+  }
+  const place = new THREE.Matrix4().compose(new THREE.Vector3(x, y / n, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, SHED.yaw, 0)),
+    new THREE.Vector3(1, 1, 1));
+  const models = new Map<ShedStyle, Promise<THREE.Object3D>>();
+  let mesh: THREE.Mesh | null = null, asked: ShedStyle | null = null;
+  return async (style: ShedStyle) => {
+    asked = style;
+    if (!models.has(style)) models.set(style, loadModel(SHED_STYLES[style]));
+    const model = await models.get(style)!;
+    // Only the last style asked for goes up.
+    if (asked !== style) return;
+    const b = new MeshBuilder('ink');
+    addModel(b, model, place);
+    if (mesh) { r.remove(mesh); mesh.geometry.dispose(); }
+    mesh = r.add(b.build(), 'ink');
+  };
 }
 
 /** How near a point is to the rows of the orchard and the nursery: 1 on a row, falling off over the alley. */
@@ -171,6 +226,10 @@ function terrain(r: BrushRenderer) {
     const rut = Math.exp(-(((dp - 0.5) / 0.2) ** 2));
     const mid = 1 - smooth(0.12, 0.3, dp + edgeNoise * 0.4);
     c.lerp(C.dirt.clone().lerp(C.rut, rut * 0.5).lerp(C.meadow, mid * 0.55), onPath * 0.92);
+    // The shed's porch: earth worn bare under it, fading out in front, the edges broken by the grass.
+    const [lx, lz] = shedLocal(x, z);
+    const worn = (1 - smooth(1.7, 2.5, Math.abs(lx) + edgeNoise)) * smooth(1.2, 1.6, lz) * (1 - smooth(3.4, 4.6, lz + edgeNoise * 1.5));
+    c.lerp(C.dirt.clone().lerp(C.meadow, 0.2), worn * 0.8);
     // Banks: moss, then wet earth, then the stream bed.
     c.lerp(C.moss, 1 - smooth(1.8, 3.4, ds)).lerp(C.mud, (1 - smooth(1.45, 1.9, ds)) * 0.8).lerp(C.bed, 1 - smooth(1.1, 1.5, ds));
     // Brushwork where the land does something: banks, track edges, the wheat's edge, slopes, tree feet. Quiet on open lawn.
@@ -583,6 +642,7 @@ function stones(r: BrushRenderer) {
 /** Long grass in tufts where a scythe wouldn't reach, and wildflowers in drifts on the open meadow. */
 function grass(r: BrushRenderer) {
   const g = new MeshBuilder('grass'), flowers = new MeshBuilder('foliage');
+  const dropped = new MeshBuilder('grass'), droppedFlowers = new MeshBuilder('foliage');
   const rand = rng(77);
   const blocked = (x: number, z: number) => {
     const [u, v] = M(x, z);
@@ -607,12 +667,13 @@ function grass(r: BrushRenderer) {
     const lush = Math.min(1, Math.max(near, smooth(0.55, 0.9, noise2(x * 0.09 + 40, z * 0.09) * 0.5 + 0.5) * 0.7));
     if (rand() > lush * 0.95 + 0.04) continue;
     placed++;
-    addTuft(g, ground, x, z, 0.18 + lush * 0.32, tuftColor(x, z), rand);
+    // Under the shed, into a builder that's thrown away: the random numbers run as before, so the rest are unchanged.
+    addTuft(underShed(x, z) ? dropped : g, ground, x, z, 0.18 + lush * 0.32, tuftColor(x, z), rand);
   }
   const palette = [srgb(0xf08bb0), srgb(0xf7f2e4), srgb(0xf5cf3e), srgb(0xa77ad8), srgb(0xe8574a)];
   for (let d = 0; d < 90; d++) {
     const [cx, cz] = W((rand() * 2 - 1) * HALF, (rand() * 2 - 1) * HALF);
-    addFlowers(flowers, ground, cx, cz, palette[Math.floor(rand() * palette.length)], 6 + Math.floor(rand() * 14), rand,
+    addFlowers(underShed(cx, cz, 1.4) ? droppedFlowers : flowers, ground, cx, cz, palette[Math.floor(rand() * palette.length)], 6 + Math.floor(rand() * 14), rand,
       (x, z) => !blocked(x, z));
   }
   r.add(g.build(), 'grass', { castShadow: false });
