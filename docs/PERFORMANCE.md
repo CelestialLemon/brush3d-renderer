@@ -102,8 +102,8 @@ laptop.
 | Spare | 1.1 | 0.55 |
 | **The frame** | **22.2** (45 fps) | **11.7** |
 
-Today the scene is 47 ms on the laptop on the farm and 26 on the meadow (37 and 14 here). The scene's 17 ms is the target
-for the cuts below.
+Before the cuts, the scene was 47 ms on the laptop on the farm and 26 on the meadow (37 and 14 here); here it is now 23 and
+13. The scene's 17 ms is the target for the cuts below.
 
 ## Quality settings
 
@@ -119,24 +119,46 @@ drop detail without changing the look:
 
 ## The cuts
 
-Today's farm frame has to drop to the scene's 17 ms on the laptop (about 9 here) before the weather goes in. Sol's experiments (#6, throwaway code on the
-RX 570, the farm at 1080p) measured these:
+The farm's frame has to drop to the scene's 17 ms on the laptop (about 9 here) before the weather goes in. Sol's experiments
+(#6, throwaway code on the RX 570, the farm at 1080p) measured these first; the ones marked done are in the renderer.
 
-| Cut | Picture | Saves | The frame |
-|---|---|---:|---:|
-| Today | | | 37.3 |
-| Draw the main view's silhouettes first (a depth pre-pass), then paint only what shows | the same | 9.5 | |
-| Draw the water's two passes only round the water on screen (a scissor; the pad worked out from how far the ripples and the reflection's blur reach) | the same | 4.7 | |
-| A 2048² shadow map on the farm, not 4096² | to compare | 2.3 | 20.7 |
-| Bake the ground's brush fields into a texture at load (4096², 64 MB); the light stays live | nearly the same | 2.7 | **18.0** |
+| Cut | Picture | Saves, in Sol's experiments |
+|---|---|---:|
+| **Done:** the main view's silhouettes first (a depth pre-pass), then paint only what shows (`prepass=0` turns it off) | the same | 9.5 |
+| **Done:** the water's two passes only round the water on screen (a scissor padded by how far the water's lookups reach, `WATER_REACH`; `scissor=0` turns it off) | the same | 4.7 |
+| A 2048² shadow map on the farm, not 4096² | to compare | 2.3 |
+| Bake the ground's brush fields into a texture at load (4096², 64 MB); the light stays live | nearly the same | 2.7 |
 
-- **The pre-pass's saving won't last.** With the painting made cheap it saves nothing (10.5 ms with it, 10.4 without), so
-  check it again as the shaders change, and on the laptop, where repeating the vertex work may cost more.
+The savings are from Sol's chain of experiments, each cut on top of the ones above it: 37.3 ms before, 18.0 with all four.
+The renderer's own numbers for the done cuts are below; the frame with them is 23.1 ms, so the two still to do would
+bring it to about 18.
+
+The two done (#6, part 2), measured by `node tools/profile.ts` at 1080p in a storm, both off against both on: the farm
+37.5 → **23.1 ms**, the meadow 14.1 → **13.1**. The silhouettes are drawn in the same render as the painting, so the
+multisampled frame is resolved once, not twice (worth about 0.8 ms on each scene here, more on the laptop's shared
+memory). On the meadow they save less (it has few trees, and its stream crosses most of the screen); drawing silhouettes for only the leaves and grass came out no better on
+either scene. Frames with them on and off are byte-for-byte the same in both scenes, all four views, zoomed in and out,
+at noon, dusk and dawn and in a storm.
+
+On the laptop (`?profile` on #22's preview, 2026-10-30), at 1080p in a storm, GPU ms:
+
+| | cuts off | cuts on | saved |
+|---|---:|---:|---:|
+| farm | 49.6 | **28.6** (35 fps) | 21.0 |
+| meadow | 26.9 | **23.3** (42 fps) | 3.6 |
+
+The cuts save more there than here (the farm's 14 ms here is 21 there): the stacked leaf cards cost more on the laptop
+than this machine's numbers suggested. Both scenes are now within about 6 ms of the laptop's 22 ms, but the weather
+still needs its 5 ms on top of that.
+
+- **The pre-pass's saving may shrink.** With the painting made cheap it saves nothing here (10.5 ms with it, 10.4
+  without), so check it again, on the laptop too, as the shaders change. It costs nothing to the laptop today.
 - **9 ms here may not come from tidying alone.** From the 18 ms frame, removing all the leaves' and the grass's painting (a
   ceiling, not a cut) still leaves 10.5 ms. The rest may take changes that show (fewer leaf cards far off, a cheaper paint
   recipe, a softer ground up close); the developer chooses from side-by-side comparisons.
-- **On the laptop the ground's paint costs the most** (see "On integrated graphics"), so the baked ground may save more
-  there than the 2.7 ms measured here.
+- **On the laptop the ground's paint costs the most**, now more than ever: with the cuts in, the frame without the
+  ground is 9.6 ms on the meadow (of 23.3) and 21.3 on the farm (of 28.6). So baking the ground's brush fields may save
+  much more there than the 2.7 ms measured here.
 - **Still to try:** a texture for the grass's own brush fields (they aren't the ground's), the leaves' colour work that is
   exact to move out of the pixel shader, tighter leaf cards, and culling whole clumps of trees off screen.
 - Each cut is measured on the laptop too, with `?profile` on its PR's preview.

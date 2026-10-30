@@ -57,6 +57,8 @@ export type MaterialKind = 'paint' | 'crop' | 'foliage' | 'grass' | 'ink' | 'wat
 
 /** Common head: shared uniforms, noise, and the painted attribute (variation, brush scale, stroke angle, rim). */
 const HEAD = /* glsl */ `
+// The silhouettes drawn first (see prepassMaterial) must land at exactly the depth the painting does, on every GPU.
+invariant gl_Position;
 ${LIGHT_UNIFORMS}
 ${NOISE}
 ${WIND_GLSL}
@@ -430,6 +432,12 @@ void main() {
   float px = uMirror > 0.5 ? 1.0 / max(fwidth(edge), 1e-4) : vCardPx / (slope * 1.2);
   float alpha = clamp(edge * px + 0.5, 0.0, 1.0);
   if (alpha < 0.02) discard;
+#ifdef PREPASS
+  // Only the dab's shape and coverage: the painting comes after, where the dab shows.
+  gColor = vec4(0.0, 0.0, 0.0, alpha);
+  gAux = vec4(0.0);
+  return;
+#endif
   vec3 nCanopy = normalize(vNormal);
   vec3 n = normalize(nCanopy + vDabNormal * 0.2);
   vec3 p = vRestPos;
@@ -533,6 +541,14 @@ void main() {
 `;
 
 /**
+ * How far from its own pixel the water reads its two textures: the ripples' nudge (screen uv, at most ripple + chop times
+ * chopAmt, which is at most 1.5), the reflection's larger nudge, and its blur (pixels). The renderer draws those passes
+ * only round the water on screen, padded by this much (see BrushRenderer.waterRect).
+ */
+export const WATER_REACH = { ripple: 0.0035, chop: 0.006, chopMax: 1.5, reflectNudge: 1.6, blurPx: 3 };
+const f = (x: number) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
+
+/**
  * Water: what's under it, tinted by how much water the eye looks through, and what's around it, mirrored.
  *   The bed: the ground and stones drawn without the water (uUnder), nudged by the ripples. The light that reaches it is
  *   absorbed along the path through the water, red first, so the shallows show the bed in clear green-gold and the middle
@@ -560,7 +576,7 @@ void main() {
   // Ripples: long, soft swells along the flow, and their screen-space nudge.
   float r1 = strokes(q * 1.3, flowA), r2 = strokes(q * 2.9 + 7.0, flowA + 0.3);
   float ripple = r1 * 0.65 + r2 * 0.35;
-  vec2 nudge = vec2(snoise(q * 1.7), snoise(q * 1.7 + 19.0)) * 0.0035;
+  vec2 nudge = vec2(snoise(q * 1.7), snoise(q * 1.7 + 19.0)) * ${f(WATER_REACH.ripple)};
   // Chop: the wind raises short wavelets across its direction that run downwind, rougher in the gusts. They break up the
   // reflection, and in a storm their crests whiten. They travel as short waves do, about a metre a second in a storm, far
   // slower than the gusts: any faster and they flicker, and the glints and whitecaps keyed to them blink.
@@ -569,7 +585,7 @@ void main() {
   vec2 cq = p.xz - uWindDrift * 0.1;
   float chop = strokes(cq * 3.2, windA + 1.5707963) * 0.6 + strokes(cq * 6.5 + 3.0, windA + 1.3) * 0.4;
   ripple = mix(ripple, chop, clamp(chopAmt * 0.8, 0.0, 0.8)) + chop * chopAmt * 0.25;
-  nudge += vec2(snoise(cq * 4.0), snoise(cq * 4.0 + 7.0)) * 0.006 * chopAmt;
+  nudge += vec2(snoise(cq * 4.0), snoise(cq * 4.0 + 7.0)) * ${f(WATER_REACH.chop)} * chopAmt;
 
   // Under the water.
   vec2 uvBed = uv + nudge;
@@ -588,8 +604,8 @@ void main() {
   // The reflection, and the sky where nothing is reflected: looking down at 30 degrees, the water mirrors the sky 30 degrees up.
   // Taken through a small blur: the reflection is drawn at half size, and its thin bright things (grass blades above all)
   // would flicker as the camera moves.
-  vec2 rt = 3.0 / uScreen;
-  vec2 ruv = uv + nudge * 1.6;
+  vec2 rt = ${f(WATER_REACH.blurPx)} / uScreen;
+  vec2 ruv = uv + nudge * ${f(WATER_REACH.reflectNudge)};
   vec4 refl = (texture(uReflect, ruv) * 2.0 + texture(uReflect, ruv + vec2(rt.x, 0.0)) + texture(uReflect, ruv - vec2(rt.x, 0.0))
     + texture(uReflect, ruv + vec2(0.0, rt.y)) + texture(uReflect, ruv - vec2(0.0, rt.y))) / 6.0;
   // The upper sky, and on the ripples' crests, which tilt towards the horizon, the glow low in it: a mean of the two would be grey.
@@ -614,6 +630,13 @@ void main() {
   col = mix(col, mix(uSkyBottom, vec3(1.0), 0.6) * skyTint(), caps * 0.45);
   writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
 }
+`;
+
+/** The silhouette pass's surfaces that aren't dabs: depth only, every pixel covered. */
+const PREPASS_FRAG = /* glsl */ `
+layout(location = 0) out vec4 gColor;
+layout(location = 1) out vec4 gAux;
+void main() { gColor = vec4(0.0); gAux = vec4(0.0); }
 `;
 
 const DEPTH_FRAG = /* glsl */ `
@@ -642,6 +665,7 @@ const FRAG: Record<MaterialKind, string> = {
 /** Painted wood bends with its tree; a crop shows the gusts. */
 const DEFINES: Partial<Record<MaterialKind, Record<string, number>>> = { paint: { TREES: 1 }, crop: { CROP: 1 } };
 const DABS = (kind: MaterialKind) => kind === 'foliage' || kind === 'debris';
+const sideOf = (kind: MaterialKind) => (kind === 'grass' || DABS(kind) || kind === 'ink' ? THREE.DoubleSide : THREE.FrontSide);
 
 /** The main material of a kind. */
 export function sceneMaterial(kind: MaterialKind, shared: SharedUniforms): THREE.ShaderMaterial {
@@ -652,7 +676,27 @@ export function sceneMaterial(kind: MaterialKind, shared: SharedUniforms): THREE
     fragmentShader: FRAG[kind],
     defines: { ...DEFINES[kind] },
     vertexColors: true,
-    side: kind === 'grass' || DABS(kind) || kind === 'ink' ? THREE.DoubleSide : THREE.FrontSide,
+    side: sideOf(kind),
+  });
+  if (DABS(kind)) m.alphaToCoverage = true;
+  return m;
+}
+
+/**
+ * The silhouette variant of a kind, drawn into the main view before the painting: depth only, no colour. The painting
+ * after it then runs only where a surface shows, not under the leaves in front of it. Same vertex shader, side and
+ * coverage as the main material, so the depths match exactly (HEAD declares gl_Position invariant).
+ */
+export function prepassMaterial(kind: MaterialKind, shared: SharedUniforms): THREE.ShaderMaterial {
+  const m = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    uniforms: { ...shared },
+    vertexShader: VERT[kind],
+    fragmentShader: DABS(kind) ? FRAG[kind] : PREPASS_FRAG,
+    defines: { ...DEFINES[kind], PREPASS: 1 },
+    vertexColors: true,
+    side: sideOf(kind),
+    colorWrite: false,
   });
   if (DABS(kind)) m.alphaToCoverage = true;
   return m;
