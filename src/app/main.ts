@@ -148,20 +148,22 @@ function profilePanel() {
   const debug = gl.getExtension('WEBGL_debug_renderer_info');
   const gpu = String(gl.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
   const timers = gl.getExtension('EXT_disjoint_timer_query_webgl2') !== null;
-  // Everything that sets the work, so pasted results from different settings can't be mistaken for each other.
-  const setup = `hour ${hour} · zoom ${view.zoom} · view ${view.view} · samples ${num('samples', 4)} · shadow map ${num('shadowMap', farm ? 4096 : 2048)} · lines ${renderer.settings.lines ? 'on' : 'off'} · shadows ${renderer.settings.shadows ? 'on' : 'off'}`;
-  const about = `scene ${sceneName} · GPU ${gpu} · ${timers ? 'GPU timers' : 'no GPU timers (only the uncapped frame and the CPU)'}\n${setup}\n${location.href}\n${navigator.userAgent}`;
-  const out = Object.assign(document.createElement('pre'), { textContent: `${about}\n\nPlug the laptop in, close other apps, then Run. It takes a minute or two.` });
+  // Everything that sets the work, as it is when Run is pressed, so pasted results from different settings can't be
+  // mistaken for each other.
+  const about = () => `scene ${sceneName} · GPU ${gpu} · ${timers ? 'GPU timers' : 'no GPU timers (only the uncapped frame and the CPU)'}\n`
+    + `hour ${hour} · x ${view.target.x.toFixed(2)} · z ${view.target.z.toFixed(2)} · zoom ${view.zoom.toFixed(1)} · view ${view.view} · samples ${num('samples', 4)} · shadow map ${num('shadowMap', farm ? 4096 : 2048)} · lines ${renderer.settings.lines ? 'on' : 'off'} · shadows ${renderer.settings.shadows ? 'on' : 'off'}\n`
+    + `${location.href}\n${navigator.userAgent}`;
+  const out = Object.assign(document.createElement('pre'), { textContent: `${about()}\n\nPlug the laptop in, close other apps, then Run. It takes a minute or two.` });
   const run = Object.assign(document.createElement('button'), { textContent: 'Run' });
   const copy = Object.assign(document.createElement('button'), { textContent: 'Copy', disabled: true });
   const other = Object.assign(document.createElement('a'), { textContent: `profile the ${farm ? 'meadow' : 'farm'}` });
   const next = new URLSearchParams(params); next.set('scene', farm ? 'meadow' : 'farm'); other.href = `?${next}`;
   run.onclick = async () => {
     run.disabled = true; copy.disabled = true;
-    const cases = defaultCases(), rows: ProfileRow[] = [];
-    out.textContent = `${about}\n\nRunning…`;
-    await profile(cases, (row, i) => { rows.push(row); out.textContent = `${about}\n\n${table(rows)}\n\n${i + 1} of ${cases.length}…`; });
-    out.textContent = `${about}\n\n${table(rows)}\n\nms per frame; GPU per pass, CPU for the whole frame; uncapped: frames drawn back to back.`;
+    const cases = defaultCases(), rows: ProfileRow[] = [], head = about();
+    out.textContent = `${head}\n\nRunning…`;
+    await profile(cases, (row, i) => { rows.push(row); out.textContent = `${head}\n\n${table(rows)}\n\n${i + 1} of ${cases.length}…`; });
+    out.textContent = `${head}\n\n${table(rows)}\n\nms per frame; GPU per pass, CPU for the whole frame; uncapped: frames drawn back to back.`;
     run.disabled = false; copy.disabled = false;
   };
   copy.onclick = () => navigator.clipboard.writeText(out.textContent ?? '');
