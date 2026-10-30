@@ -149,6 +149,8 @@ uniform float uShadeLean;    // how far it leans (0..1)
 uniform float uShadeDepth;   // lightness taken off in shade
 uniform float uLitHue;       // OKLab hue the lit band leans to
 uniform float uLitLean;
+uniform vec3 uOvercast;      // under cloud: x the share of light from the whole sky, y the share of cast shadow taken away,
+                             // z how much wider shadows' edges get (see overcast.ts)
 uniform float uTime;
 uniform vec2 uWindDir;       // where the wind blows towards, a unit vector in xz
 uniform float uWindSpeed;    // m/s, eased
@@ -175,12 +177,12 @@ float sunVisibility(vec3 worldPos, vec3 n, float brush) {
   float vis = 0.0;
   for (int i = 0; i < 8; i++) {
     float a = float(i) * 2.39996 + hash12(worldPos.xz * 31.0) * 6.283;
-    float r = sqrt((float(i) + 0.5) / 8.0) * 2.2;
+    float r = sqrt((float(i) + 0.5) / 8.0) * 2.2 * (1.0 + uOvercast.z);
     vec2 o = vec2(cos(a), sin(a)) * r * uShadowTexel + wob;
     float d = texture(uShadowMap, uvz.xy + o).r;
     vis += (uvz.z - 0.0015 > d) ? 0.0 : 1.0;
   }
-  return vis / 8.0;
+  return mix(vis / 8.0, 1.0, uOvercast.y);
 }
 `;
 
@@ -195,9 +197,11 @@ vec3 sunTint() { return tintOf(uSunColor, 0.4); }
 vec3 skyTint() { return tintOf(uSkyColor, 0.45); }
 // How lit a surface is by the sun, 0..1, measured against flat ground: flat ground is in full sun whatever the hour (a
 // painter keeps an evening meadow warm and lit), slopes and sides turned away from the sun fall into half-tone and shade.
+// Under cloud the light comes from the whole sky instead: tops lit, sides in half-tone, undersides in shade.
 float sunLight(vec3 n, float wrap) {
   float rel = dot(n, uSunDir) / max(uSunDir.y, 0.3);
-  return clamp((rel + wrap) / (1.0 + wrap), 0.0, 1.0);
+  float sun = clamp((rel + wrap) / (1.0 + wrap), 0.0, 1.0);
+  return mix(sun, clamp(0.5 + 0.5 * n.y, 0.0, 1.0), uOvercast.x);
 }
 // The direction brush strokes run on the ground: along the contours where it slopes, a set angle where it's flat.
 float contourAngle(vec3 n, float fallback) {

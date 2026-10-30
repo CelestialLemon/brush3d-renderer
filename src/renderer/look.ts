@@ -15,6 +15,12 @@ export interface Look {
    * hour's air: peach in the evening, lavender at dusk). */
   hazeDensity: number; hazeMax: number; hazeFloor: number;
   exposure: number; saturation: number;
+  /** Under full cloud (overcast.ts): the exposure the hour loses besides the recipe's (an overcast evening falls dim
+   * early), how far the haze turns to the cloud's light (less in the evening, so the air keeps the hour's colour), and how
+   * much it takes the night's response, 0 by day to 1 at night. */
+  cloudDim: number; cloudHaze: number; night: number;
+  /** A shift of the whole picture towards cool blue at night, 0..1 (the 'blue' night, #7). */
+  nightShift: number;
 }
 
 interface Key extends Omit<Look, 'sunColor' | 'skyColor' | 'rimColor' | 'hazeColor' | 'skyTop' | 'skyBottom'> {
@@ -25,23 +31,39 @@ interface Key extends Omit<Look, 'sunColor' | 'skyColor' | 'rimColor' | 'hazeCol
 const KEYS: Key[] = [
   { hour: 5, sunAz: 80, sunEl: -6, sunColor: 0x5d6aa8, skyColor: 0x7c86c8, rimColor: 0x8c7ec8, hazeColor: 0x6d74b0,
     skyTop: 0x2c3570, skyBottom: 0x8a7fb8, shadeHue: 285, shadeLean: 0.55, shadeDepth: 0.42, litHue: 280, litLean: 0.2,
-    hazeDensity: 0.03, hazeFloor: 0.14, hazeMax: 0.55, exposure: 0.75, saturation: 0.9 },
+    hazeDensity: 0.03, hazeFloor: 0.14, hazeMax: 0.55, exposure: 0.75, saturation: 0.9, cloudDim: 0.6, cloudHaze: 0.85, night: 0.7, nightShift: 0 },
   { hour: 7, sunAz: 95, sunEl: 10, sunColor: 0xffc58f, skyColor: 0xa9b8e6, rimColor: 0xffb070, hazeColor: 0xc8c3dc,
     skyTop: 0x6f95d6, skyBottom: 0xf3c9a6, shadeHue: 270, shadeLean: 0.45, shadeDepth: 0.36, litHue: 70, litLean: 0.18,
-    hazeDensity: 0.03, hazeFloor: 0.1, hazeMax: 0.5, exposure: 1.0, saturation: 1.05 },
+    hazeDensity: 0.03, hazeFloor: 0.1, hazeMax: 0.5, exposure: 1.0, saturation: 1.05, cloudDim: 0.8, cloudHaze: 0.85, night: 0, nightShift: 0 },
   { hour: 12, sunAz: 115, sunEl: 58, sunColor: 0xfff4dc, skyColor: 0xb4d4f2, rimColor: 0xffe08a, hazeColor: 0xbfdcef,
     skyTop: 0x4f95e0, skyBottom: 0xcfe6f4, shadeHue: 215, shadeLean: 0.4, shadeDepth: 0.3, litHue: 95, litLean: 0.05,
-    hazeDensity: 0.022, hazeFloor: 0.03, hazeMax: 0.45, exposure: 1.0, saturation: 1.0 },
+    hazeDensity: 0.022, hazeFloor: 0.03, hazeMax: 0.45, exposure: 1.0, saturation: 1.0, cloudDim: 1, cloudHaze: 0.85, night: 0, nightShift: 0 },
   { hour: 17.5, sunAz: 215, sunEl: 16, sunColor: 0xffb468, skyColor: 0xa8a8e0, rimColor: 0xffa648, hazeColor: 0xf2c2a2,
     skyTop: 0x6c8fd6, skyBottom: 0xf6caa0, shadeHue: 275, shadeLean: 0.6, shadeDepth: 0.34, litHue: 60, litLean: 0.2,
-    hazeDensity: 0.026, hazeFloor: 0.08, hazeMax: 0.5, exposure: 1.0, saturation: 1.0 },
+    hazeDensity: 0.026, hazeFloor: 0.08, hazeMax: 0.5, exposure: 1.0, saturation: 1.0, cloudDim: 0.75, cloudHaze: 0.4, night: 0, nightShift: 0 },
   { hour: 19.5, sunAz: 240, sunEl: 2, sunColor: 0xff8f6a, skyColor: 0x8f86c8, rimColor: 0xff7a5a, hazeColor: 0xd79fa8,
     skyTop: 0x4b5aa8, skyBottom: 0xf5a088, shadeHue: 295, shadeLean: 0.55, shadeDepth: 0.4, litHue: 45, litLean: 0.35,
-    hazeDensity: 0.03, hazeFloor: 0.1, hazeMax: 0.55, exposure: 0.9, saturation: 1.1 },
+    hazeDensity: 0.03, hazeFloor: 0.1, hazeMax: 0.55, exposure: 0.9, saturation: 1.1, cloudDim: 0.5, cloudHaze: 0.4, night: 0, nightShift: 0 },
   { hour: 22, sunAz: 260, sunEl: 35, sunColor: 0xb4c2e6, skyColor: 0x4d5a9a, rimColor: 0x7d9ae0, hazeColor: 0x3a4478,
     skyTop: 0x141a3c, skyBottom: 0x2f3a72, shadeHue: 275, shadeLean: 0.6, shadeDepth: 0.5, litHue: 255, litLean: 0.2,
-    hazeDensity: 0.03, hazeFloor: 0.14, hazeMax: 0.5, exposure: 0.55, saturation: 0.7 },
+    hazeDensity: 0.03, hazeFloor: 0.14, hazeMax: 0.5, exposure: 0.55, saturation: 0.7, cloudDim: 0.5, cloudHaze: 0.85, night: 1, nightShift: 0 },
 ];
+
+/**
+ * The night's colour (#7): 'green', the night as it was, which leans green; 'blue', Sol's proposal, cooler light and haze
+ * and the whole picture nudged from yellow-green towards blue. For the developer to choose between; the cloudy night
+ * builds on it.
+ */
+export const NIGHTS = {
+  green: {},
+  blue: {
+    5: { nightShift: 0.7 },
+    22: { sunColor: 0x929edb, skyColor: 0x6069a8, hazeColor: 0x424878, litLean: 0.5, shadeLean: 0.65, saturation: 0.82, nightShift: 1 },
+  },
+} as const satisfies Record<string, Record<number, Partial<Key>>>;
+export type NightName = keyof typeof NIGHTS;
+let night: NightName = 'blue';
+export function setNight(name: NightName) { night = name; }
 
 /** Named hours for the demo's buttons. */
 export const PRESETS = { Dawn: 7, Noon: 12, 'Golden hour': 17.5, Sunset: 19.5, Night: 22 } as const;
@@ -52,7 +74,9 @@ const col = (a: number, b: number, t: number) => new THREE.Color(a).lerp(new THR
 
 export function lookAt(hour: number): Look {
   const h = ((hour % 24) + 24) % 24;
-  const span = [{ ...KEYS[KEYS.length - 1], hour: KEYS[KEYS.length - 1].hour - 24 }, ...KEYS, { ...KEYS[0], hour: KEYS[0].hour + 24 }];
+  const nights: Record<number, Partial<Key>> = NIGHTS[night];
+  const keys = KEYS.map((k) => ({ ...k, ...nights[k.hour] }));
+  const span = [{ ...keys[keys.length - 1], hour: keys[keys.length - 1].hour - 24 }, ...keys, { ...keys[0], hour: keys[0].hour + 24 }];
   let i = 0;
   while (i < span.length - 2 && h >= span[i + 1].hour) i++;
   const a = span[i], b = span[i + 1];
@@ -66,5 +90,6 @@ export function lookAt(hour: number): Look {
     hazeDensity: lerp(a.hazeDensity, b.hazeDensity, t), hazeMax: lerp(a.hazeMax, b.hazeMax, t),
     hazeFloor: lerp(a.hazeFloor, b.hazeFloor, t),
     exposure: lerp(a.exposure, b.exposure, t), saturation: lerp(a.saturation, b.saturation, t),
+    cloudDim: lerp(a.cloudDim, b.cloudDim, t), cloudHaze: lerp(a.cloudHaze, b.cloudHaze, t), night: lerp(a.night, b.night, t), nightShift: lerp(a.nightShift, b.nightShift, t),
   };
 }
