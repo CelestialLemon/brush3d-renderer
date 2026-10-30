@@ -29,10 +29,12 @@ uniform mat4 uShelterMatrix;
 // The map's depth to height: height = x - depth * y.
 uniform vec2 uShelterHeight;
 uniform float uShelterTexels;
-// Whether p is under what the map at its texel holds, by a margin, so a roof doesn't shelter itself.
+// Whether p is under what the map at its texel holds, by a margin, so a roof doesn't shelter itself. A texel left clear
+// (1, the far plane) holds nothing, however low p is.
 float shelterUnder(highp sampler2D map, ivec2 t, float depth) {
   t = clamp(t, ivec2(0), ivec2(int(uShelterTexels) - 1));
-  return step(texelFetch(map, t, 0).r, depth);
+  float d = texelFetch(map, t, 0).r;
+  return d < 1.0 ? step(d, depth) : 0.0;
 }
 // Bilinear: the four texels round p, each compared, then blended.
 float shelterSoft(highp sampler2D map, vec2 uv, float depth) {
@@ -54,9 +56,13 @@ float shelterTop(vec3 p) {
   vec3 s = (uShelterMatrix * vec4(p, 1.0)).xyz;
   if (any(lessThan(s.xy, vec2(0.0))) || any(greaterThan(s.xy, vec2(1.0)))) return -1e4;
   ivec2 t = clamp(ivec2(s.xy * uShelterTexels), ivec2(0), ivec2(int(uShelterTexels) - 1));
-  return uShelterHeight.x - texelFetch(uShelterFull, t, 0).r * uShelterHeight.y;
+  float d = texelFetch(uShelterFull, t, 0).r;
+  return d < 1.0 ? uShelterHeight.x - d * uShelterHeight.y : -1e4;
 }
 `;
+
+/** Every point to (-2, -2): off the map, while there's none. */
+const OFF_MAP = new THREE.Matrix4().set(0, 0, 0, -2, 0, 0, 0, -2, 0, 0, 0, 0, 0, 0, 0, 1);
 
 /** A mesh as the map sees it. */
 export interface CoverMesh { mesh: THREE.Mesh; cover: Cover; depth: THREE.Material }
@@ -67,7 +73,7 @@ export class ShelterMap {
     uShelterFull: { value: null as THREE.Texture | null },
     uShelterPartial: { value: null as THREE.Texture | null },
     // Until it's drawn, every point is off the map.
-    uShelterMatrix: { value: new THREE.Matrix4().makeTranslation(-2, -2, 0) },
+    uShelterMatrix: { value: new THREE.Matrix4().copy(OFF_MAP) },
     uShelterHeight: { value: new THREE.Vector2(0, 1) },
     uShelterTexels: { value: 1 },
   };
@@ -85,7 +91,8 @@ export class ShelterMap {
   /** `size`: texels across (docs/PERFORMANCE.md: 1024 full quality, 512 reduced). */
   constructor(readonly size = 1024) {
     const target = () => {
-      const t = new THREE.WebGLRenderTarget(size, size, { depthBuffer: true });
+      // Only the depth is read; the colour it must have is the smallest there is, a byte a texel.
+      const t = new THREE.WebGLRenderTarget(size, size, { depthBuffer: true, format: THREE.RedFormat });
       t.depthTexture = new THREE.DepthTexture(size, size, THREE.UnsignedIntType);
       return t;
     };
@@ -124,7 +131,7 @@ export class ShelterMap {
     this.dirty = false;
     const a = this.area ?? area;
     if (!a) {
-      this.uniforms.uShelterMatrix.value.makeTranslation(-2, -2, 0);
+      this.uniforms.uShelterMatrix.value.copy(OFF_MAP);
       return true;
     }
     // From a metre above the highest cover, down to a metre below everything in the scene.

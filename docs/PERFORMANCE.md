@@ -115,8 +115,9 @@ Before the cuts, the scene was 47 ms on the laptop on the farm and 26 on the mea
 
 ### The shelter map (#10)
 
-Two depth maps of the land from straight above, 1024² each (8 MB): the highest roof over each point (the inked things,
-solar panels among them) and the highest crown (the leaves, drawn at rest). Rain and snow will stop at them (#11, #14).
+Two depth maps of the land from straight above, 1024² each (10 MB, with the byte a texel of colour a target must have):
+the highest roof over each point (the inked things, solar panels among them) and the highest crown (the leaves, drawn
+at rest). Rain and snow will stop at them (#11, #14).
 Nothing in them moves, so they're drawn only when cover changes (a building placed or removed, a kind shown or hidden):
 **no cost on an ordinary frame**. RX 570, 1080p storm, GPU ms, the map drawn every frame to time it
 (`1080p storm, shelter every frame` in `node tools/profile.ts` and `?profile`):

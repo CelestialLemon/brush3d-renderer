@@ -433,9 +433,10 @@ export class BrushRenderer {
     const ground = this.scene.children.find((o) => o.userData.kind === 'ground' && o.userData.fields);
     const s = this.shared;
     this.shelter.draw(this.gl, this.scene, cover, ground?.userData.fields ?? null, () => {
-      const speed = s.uWindSpeed.value;
-      s.uWindSpeed.value = 0;
-      return () => { s.uWindSpeed.value = speed; };
+      // No wind and no clock: what's left of the sway and the flutter (a little even in a calm) is the same every draw.
+      const saved = [s.uWindSpeed.value, s.uTime.value, s.uWindFlutter.value, s.uWindDrift.value.clone()] as const;
+      s.uWindSpeed.value = 0; s.uTime.value = 0; s.uWindFlutter.value = 0; s.uWindDrift.value.set(0, 0);
+      return () => { [s.uWindSpeed.value, s.uTime.value, s.uWindFlutter.value] = saved; s.uWindDrift.value.copy(saved[3]); };
     });
   }
 
