@@ -224,12 +224,34 @@ this machine, about 18 was expected), and the leaves look the same with `equal` 
 Intel's GPU paints the reflection slower at equal depth (here it was a little faster), so the reflection now paints at
 nearer-or-equal, and only the main view's leaves at equal: about 20.1 ms there, 0.1 more here.
 
-**Still to do, from Sol's experiments:**
-- the grass's brush baked into 7 directions at 2 scales, 1024² (56 MB), each blade blending its own two; about 2.6 ms
-  here alone;
-- the wheat's brush baked, 2048²; about 1.1 ms.
+### The grass's and the crops' brush, baked by place (#6, part 5)
 
-Together with this part they measured 11.3 ms here.
+The grass and the crops worked their brush out in every pixel every frame, as the ground did. On the flat it depends only
+on where it is (x and z), the brush's scale and its angle, and the brush only ever blends two of seven fixed angles (0°,
+30°, ... 180°). So at load, for each brush scale the grass and the crops use, seven layers are baked over the ground's
+square, one per angle: the dabs, the strokes, the fine strokes and the colour's drift. A blade or a crop's top reads the
+two layers either side of its own angle and blends them as the live brush does (Sol's design, #6). The light, the
+shadows and the wind stay live.
+
+- **By place, not by mesh**, unlike the ground's: in the game a field is built anywhere, its crop changes stage every few
+  seconds and goes back to bare soil at harvest, so a bake of the crop's shape would be stale at once. This one holds for
+  any field, at any stage, anywhere on the map, and needs re-baking only for a new brush scale. A crop's sides (its edges,
+  whatever their height) are worked out live.
+- **1024² a layer**: 28 MB a brush scale; the farm uses three (two for the grass, one for the wheat), 84 MB.
+- **The picture is nearly the same:** in 11 views the mean difference is under 0.08 of 255, and at most about one pixel
+  in 700 differs by more than 8. Those sit on the edges of light and shade bands (most on the wheat in the panels'
+  shadows), which a small change in the brush moves by a pixel. `grass=live` and `crop=live` put back the live brush;
+  both together give main's frame exactly.
+
+RX 570, 1080p, storm, GPU ms:
+
+| | shadow | under | reflect | main | post | frame |
+|---|---:|---:|---:|---:|---:|---:|
+| farm, before (live) | 3.30 | 0.27 | 1.74 | 8.21 | 0.26 | 13.8 |
+| farm, the wheat baked | 3.30 | 0.27 | 1.70 | 7.52 | 0.26 | 13.1 |
+| farm, the grass baked | 3.30 | 0.27 | 1.41 | 7.15 | 0.26 | 12.4 |
+| farm, both | 3.29 | 0.27 | 1.37 | 6.46 | 0.26 | **11.7** |
+| meadow, both (before: 6.5) | 0.18 | 0.38 | 0.68 | 3.44 | 0.19 | **4.9** |
 
 **Tried and dropped:**
 - shadows of still things kept between frames: with a 3-to-10-minute day the sun moves a texel every frame or two, so
