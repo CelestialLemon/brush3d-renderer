@@ -19,7 +19,7 @@ import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, type SpellName } from 
 //     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop, hazeBase (metres)
 //   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
 //   spell=shower|fog (which scripted weather: a shower, or a morning fog lifting)
-//   clouds=a|b|c (the cloud shapes to choose between, #8)  cloudPace=slow|mid|fast (how fast they drift for the wind)
+//   clouds=a|b|c|ab (the cloud shapes to choose between, #8)  cloudPace=slow|mid|fast (how fast they drift for the wind)
 //   cloudShade=light|mid|deep (how deep a cloud's shade is beside the sunny gaps)
 //   cloudSeed (which cloud field: a whole number)
 //   falling=0 (leave out the things in the air: the wind's leaves, and rain, snow and dust to come)
@@ -258,7 +258,7 @@ function hud() {
   hudEl.append(Object.assign(document.createElement('div'), { className: 'break' }));
   const shapes = Object.keys(CLOUD_SHAPES) as CloudShapeName[], paces = Object.keys(CLOUD_PACES) as CloudPaceName[];
   const shapeButton = Object.assign(document.createElement('button'), { textContent: `Clouds ${cloudShape}` });
-  shapeButton.title = 'a: cumulus, b: big and soft, c: broken (URL clouds=a|b|c)';
+  shapeButton.title = 'a: cumulus, b: big and soft, c: broken, ab: a turning into b as the sky closes (URL clouds=a|b|c|ab)';
   shapeButton.onclick = () => {
     cloudShape = shapes[(shapes.indexOf(cloudShape) + 1) % shapes.length];
     renderer.cloudShape = CLOUD_SHAPES[cloudShape];
