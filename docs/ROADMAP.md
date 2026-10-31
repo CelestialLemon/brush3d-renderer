@@ -116,8 +116,8 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   crowns rise out of it; thin, it breaks into patches keyed to the world that drift with the wind (a gale thins it and
   drags it into streaks). An optional `base` lifts it off the ground (low cloud). Its colour is the game's in noon's
   light, lit by the hour. The game lifts a mist by lowering its amount and top (the demo's timeline has a morning fog
-  lifting). To choose on the preview: ink lines in fog (fade, soft, crisp) and how the fog sits over the paint (veil,
-  wash, keep). Dust and the heat wave come next.
+  lifting). Picked by the developer: ink lines fade halfway into fog, so the things the player can use still show,
+  and the fog drains the paint's colour but keeps a trace of it. Dust and the heat wave come next.
 
 ### Motion and stability
 

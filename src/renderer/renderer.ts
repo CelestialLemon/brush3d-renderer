@@ -49,13 +49,6 @@ export interface Settings {
   falling: boolean;
   /** Show the shelter map over the frame: what's under cover, and the map from above in the corner. */
   shelterDebug: boolean;
-  /**
-   * How far ink lines fade into fog: 1 with what they draw, 0 not at all. Halfway (the developer's pick, #9): fading
-   * looked more like a painting, but the things the player can use got lost in the fog.
-   */
-  fogInk: number;
-  /** How much of the paint's own colour the fog keeps: 0 a plain veil. A look to choose (#9). */
-  fogKeep: number;
 }
 
 /** The kinds in the air, which settings.falling leaves out: the leaves the wind lifts (rain, snow and dust to come). */
@@ -89,7 +82,6 @@ export class BrushRenderer {
   readonly view = new ViewCamera();
   readonly shared: SharedUniforms = createSharedUniforms();
   readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true, falling: true, shelterDebug: false,
-    fogInk: 0.5, fogKeep: 0,
   };
   width = 1; height = 1;
   /** Device pixels per CSS pixel asked for (see RendererOptions): the screen's pixels, which the zoom counts in. */
@@ -181,8 +173,7 @@ export class BrushRenderer {
         uExposure: { value: 1 }, uSaturation: { value: 1 }, uNightShift: { value: 0 }, uShadeHue: { value: 0 }, uGrain: { value: 0.012 },
         uCamPos: { value: new THREE.Vector3() }, uCamRight: { value: new THREE.Vector3() }, uCamUp: { value: new THREE.Vector3() },
         uCamFwd: { value: new THREE.Vector3() }, uFogColor: { value: new THREE.Color() }, uFog: { value: new THREE.Vector4() },
-        uFogDrift: { value: new THREE.Vector2() }, tFogNoise: { value: fogNoiseTexture() }, uFogWind: { value: new THREE.Vector3(1, 0, 1) }, uFogInk: { value: 1 },
-        uFogKeep: { value: 0 },
+        uFogDrift: { value: new THREE.Vector2() }, tFogNoise: { value: fogNoiseTexture() }, uFogWind: { value: new THREE.Vector3(1, 0, 1) },
       },
     });
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.post));
@@ -435,8 +426,6 @@ export class BrushRenderer {
     u.uFog.value.set(w.haze * thin, w.hazeBase, w.hazeTop, Math.max(0.5, 0.7 * (w.hazeTop - floor)));
     u.uFogDrift.value.set(wind.hazeX, wind.hazeZ);
     u.uFogWind.value.set(wind.dirX, wind.dirZ, 1 + wind.speed / 10);
-    u.uFogInk.value = this.settings.fogInk;
-    u.uFogKeep.value = this.settings.fogKeep;
   }
 
   private updateSunCamera() {

@@ -15,7 +15,6 @@ import { SPEEDS, SPELLS, timelineAt, timelinePhase, type SpellName } from './tim
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   weather (clear|scattered|overcast|soft-rain|storm|fog|dust|heat-wave|snow|blizzard), then each value over it:
 //     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop, hazeBase (metres)
-//   fogInk=fade|soft|crisp (ink lines in fog), fogLook=veil|tint|wash|keep (the fog over the paint): looks to choose between (#9)
 //   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
 //   spell=shower|fog (which scripted weather: a shower, or a morning fog lifting)
 //   falling=0 (leave out the things in the air: the wind's leaves, and rain, snow and dust to come)
@@ -86,14 +85,6 @@ const weather: Required<Weather> & { haze: Haze } = {
   },
 };
 if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase'].some((k) => params.has(k))) presetName = null;
-// Looks to choose between (#9), each a button and a URL option: how ink lines fare in fog, and how the fog sits over the paint.
-const FOG_INK = { fade: 1, soft: 0.5, crisp: 0 } as const;
-const FOG_LOOK = { veil: 0, tint: 0.15, wash: 0.3, keep: 0.6 } as const;
-type FogInk = keyof typeof FOG_INK; type FogLook = keyof typeof FOG_LOOK;
-let fogInk: FogInk = (params.get('fogInk') as FogInk) in FOG_INK ? params.get('fogInk') as FogInk : 'soft';
-let fogLook: FogLook = (params.get('fogLook') as FogLook) in FOG_LOOK ? params.get('fogLook') as FogLook : 'veil';
-const applyFogLooks = () => { renderer.settings.fogInk = FOG_INK[fogInk]; renderer.settings.fogKeep = FOG_LOOK[fogLook]; };
-applyFogLooks();
 renderer.setWeather(weather, true);
 renderer.settings.falling = num('falling', 1) !== 0;
 // The scripted timeline, at a game speed: it sends the weather as the game would, a few times a second.
@@ -219,18 +210,6 @@ function hud() {
     speed = next; pace.textContent = `${speed}× speed`;
   };
   hudEl.append(play, spells, pace, timelineEl);
-
-  // The looks to choose between (#9): a button each, cycling through the candidates.
-  hudEl.append(Object.assign(document.createElement('div'), { className: 'break' }));
-  const cycle = <K extends string>(label: string, all: readonly K[], get: () => K, set: (k: K) => void, title: string) => {
-    const b = Object.assign(document.createElement('button'), { textContent: `${label}: ${get()}`, title });
-    b.onclick = () => { set(all[(all.indexOf(get()) + 1) % all.length]); applyFogLooks(); hud(); };
-    hudEl.append(b);
-  };
-  cycle('Ink in fog', Object.keys(FOG_INK) as FogInk[], () => fogInk, (k) => { fogInk = k; },
-    'fade: lines fade with what they draw · soft: halfway · crisp: lines stay');
-  cycle('Fog', Object.keys(FOG_LOOK) as FogLook[], () => fogLook, (k) => { fogLook = k; },
-    'veil: a veil of the fog\'s colour · tint: a trace of the paint\'s colour under it · wash: a little · keep: more');
 }
 const timelineEl = document.createElement('span');
 /** The weather controls' values, put back to what they show (the timeline moves them). */
