@@ -34,14 +34,12 @@ uniform vec3 uCamRight;
 uniform vec3 uCamUp;
 uniform vec3 uCamFwd;
 // The fog (#9): its colour as lit; x how thick, y its base, z its top, w how far under its top it thins (metres); its patches' drift (metres) and the wind's
-// direction and how far it stretches them along it; how far lines fade into it and how much of the paint's colour it keeps.
+// direction and how far it stretches them along it.
 uniform sampler2D tFogNoise;
 uniform vec3 uFogColor;
 uniform vec4 uFog;
 uniform vec2 uFogDrift;
 uniform vec3 uFogWind;
-uniform float uFogInk;
-uniform float uFogKeep;
 varying vec2 vUv;
 ${NOISE}
 ${OKLAB}
@@ -94,13 +92,15 @@ float fogAt(vec3 p) {
   return FOG_MAX * (1.0 - exp(-sum * dy / uFog.w * uFog.x * FOG_DENSITY));
 }
 
-// Laid over a colour: a veil of its colour, and (keep > 0) some of the paint's own colour given back over it, at the
-// veil's lightness, so a field in fog is a paler, softer yellow rather than grey.
+// Laid over a colour: a veil of its colour, with a trace of the paint's own colour given back over it at the veil's
+// lightness. The developer's pick (#9, 'tint'): the fog drains colour, as fog does, but the land under it isn't flat
+// grey. A plain veil drained it all; giving back more (0.3, 0.6) read less like fog.
+const float FOG_KEEP = 0.15;
 vec3 fogOver(vec3 c, float f) {
+  if (f <= 0.0) return c;
   vec3 v = mix(c, uFogColor, f);
-  if (uFogKeep <= 0.0) return v;
   vec3 lab = linToOklab(v);
-  lab.yz += linToOklab(c).yz * uFogKeep * f;
+  lab.yz += linToOklab(c).yz * FOG_KEEP * f;
   return oklabToLinFit(lab);
 }
 
@@ -151,8 +151,9 @@ void main() {
     c = mix(c, uHazeColor, haze);
   }
 
-  // In fog, lines fade with what they draw, or stay (uFogInk).
-  edge *= 1.0 - fog / FOG_MAX * uFogInk;
+  // In fog, lines fade halfway with what they draw. The developer's pick (#9, 'soft'): fading all the way looked more like
+  // a painting, but the things the player can use got lost in the fog.
+  edge *= 1.0 - fog / FOG_MAX * 0.5;
   if (edge > 0.0) {
     vec3 lab = linToOklab(c);
     vec3 ink = hueToward(lchShift(lab, -0.45 * lab.x, 1.25, 0.0), uShadeHue, 0.25);
