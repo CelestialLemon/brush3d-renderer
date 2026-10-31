@@ -40,8 +40,6 @@ export interface Weather {
 }
 
 const FOG = 0xcfd6d8, DUST = 0xc49a62;
-/** A haze's base when it lies on the ground: below any land. */
-export const GROUND = -50;
 
 /**
  * Named weathers for the demo and the tools, as WIND_SCALE is for the wind: shorthands that fill in the values, after the
@@ -68,7 +66,10 @@ const EASE = 1.5;
 
 /** The weather as drawn: the cloud cover exactly as asked, the looks eased towards it. */
 export class WeatherState {
-  readonly goal = { cloud: 0, rain: 0, snow: 0, heat: 0, haze: 0, hazeColor: new THREE.Color(FOG), hazeTop: 4, hazeBase: GROUND };
+  readonly goal = { cloud: 0, rain: 0, snow: 0, heat: 0, haze: 0, hazeColor: new THREE.Color(FOG), hazeTop: 4,
+    /** The haze's base, or null lying on the ground. */
+    hazeBase: null as number | null,
+  };
   /** The cover, exactly the game's: for what gameplay reads (the cloud field, #8). */
   cloud = 0;
   /** The cover as the light shows it (the grey-day look), eased. */
@@ -78,20 +79,25 @@ export class WeatherState {
    * The haze: how thick, its colour (linear), how high and where it starts, eased. With none asked for it thins away,
    * keeping its colour.
    */
-  haze = 0; hazeColor = new THREE.Color(FOG); hazeTop = 4; hazeBase = GROUND;
-  /** How far the haze's patches have drifted downwind, metres (x, z): slowly, a fog creeps rather than flies. */
-  hazeDriftX = 0; hazeDriftZ = 0;
+  haze = 0; hazeColor = new THREE.Color(FOG); hazeTop = 4; hazeBase = -50;
+  /**
+   * Where a haze lying on the ground starts: just under the lowest land (the renderer sets it from the water). A real
+   * height, so a fog rising into low cloud eases its base up from the land, not from far underground.
+   */
+  ground = -50;
   private time: number | null = null;
-  private driftTime: number | null = null;
+
+  /** The base asked for, a haze on the ground's at the ground, never above its top. */
+  private baseGoal() { return Math.min(this.goal.hazeBase ?? this.ground, this.goal.hazeTop); }
 
   set(w: Weather, immediate = false) {
     const g = this.goal, clamp = (v = 0) => THREE.MathUtils.clamp(v, 0, 1);
     g.cloud = clamp(w.cloud); g.rain = clamp(w.rain); g.snow = clamp(w.snow); g.heat = clamp(w.heat);
     g.haze = clamp(w.haze?.amount);
     if (w.haze) {
-      g.hazeColor.setHex(w.haze.color); g.hazeTop = w.haze.top; g.hazeBase = Math.min(w.haze.base ?? GROUND, w.haze.top);
+      g.hazeColor.setHex(w.haze.color); g.hazeTop = w.haze.top; g.hazeBase = w.haze.base ?? null;
       // A haze rising from none starts in its own colour and height, not the last one's.
-      if (this.haze < 0.01) { this.hazeColor.copy(g.hazeColor); this.hazeTop = g.hazeTop; this.hazeBase = g.hazeBase; }
+      if (this.haze < 0.01) { this.hazeColor.copy(g.hazeColor); this.hazeTop = g.hazeTop; this.hazeBase = this.baseGoal(); }
     }
     // The cover is never eased.
     this.cloud = g.cloud;
@@ -102,7 +108,7 @@ export class WeatherState {
   snap() {
     const g = this.goal;
     this.cloud = this.overcast = g.cloud; this.rain = g.rain; this.snow = g.snow; this.heat = g.heat;
-    this.haze = g.haze; this.hazeColor.copy(g.hazeColor); this.hazeTop = g.hazeTop; this.hazeBase = g.hazeBase;
+    this.haze = g.haze; this.hazeColor.copy(g.hazeColor); this.hazeTop = g.hazeTop; this.hazeBase = this.baseGoal();
   }
 
   /** Advances to a time in seconds. The first time, and a jump back (a tool seeking), only take the time. */
@@ -119,21 +125,6 @@ export class WeatherState {
     this.haze += (g.haze - this.haze) * k;
     this.hazeColor.lerp(g.hazeColor, k);
     this.hazeTop += (g.hazeTop - this.hazeTop) * k;
-    this.hazeBase += (g.hazeBase - this.hazeBase) * k;
-  }
-
-  /** How fast the haze's patches drift with a wind, m/s: a still mist still creeps, a gale drags it along. */
-  static driftSpeed(wind: number) { return 0.12 + 0.1 * wind; }
-
-  /**
-   * Moves the haze's patches with the wind as drawn (its direction and speed, m/s) to a time in seconds. The first time, and
-   * a jump back (a tool seeking), put them where a steady wind would have them, as the wind's own patterns.
-   */
-  drift(time: number, dirX: number, dirZ: number, speed: number) {
-    const dt = this.driftTime === null ? -1 : time - this.driftTime;
-    this.driftTime = time;
-    const d = WeatherState.driftSpeed(speed) * (dt < 0 ? time : dt);
-    if (dt < 0) { this.hazeDriftX = 0; this.hazeDriftZ = 0; }
-    this.hazeDriftX += dirX * d; this.hazeDriftZ += dirZ * d;
+    this.hazeBase += (this.baseGoal() - this.hazeBase) * k;
   }
 }

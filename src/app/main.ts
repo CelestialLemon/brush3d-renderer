@@ -4,7 +4,7 @@ import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
 import type { MaterialKind } from '../renderer/materials';
-import { GROUND, WEATHER_PRESETS, type Haze, type Weather, type WeatherName } from '../renderer/weather';
+import { WEATHER_PRESETS, type Haze, type Weather, type WeatherName } from '../renderer/weather';
 import { WIND_SCALE, windName, type Wind, type WindStrength } from '../renderer/wind';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
 import { SPEEDS, SPELLS, timelineAt, timelinePhase, type SpellName } from './timeline';
@@ -82,7 +82,7 @@ const weather: Required<Weather> & { haze: Haze } = {
   cloud: num('cloud', preset.cloud), rain: num('rain', preset.rain ?? 0), snow: num('snow', preset.snow ?? 0), heat: num('heat', preset.heat ?? 0),
   haze: {
     amount: num('haze', presetHaze.amount), color: params.has('hazeColor') ? parseInt(params.get('hazeColor')!, 16) : presetHaze.color,
-    top: num('hazeTop', presetHaze.top), base: num('hazeBase', presetHaze.base ?? GROUND),
+    top: num('hazeTop', presetHaze.top), base: params.has('hazeBase') ? num('hazeBase', 0) : presetHaze.base,
   },
 };
 if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase'].some((k) => params.has(k))) presetName = null;
@@ -171,7 +171,7 @@ function hud() {
     if (!(pick.value in WEATHER_PRESETS)) return;
     const p: Weather = WEATHER_PRESETS[pick.value as WeatherName];
     Object.assign(weather, { cloud: p.cloud, rain: p.rain ?? 0, snow: p.snow ?? 0, heat: p.heat ?? 0 });
-    weather.haze = p.haze ? { base: GROUND, ...p.haze } : { ...weather.haze, amount: 0 };
+    weather.haze = p.haze ? { ...p.haze } : { ...weather.haze, amount: 0 };
     presetName = pick.value as WeatherName; playing = false; timelineEl.textContent = '';
     renderer.setWeather(weather);
     hud();
@@ -188,7 +188,7 @@ function hud() {
   hudEl.append(slider('Snow', 0, 1, 0.01, () => weather.snow, weatherSet((v) => { weather.snow = v; }), share, true));
   hudEl.append(slider('Heat', 0, 1, 0.01, () => weather.heat, weatherSet((v) => { weather.heat = v; }), share, true));
   hudEl.append(slider('Haze', 0, 1, 0.01, () => weather.haze.amount, weatherSet((v) => { weather.haze.amount = v; }), share, true));
-  hudEl.append(slider('from', -2, 20, 0.25, () => Math.max(-2, weather.haze.base ?? GROUND), weatherSet((v) => { weather.haze.base = v <= -2 ? GROUND : v; }),
+  hudEl.append(slider('from', -2, 20, 0.25, () => Math.max(-2, weather.haze.base ?? -2), weatherSet((v) => { weather.haze.base = v <= -2 ? undefined : v; }),
     (v) => (v <= -2 ? 'ground' : `${v.toFixed(1)} m`), true));
   hudEl.append(slider('up to', -1, 30, 0.25, () => weather.haze.top, weatherSet((v) => { weather.haze.top = v; }), (v) => `${v.toFixed(1)} m`, true));
   const colour = Object.assign(document.createElement('input'), { type: 'color', value: `#${weather.haze.color.toString(16).padStart(6, '0')}` });
@@ -261,7 +261,7 @@ function playTimeline(time: number) {
   timelineSent = key;
   // The game sends the whole weather: what the spell leaves out is none (a haze thinned away keeps its colour and height).
   const { haze, ...rest } = whole(w);
-  Object.assign(weather, rest, { haze: haze ? { base: GROUND, ...haze } : { ...weather.haze, amount: 0 } });
+  Object.assign(weather, rest, { haze: haze ? { ...haze } : { ...weather.haze, amount: 0 } });
   renderer.setWeather(weather);
   for (const r of refreshers) r();
 }
