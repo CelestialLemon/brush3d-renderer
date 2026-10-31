@@ -65,8 +65,16 @@ export class CloudMap {
     this.scene.add(quad);
   }
 
-  /** The square of land the map covers: its lower corner (x, z) and its side, metres. */
-  setArea(x: number, z: number, side: number) { this.uniforms.uCloudRect.value.set(x, z, 1 / side, 1 / side); this.drawn = ''; }
+  /**
+   * The square of land the map covers: its lower corner (x, z) and its side, metres. Keep the land within about a hundred
+   * kilometres of the origin: the surfaces find their place on the map in 32-bit floats, as they find it on screen.
+   */
+  setArea(x: number, z: number, side: number) {
+    const r = this.uniforms.uCloudRect.value;
+    if (r.x === x && r.y === z && r.z === 1 / side) return;
+    r.set(x, z, 1 / side, 1 / side);
+    this.drawn = '';
+  }
 
   /** Draws the field as it is now. */
   draw(gl: THREE.WebGLRenderer, field: CloudField, shape: CloudShape = CLOUD_SHAPE) {

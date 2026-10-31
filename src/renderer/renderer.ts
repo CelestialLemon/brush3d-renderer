@@ -228,6 +228,7 @@ export class BrushRenderer {
     mesh.userData.fields = options.fields;
     mesh.userData.cover = options.cover ?? (kind === 'ink' ? 'full' : kind === 'foliage' ? 'partial' : 'none');
     if (mesh.userData.cover !== 'none') this.shelter.changed();
+    if (kind === 'ground') this.cloudArea = false;
     this.scene.add(mesh);
     if (kind === 'ground') this.setHazeGround();
     if (options.castShadow ?? kind !== 'water') this.casters.push(mesh);
@@ -248,7 +249,7 @@ export class BrushRenderer {
     const i = this.twins.findIndex(([m]) => m === mesh);
     if (i >= 0) { this.silhouettes.remove(this.twins[i][1]); this.twins.splice(i, 1); }
     if (mesh.userData.cover !== 'none') this.shelter.changed();
-    if (mesh.userData.kind === 'ground') this.setHazeGround();
+    if (mesh.userData.kind === 'ground') { this.setHazeGround(); this.cloudArea = false; }
   }
 
   /**
@@ -542,7 +543,10 @@ export class BrushRenderer {
     });
   }
 
-  /** Draws the cloud map (when the clouds or their shape have changed), over the ground's square the first time. */
+  /**
+   * Draws the cloud map (when the clouds or their shape have changed), over the ground's square: found again whenever
+   * ground is added or taken out, and each frame until there is some.
+   */
   private drawClouds() {
     if (!this.cloudArea) {
       const ground = this.scene.children.find((o) => o.userData.kind === 'ground' && o.userData.fields);
@@ -550,7 +554,7 @@ export class BrushRenderer {
       // The turned square's bounds, and a little more.
       const half = f ? (f.side / 2) * (Math.abs(Math.cos(f.turn)) + Math.abs(Math.sin(f.turn))) + 2 : 64;
       this.cloudMap.setArea((f?.x ?? 0) - half, (f?.z ?? 0) - half, 2 * half);
-      this.cloudArea = true;
+      this.cloudArea = !!f;
     }
     this.cloudMap.draw(this.gl, this.weather.clouds, this.cloudShape);
   }
