@@ -130,6 +130,8 @@ export class BrushRenderer {
   private look: Look | null = null;
   /** The water's level, if the scene has water: the fog measures how deep it lies from it. */
   private waterLevel: number | null = null;
+  /** The lowest point of the ground's meshes, for where a haze on the ground starts. */
+  private lowestGround = Infinity;
   /** The wind as drawn, easing towards what the game last asked for (see setWind). */
   readonly wind = new WindState();
   /** The weather as drawn: the cover as the game sent it, the looks easing towards it (see setWeather). */
@@ -226,6 +228,12 @@ export class BrushRenderer {
     mesh.userData.cover = options.cover ?? (kind === 'ink' ? 'full' : kind === 'foliage' ? 'partial' : 'none');
     if (mesh.userData.cover !== 'none') this.shelter.changed();
     this.scene.add(mesh);
+    if (kind === 'ground') {
+      // The ground is laid in world space (its brush is baked by place): its lowest point is the land's.
+      geometry.computeBoundingBox();
+      this.lowestGround = Math.min(this.lowestGround, geometry.boundingBox!.min.y);
+      this.setHazeGround();
+    }
     if (options.castShadow ?? kind !== 'water') this.casters.push(mesh);
     const twin = new THREE.Mesh(geometry, this.materials.get(kind)!.prepass);
     twin.frustumCulled = false;
@@ -351,8 +359,13 @@ export class BrushRenderer {
   /** The height of the water's surface, the plane it mirrors the scene in. */
   setWaterLevel(y: number) {
     this.shared.uMirrorY.value = y; this.waterLevel = y;
-    // A haze on the ground starts under the water's bed, the lowest land there is.
-    this.weather.ground = y - 1;
+    this.setHazeGround();
+  }
+
+  /** A haze on the ground starts just under the lowest land: the ground's lowest point, or the water's bed if lower. */
+  private setHazeGround() {
+    const low = Math.min(this.lowestGround, this.waterLevel === null ? Infinity : this.waterLevel - 1);
+    if (Number.isFinite(low)) this.weather.ground = low - 0.5;
   }
 
   resize(cssWidth: number, cssHeight: number) {
