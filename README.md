@@ -27,7 +27,7 @@ node tools/pops.ts out "wind=storm"                    # swatch pops in the wind
 node tools/profile.ts out                              # what a frame costs, pass by pass, on the GPU (docs/PERFORMANCE.md)
 ```
 
-The demo's URL takes `scene` (`farm`, the default, or `meadow`), `view` (0-3), `zoom` (screen px per metre, 16-96), `hour`, `x`/`z` (the camera's target), `t` (freeze
+The demo's URL takes `scene` (`farm`, the default, or `meadow`), `view` (0-3), `zoom` (screen px per metre, 16-192), `hour`, `x`/`z` (the camera's target), `t` (freeze
 the clock), `lines=0`, `shadows=0`, `still` (hide the buttons), and the wind: `wind` (m/s, or `calm`, `breeze`,
 `gale`, `storm`, `hurricane`), `windDir` (degrees it blows towards) and `gust` (0-1). The weather: `weather` (a preset:
 `clear`, `scattered`, `overcast`, `soft-rain`, `storm`, `fog`, `dust`, `heat-wave`, `snow`, `blizzard`), then any value
