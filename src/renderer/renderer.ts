@@ -349,7 +349,11 @@ export class BrushRenderer {
   }
 
   /** The height of the water's surface, the plane it mirrors the scene in. */
-  setWaterLevel(y: number) { this.shared.uMirrorY.value = y; this.waterLevel = y; }
+  setWaterLevel(y: number) {
+    this.shared.uMirrorY.value = y; this.waterLevel = y;
+    // A haze on the ground starts under the water's bed, the lowest land there is.
+    this.weather.ground = y - 1;
+  }
 
   resize(cssWidth: number, cssHeight: number) {
     this.pixelRatio = Math.min(this.screenRatio, Math.sqrt(this.maxPixels / Math.max(1, cssWidth * cssHeight)));
@@ -410,7 +414,7 @@ export class BrushRenderer {
     // It thins over most of its depth, measured from its base or else the water (the valley's floor).
     const floor = Math.max(w.hazeBase, this.waterLevel ?? w.hazeTop - 4);
     u.uFog.value.set(w.haze * thin, w.hazeBase, w.hazeTop, Math.max(0.5, 0.7 * (w.hazeTop - floor)));
-    u.uFogDrift.value.set(w.hazeDriftX, w.hazeDriftZ);
+    u.uFogDrift.value.set(wind.hazeX, wind.hazeZ);
     u.uFogWind.value.set(wind.dirX, wind.dirZ, 1 + wind.speed / 10);
     u.uFogInk.value = this.settings.fogInk;
     u.uFogKeep.value = this.settings.fogKeep;
@@ -517,7 +521,6 @@ export class BrushRenderer {
     s.uWindDrift.value.set(w.driftX, w.driftZ);
     s.uWindFlutter.value = w.flutter;
     this.weather.update(time);
-    this.weather.drift(time, w.dirX, w.dirZ, w.speed);
     this.applyLook(this.look);
     const grounded: THREE.Object3D[] = [];
     if (!this.settings.falling) {

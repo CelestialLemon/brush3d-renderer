@@ -41,6 +41,8 @@ export class WindState {
   gust = this.goal.gust;
   /** How far the gusts have rolled downwind (metres, x and z), and the leaves' flutter phase (radians). */
   driftX = 0; driftZ = 0; flutter = 0;
+  /** How far a haze's patches have drifted downwind (metres, x and z): slowly, a fog creeps rather than flies (#9). */
+  hazeX = 0; hazeZ = 0;
   private time: number | null = null;
 
   set(w: Wind, immediate = false) {
@@ -57,6 +59,8 @@ export class WindState {
 
   /** How fast the gust pattern rolls downwind, m/s: slower than the air, so it reads at the game's zooms. */
   static driftSpeed(speed: number) { return 0.8 + 0.4 * speed; }
+  /** How fast a haze's patches drift, m/s: a still mist still creeps, a gale drags it along. */
+  static hazeSpeed(speed: number) { return 0.12 + 0.1 * speed; }
   /** The leaves' flutter rate, radians a second: quicker as the wind rises, but levelling off (Sol's fit, 1.4 Hz in a
    * breeze, 2.4 in a hurricane; slower than real leaves, which would only blur as painted cards). */
   static flutterRate(speed: number) { return 2 * Math.PI * (0.7 + (2.3 * speed) / (speed + 12)); }
@@ -72,6 +76,8 @@ export class WindState {
     if (dt < 0) {
       const d = WindState.driftSpeed(this.speed) * time;
       this.driftX = this.dirX * d; this.driftZ = this.dirZ * d;
+      const h = WindState.hazeSpeed(this.speed) * time;
+      this.hazeX = this.dirX * h; this.hazeZ = this.dirZ * h;
       this.flutter = WindState.flutterRate(this.speed) * time;
       return;
     }
@@ -94,6 +100,8 @@ export class WindState {
     this.dirX = Math.cos(a); this.dirZ = Math.sin(a);
     const d = WindState.driftSpeed(this.speed) * dt;
     this.driftX += this.dirX * d; this.driftZ += this.dirZ * d;
+    const h = WindState.hazeSpeed(this.speed) * dt;
+    this.hazeX += this.dirX * h; this.hazeZ += this.dirZ * h;
     this.flutter += WindState.flutterRate(this.speed) * dt;
   }
 }
