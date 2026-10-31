@@ -49,7 +49,10 @@ export interface Settings {
   falling: boolean;
   /** Show the shelter map over the frame: what's under cover, and the map from above in the corner. */
   shelterDebug: boolean;
-  /** How far ink lines fade into fog: 1 with what they draw, 0 not at all (crisp). A look to choose (#9). */
+  /**
+   * How far ink lines fade into fog: 1 with what they draw, 0 not at all. Halfway (the developer's pick, #9): fading
+   * looked more like a painting, but the things the player can use got lost in the fog.
+   */
   fogInk: number;
   /** How much of the paint's own colour the fog keeps: 0 a plain veil. A look to choose (#9). */
   fogKeep: number;
@@ -86,7 +89,7 @@ export class BrushRenderer {
   readonly view = new ViewCamera();
   readonly shared: SharedUniforms = createSharedUniforms();
   readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true, falling: true, shelterDebug: false,
-    fogInk: 1, fogKeep: 0,
+    fogInk: 0.5, fogKeep: 0,
   };
   width = 1; height = 1;
   /** Device pixels per CSS pixel asked for (see RendererOptions): the screen's pixels, which the zoom counts in. */
