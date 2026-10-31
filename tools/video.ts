@@ -3,7 +3,8 @@
 //   wind strengths), wind-calm, wind-breeze, wind-gale, wind-storm, wind-hurricane, wind-ramp (calm to hurricane and back),
 //   weather-ramp (clear to overcast and back, sent in steps as the game sends it), weather-snap (the same, the cover
 //   jumping clear, overcast, clear: what the ease has to hide), clouds (the clouds drifting, the camera still),
-//   clouds-views (the same in each view in turn), clouds-ramp (the cover rising, zoomed out), timeline (the demo's
+//   clouds-views (the same in each view in turn), clouds-ramp (the cover rising, zoomed out), mirror-stream and
+//   mirror-panels (the clouds drifting in the farm's stream and its solar glass, close), mirror-pan (along the stream), timeline (the demo's
 //   scripted shower at 3x the game's speed), fog-lift (the scripted morning fog lifting to a mist and clearing, at 3x;
 //   QUERY="hour=7" for a dawn), dust-storm (the wind getting up and blowing a dust storm through, at 3x), heat (held
 //   still, then panning; QUERY="weather=heat-wave")
@@ -56,6 +57,11 @@ const MOVES: Record<string, Move> = {
   clouds: { seconds: 8, at: () => CLOUDS, extra: true },
   'clouds-views': { seconds: 16, at: (t) => ({ ...CLOUDS, view: Math.min(3, Math.floor(t / 4)) }), extra: true },
   // The cover rising from clear to overcast over 16 s at the game's ticks, the clouds drifting, zoomed out to see their shapes.
+  // The clouds drifting in the mirror (#8): the farm's stream, and its solar array, the camera still and close.
+  'mirror-stream': { seconds: 12, at: () => ({ x: -14, z: 20, zoom: 64, view: 0 }), extra: true },
+  'mirror-panels': { seconds: 12, at: () => ({ x: -6.4, z: -22, zoom: 64, view: 0 }), extra: true },
+  // Panning slowly along the stream, close: does the mirror shimmer as the camera moves?
+  'mirror-pan': { seconds: 6, at: (t) => pan({ x: -14, z: 20, zoom: 64, view: 0 }, 20 * t, 0), extra: true },
   'clouds-ramp': { seconds: 20, at: () => ({ ...CLOUDS, zoom: 16 }), cloud: (t) => Math.min(1, tick(t) / 16), ease: true, extra: true },
   timeline: { seconds: 40, at: () => STILL, timeline: (t) => t, ease: true, extra: true },
   'fog-lift': { seconds: 22, at: () => ({ x: -6, z: 4, zoom: 28, view: 0 }), timeline: (t) => t, spell: 'fog', ease: true, extra: true },

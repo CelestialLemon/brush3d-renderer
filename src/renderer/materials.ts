@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CLOUD_LIGHT, GBUFFER_OUT, LIGHT_UNIFORMS, NOISE, OKLAB, PAINT, SHADOW } from './glsl';
+import { CLOUD_LIGHT, GBUFFER_OUT, LIGHT_UNIFORMS, MIRROR_SKY, NOISE, OKLAB, PAINT, SHADOW } from './glsl';
 import { WIND_GLSL } from './wind';
 
 // The scene's materials. Each has a main variant (writes colour and the G-buffer) and a depth variant for the sun's
@@ -52,6 +52,14 @@ export function createSharedUniforms() {
     uCloudRimColor: { value: new THREE.Color(1, 0.8, 0.4) },
     uCloudBands: { value: new THREE.Vector4(0, 0.3, 0.1, 1) },
     uLightExposure: { value: 1 },
+    // The sky the water and the solar glass mirror (MIRROR_SKY): the sky map, the gaps' sky and the clouds' colours.
+    uSkyMap: { value: null as THREE.Texture | null },
+    uSkyRect: { value: new THREE.Vector4(-128, -128, 1 / 256, 1 / 256) },
+    uGapSkyTop: { value: new THREE.Color() },
+    uGapSkyBottom: { value: new THREE.Color() },
+    uCloudLit: { value: new THREE.Color() },
+    uCloudBelly: { value: new THREE.Color() },
+    uMirrorSky: { value: new THREE.Vector4() },
   };
 }
 export type SharedUniforms = ReturnType<typeof createSharedUniforms>;
@@ -575,6 +583,7 @@ void main() {
  */
 const INK_FRAG = /* glsl */ `
 ${FRAG_HEAD}
+${MIRROR_SKY}
 uniform vec3 uSkyTop;
 uniform vec3 uSkyBottom;
 varying vec2 vUv;
@@ -612,11 +621,14 @@ void main() {
     vec3 v = toCamera();
     vec3 r = reflect(-v, n);
     float fres = 0.2 + 0.5 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 2.0);
-    // Mostly the deep upper sky, with pale cloud-light drifting through and long glints across the rows.
-    float drift = smoothstep(0.1, 0.8, fbm2(p.xz * 0.06 + 11.0));
+    // The sky it faces, the clouds drifting through it (#8), and long glints across the rows.
+    float cloud;
+    vec3 seen = mirrorSky(skyPoint(p, r), 1.0 - clamp(r.y * 1.5, 0.0, 1.0), cloud);
     float glint = smoothstep(0.75, 1.0, sin(dot(p.xz, vec2(0.55, 0.35)) + fbm2(p.xz * 0.1) * 1.5));
-    vec3 sky = mix(uSkyTop, mix(uSkyBottom, vec3(1.0), 0.5), clamp(drift * 0.75 + glint * 0.6, 0.0, 1.0));
-    vec3 glass = mix(col, sky * sunTint(), clamp(fres + drift * 0.3 + glint * 0.4, 0.0, 1.0));
+    // Dark glass mirrors weakly: a cloud shows as a paler patch in its blue, not white.
+    seen = mix(mix(uGapSkyTop, uGapSkyBottom, 1.0 - clamp(r.y * 1.5, 0.0, 1.0)), seen, 0.5);
+    vec3 sky = mix(seen, mix(uSkyBottom, vec3(1.0), 0.5), glint * 0.6);
+    vec3 glass = mix(col, sky * sunTint(), clamp(fres + cloud * 0.15 + glint * 0.4, 0.0, 1.0));
     float sun = pow(max(dot(r, uSunDir), 0.0), 6.0);
     // No sun to shine in it under a cloud.
     glass = mix(glass, vec3(1.0) * sunTint(), sun * 0.6 * vis * (1.0 - gCloud));
@@ -631,6 +643,8 @@ void main() {
  * chopAmt, which is at most 1.5), the reflection's larger nudge, and its blur (pixels). The renderer draws those passes
  * only round the water on screen, padded by this much (see BrushRenderer.waterRect).
  */
+/** How far the ripples shake the clouds in the water (MIRROR_SKY), metres for a unit of their screen nudge: a metre or two. */
+const MIRROR_WOBBLE = 400;
 export const WATER_REACH = { ripple: 0.0035, chop: 0.006, chopMax: 1.5, reflectNudge: 1.6, blurPx: 3 };
 const f = (x: number) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
 
@@ -645,6 +659,7 @@ const f = (x: number) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
  */
 const WATER_FRAG = /* glsl */ `
 ${FRAG_HEAD}
+${MIRROR_SKY}
 uniform sampler2D uUnder;
 uniform sampler2D uUnderAux;
 uniform sampler2D uReflect;
@@ -697,12 +712,26 @@ void main() {
   vec4 refl = (texture(uReflect, ruv) * 2.0 + texture(uReflect, ruv + vec2(rt.x, 0.0)) + texture(uReflect, ruv - vec2(rt.x, 0.0))
     + texture(uReflect, ruv + vec2(0.0, rt.y)) + texture(uReflect, ruv - vec2(0.0, rt.y))) / 6.0;
   // The upper sky, and on the ripples' crests, which tilt towards the horizon, the glow low in it: a mean of the two would be grey.
-  vec3 sky = exposeHere(mix(uSkyTop, uSkyBottom, 0.25));
+  // The clouds in it (#8) along the mirrored ray, shaken by the ripples.
+  vec3 sky = exposeHere(mix(uGapSkyTop, uGapSkyBottom, 0.25));
   vec3 mirrored = sky * (1.0 - refl.a) + refl.rgb;
   // Mostly see-through: the bed shows in the shallows, and the reflection grows only where the water is deep and dark.
   float depthy = 1.0 - (through.g * 0.5 + through.b * 0.5);
   float fres = clamp(0.08 + depthy * 0.22 + ripple * 0.1, 0.0, 0.5);
   vec3 col = mix(under, mirrored, fres);
+  // The clouds in it (#8), along the mirrored ray and shaken by the ripples: their light over the sky's, alike over the
+  // shallows and the deep (the depth is read at half size, and its grain would show against a bright cloud and shimmer as
+  // the camera moves), and over the faint things mirrored in front of them (thin blades), not the solid ones. How strongly
+  // they show: candidates.
+  float cloud;
+  vec3 clouded = exposeHere(mirrorSky(skyPoint(p, reflect(-toCamera(), n)) + nudge * ${f(MIRROR_WOBBLE)}, 0.25, cloud));
+  vec2 wide = rt * 2.5;
+  float cover = (refl.a * 2.0 + texture(uReflect, ruv + wide).a + texture(uReflect, ruv - wide).a
+    + texture(uReflect, ruv + vec2(wide.x, -wide.y)).a + texture(uReflect, ruv - vec2(wide.x, -wide.y)).a) / 6.0;
+  float solid = smoothstep(0.35, 0.9, cover);
+  // Fading out at the very edge (vUv.y runs across the ribbon), where only a film of water lies over the bank.
+  float film = smoothstep(0.0, 0.3, min(vUv.y, 1.0 - vUv.y));
+  col += (clouded - sky) * (1.0 - solid) * film * (0.2 + 0.55 * uMirrorSky.z) * (0.85 + 0.3 * ripple);
   col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.25)), smoothstep(0.5, 0.9, ripple) * 0.25 * depthy);
   // Sparkle: glints of sun on the ripples' crests, little dashes lying across the flow, carried along by it, each winking
   // in and out on its own beat. Sparse and soft, so they sit on the clear water rather than whiting it out.
