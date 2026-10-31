@@ -1,3 +1,5 @@
+import { CLOUD_MAP_GLSL } from './cloudMap';
+
 // Shared GLSL: noise, OKLab colour, and the painted light model every surface uses.
 //
 // The look is built in OKLab/OKLCh rather than RGB, so a shadow can turn teal or violet and a lit band warm gold without
@@ -165,6 +167,31 @@ uniform float uMirror;       // 1 while drawing the water's reflection: the scen
 uniform float uMirrorY;
 `;
 
+/**
+ * Under a cloud (#8): the light there is the overcast look's (overcast.ts) where the light elsewhere is the gaps', mixed
+ * by the cloud's shade at the pixel. Each surface calls cloudAt first; the light model's pieces then read the light
+ * there (overcastHere, sunColorHere, ...), and exposeHere brightens or dims the finished colour to it. The uniforms are
+ * set by the renderer from the looks.
+ */
+export const CLOUD_LIGHT = /* glsl */ `
+${CLOUD_MAP_GLSL}
+uniform float uCloudStrength;  // how much a cloud's shade counts: as direct as the sun is (none before dawn, faint by the moon)
+uniform vec3 uCloudOvercast;   // under a cloud, as uOvercast
+uniform vec3 uCloudSunColor;   // under a cloud, as uSunColor
+uniform vec3 uCloudRimColor;   // under a cloud, as uRimColor
+uniform vec4 uCloudBands;      // under a cloud: the shade's hue (radians from uShadeHue, the short way), its depth, the lit
+                               // band's lean, and the exposure (over the grade's)
+uniform float uLightExposure;  // in the gaps: the exposure, over the grade's
+// The cloud's shade here, 0 in the sun .. 1 under the deepest of it, as strong as the sun is direct.
+float gCloud = 0.0;
+void cloudAt(vec3 p) { gCloud = cloudMapShade(p.xz) * uCloudStrength; }
+vec3 overcastHere() { return mix(uOvercast, uCloudOvercast, gCloud); }
+vec3 sunColorHere() { return mix(uSunColor, uCloudSunColor, gCloud); }
+vec3 rimColorHere() { return mix(uRimColor, uCloudRimColor, gCloud); }
+float shadeHueHere() { return uShadeHue + uCloudBands.x * gCloud; }
+vec3 exposeHere(vec3 c) { return c * mix(uLightExposure, uCloudBands.w, gCloud); }
+`;
+
 /** Sun visibility from the shadow map, softened by a small rotated disc of taps and nudged by the brush, in 0..1. */
 export const SHADOW = /* glsl */ `
 float sunVisibility(vec3 worldPos, vec3 n, float brush) {
@@ -174,15 +201,16 @@ float sunVisibility(vec3 worldPos, vec3 n, float brush) {
   if (uvz.x < 0.0 || uvz.x > 1.0 || uvz.y < 0.0 || uvz.y > 1.0 || uvz.z > 1.0) return 1.0;
   // The brush wobbles where the edge is sampled, so a shadow's border is painted rather than ruled.
   vec2 wob = vec2(brush, snoise(worldPos.xz * 1.7 + 9.0)) * uShadowTexel * 2.5;
+  vec3 overcast = overcastHere();
   float vis = 0.0;
   for (int i = 0; i < 8; i++) {
     float a = float(i) * 2.39996 + hash12(worldPos.xz * 31.0) * 6.283;
-    float r = sqrt((float(i) + 0.5) / 8.0) * 2.2 * (1.0 + uOvercast.z);
+    float r = sqrt((float(i) + 0.5) / 8.0) * 2.2 * (1.0 + overcast.z);
     vec2 o = vec2(cos(a), sin(a)) * r * uShadowTexel + wob;
     float d = texture(uShadowMap, uvz.xy + o).r;
     vis += (uvz.z - 0.0015 > d) ? 0.0 : 1.0;
   }
-  return mix(vis / 8.0, 1.0, uOvercast.y);
+  return mix(vis / 8.0, 1.0, overcast.y);
 }
 `;
 
@@ -193,7 +221,7 @@ float sunVisibility(vec3 worldPos, vec3 n, float brush) {
 export const PAINT = /* glsl */ `
 // The look's light colours as tints: their hue, at a set strength, with the brightness left to the exposure.
 vec3 tintOf(vec3 c, float amount) { return mix(vec3(1.0), c / max(max(c.r, c.g), max(c.b, 1e-3)), amount); }
-vec3 sunTint() { return tintOf(uSunColor, 0.4); }
+vec3 sunTint() { return tintOf(sunColorHere(), 0.4); }
 vec3 skyTint() { return tintOf(uSkyColor, 0.45); }
 // How lit a surface is by the sun, 0..1, measured against flat ground: flat ground is in full sun whatever the hour (a
 // painter keeps an evening meadow warm and lit), slopes and sides turned away from the sun fall into half-tone and shade.
@@ -201,7 +229,7 @@ vec3 skyTint() { return tintOf(uSkyColor, 0.45); }
 float sunLight(vec3 n, float wrap) {
   float rel = dot(n, uSunDir) / max(uSunDir.y, 0.3);
   float sun = clamp((rel + wrap) / (1.0 + wrap), 0.0, 1.0);
-  return mix(sun, clamp(0.5 + 0.5 * n.y, 0.0, 1.0), uOvercast.x);
+  return mix(sun, clamp(0.5 + 0.5 * n.y, 0.0, 1.0), overcastHere().x);
 }
 // The direction brush strokes run on the ground: along the contours where it slopes, a set angle where it's flat.
 float contourAngle(vec3 n, float fallback) {
@@ -213,14 +241,15 @@ float contourAngle(vec3 n, float fallback) {
 
 vec3 paintBands(vec3 base, float light, float soft, float upness) {
   vec3 lab = linToOklab(base);
+  float shadeHue = shadeHueHere(), shadeDepth = mix(uShadeDepth, uCloudBands.y, gCloud), litLean = mix(uLitLean, uCloudBands.z, gCloud);
   // Shade: darker, a touch richer, with some of the look's shade colour mixed in (teal at noon, violet at dusk), the way a
   // painter cools a shadow with blue rather than black. Mixing, not turning the hue: yellow wheat in shade goes olive, not red.
-  vec3 shadeMix = vec3(0.0, cos(uShadeHue), sin(uShadeHue)) * uShadeLean * 0.09;
-  vec3 shade = lchShift(lab, -uShadeDepth * lab.x, 1.1, 0.0) + shadeMix;
+  vec3 shadeMix = vec3(0.0, cos(shadeHue), sin(shadeHue)) * uShadeLean * 0.09;
+  vec3 shade = lchShift(lab, -shadeDepth * lab.x, 1.1, 0.0) + shadeMix;
   // Half-tone: between, with less of it.
-  vec3 half_ = lchShift(lab, -uShadeDepth * 0.45 * lab.x, 1.06, 0.0) + shadeMix * 0.45;
+  vec3 half_ = lchShift(lab, -shadeDepth * 0.45 * lab.x, 1.06, 0.0) + shadeMix * 0.45;
   // Lit: the colour itself, warmed by the hour.
-  vec3 lit = lchShift(lab, 0.02, 1.05, 0.0) + vec3(0.0, cos(uLitHue), sin(uLitHue)) * uLitLean * 0.09;
+  vec3 lit = lchShift(lab, 0.02, 1.05, 0.0) + vec3(0.0, cos(uLitHue), sin(uLitHue)) * litLean * 0.09;
   float t1 = smoothstep(0.30 - soft, 0.30 + soft, light);
   float t2 = smoothstep(0.62 - soft, 0.62 + soft, light);
   vec3 col = oklabToLinFit(mix(mix(shade, half_, t1), lit, t2));

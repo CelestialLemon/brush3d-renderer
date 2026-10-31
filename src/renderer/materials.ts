@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GBUFFER_OUT, LIGHT_UNIFORMS, NOISE, OKLAB, PAINT, SHADOW } from './glsl';
+import { CLOUD_LIGHT, GBUFFER_OUT, LIGHT_UNIFORMS, NOISE, OKLAB, PAINT, SHADOW } from './glsl';
 import { WIND_GLSL } from './wind';
 
 // The scene's materials. Each has a main variant (writes colour and the G-buffer) and a depth variant for the sun's
@@ -43,6 +43,15 @@ export function createSharedUniforms() {
     uScreen: { value: new THREE.Vector2(1, 1) },
     uSkyTop: { value: new THREE.Color() },
     uSkyBottom: { value: new THREE.Color() },
+    // The clouds (#8): the cloud map (cloudMap.ts) and the light under a cloud (CLOUD_LIGHT), set by the renderer.
+    uCloudMap: { value: null as THREE.Texture | null },
+    uCloudRect: { value: new THREE.Vector4(-64, -64, 1 / 128, 1 / 128) },
+    uCloudStrength: { value: 0 },
+    uCloudOvercast: { value: new THREE.Vector3() },
+    uCloudSunColor: { value: new THREE.Color(1, 1, 1) },
+    uCloudRimColor: { value: new THREE.Color(1, 0.8, 0.4) },
+    uCloudBands: { value: new THREE.Vector4(0, 0.3, 0.1, 1) },
+    uLightExposure: { value: 1 },
   };
 }
 export type SharedUniforms = ReturnType<typeof createSharedUniforms>;
@@ -312,6 +321,7 @@ const FRAG_HEAD = /* glsl */ `
 ${LIGHT_UNIFORMS}
 ${NOISE}
 ${OKLAB}
+${CLOUD_LIGHT}
 ${SHADOW}
 ${PAINT}
 ${WIND_GLSL}
@@ -410,6 +420,7 @@ uniform sampler2D uFields;
 uniform mat3 uFieldsMap;
 #endif
 void main() {
+  cloudAt(vWorldPos);
   vec3 n = normalize(vNormal);
   vec3 p = vRestPos;
 #ifdef FIELDS
@@ -450,8 +461,8 @@ void main() {
   base = mix(base, oklabToLin(lchShift(linToOklab(base), 0.05, 0.8, 0.0)), max(sheen, 0.0) * force * 0.6);
 #endif
   vec3 col = paintBands(base, light, 0.05, n.y * 0.5 + 0.5);
-  col += uRimColor * rimLight(n, vPaint.w);
-  writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
+  col += rimColorHere() * rimLight(n, vPaint.w);
+  writeGBuffer(exposeHere(col), n, vViewDepth, 0.0, 1.0);
 }
 `;
 
@@ -495,6 +506,7 @@ void main() {
   gAux = vec4(0.0);
   return;
 #endif
+  cloudAt(vWorldPos);
   vec3 nCanopy = normalize(vNormal);
   vec3 n = normalize(nCanopy + vDabNormal * 0.2);
   vec3 p = vRestPos;
@@ -503,7 +515,7 @@ void main() {
   vec3 base = driftColor(vColor, p, vPaint.x, br * 0.35 * vPaint.x);
   // A leaf turned over by the wind shows its underside: paler, greyer and cooler, a silvery green.
   vec3 under = linToOklab(base);
-  under = hueToward(lchShift(under, 0.13, 0.5, 0.0), uShadeHue, 0.25);
+  under = hueToward(lchShift(under, 0.13, 0.5, 0.0), shadeHueHere(), 0.25);
   base = mix(base, oklabToLinFit(under), vFlash * 0.75);
   float vis = sunVisibility(vWorldPos, nCanopy, br);
   // In the crown's own shadow the lumps still read: the shadow lowers the light rather than flattening it.
@@ -517,14 +529,14 @@ void main() {
   vec3 lab = linToOklab(col);
   float shade = 1.0 - smoothstep(0.25, 0.6, light);
   lab.x *= 1.0 - 0.22 * shade;
-  col = oklabToLinFit(hueToward(lab, uShadeHue, 0.08 * shade));
-  col += uRimColor * rimLight(nCanopy, vPaint.w) * vis * 0.15;
+  col = oklabToLinFit(hueToward(lab, shadeHueHere(), 0.08 * shade));
+  col += rimColorHere() * rimLight(nCanopy, vPaint.w) * vis * 0.15;
   // Against the sun the crown's edges glow, light coming through the leaves.
   float behind = smoothstep(0.0, 0.7, dot(-toCamera(), uSunDir));
   // Light through a leaf takes the leaf's colour: a warm yellow-green, not the sun's orange.
   float side = pow(1.0 - abs(dot(nCanopy, toCamera())), 3.0);
-  col += uRimColor * tintOf(base, 0.75) * behind * side * vPaint.w * 0.7 * mix(0.4, 1.0, vis);
-  writeGBuffer(col, n, vViewDepth, 0.0, alpha);
+  col += rimColorHere() * tintOf(base, 0.75) * behind * side * vPaint.w * 0.7 * mix(0.4, 1.0, vis);
+  writeGBuffer(exposeHere(col), n, vViewDepth, 0.0, alpha);
 }
 `;
 
@@ -533,6 +545,7 @@ ${FRAG_HEAD}
 varying vec2 vBlade;
 void main() {
   // Grass is lit like the ground it grows from (its normal is the ground's), so a meadow reads as one painted surface.
+  cloudAt(vWorldPos);
   vec3 n = normalize(vNormal);
   vec3 p = vRestPos;
   float angle = contourAngle(n, vPaint.z);
@@ -551,8 +564,8 @@ void main() {
   // Tips catch a little more light than roots.
   light += (vBlade.x - 0.5) * 0.1;
   vec3 col = paintBands(base, light, 0.06, 0.8);
-  col += uRimColor * vPaint.w * vBlade.x * vBlade.x * vis * 0.25;
-  writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
+  col += rimColorHere() * vPaint.w * vBlade.x * vBlade.x * vis * 0.25;
+  writeGBuffer(exposeHere(col), n, vViewDepth, 0.0, 1.0);
 }
 `;
 
@@ -566,6 +579,7 @@ uniform vec3 uSkyTop;
 uniform vec3 uSkyBottom;
 varying vec2 vUv;
 void main() {
+  cloudAt(vWorldPos);
   vec3 n = normalize(vNormal);
   // Mirroring flips which side faces the camera.
   if (gl_FrontFacing == (uMirror > 0.5)) n = -n;
@@ -604,10 +618,11 @@ void main() {
     vec3 sky = mix(uSkyTop, mix(uSkyBottom, vec3(1.0), 0.5), clamp(drift * 0.75 + glint * 0.6, 0.0, 1.0));
     vec3 glass = mix(col, sky * sunTint(), clamp(fres + drift * 0.3 + glint * 0.4, 0.0, 1.0));
     float sun = pow(max(dot(r, uSunDir), 0.0), 6.0);
-    glass = mix(glass, vec3(1.0) * sunTint(), sun * 0.6 * vis);
+    // No sun to shine in it under a cloud.
+    glass = mix(glass, vec3(1.0) * sunTint(), sun * 0.6 * vis * (1.0 - gCloud));
     col = mix(glass, glass * 1.3 + 0.04, grid * 0.35);
   }
-  writeGBuffer(col, n, vViewDepth, 1.0, 1.0);
+  writeGBuffer(exposeHere(col), n, vViewDepth, 1.0, 1.0);
 }
 `;
 
@@ -638,6 +653,7 @@ uniform vec3 uSkyTop;
 uniform vec3 uSkyBottom;
 varying vec2 vUv;
 void main() {
+  cloudAt(vWorldPos);
   vec3 n = vec3(0.0, 1.0, 0.0);
   vec3 p = vWorldPos;
   float flowA = vPaint.z;
@@ -669,7 +685,8 @@ void main() {
   vec3 through = exp(-absorb * path);
   float vis = sunVisibility(p, n, ripple);
   // The body of the water is lit from above by the sky; the sun shows in its sparks.
-  scatter *= skyTint() * mix(0.75, 1.0, vis);
+  // The bed and the reflection are lit where they are already; the water's own light is exposed here (exposeHere).
+  scatter = exposeHere(scatter * skyTint() * mix(0.75, 1.0, vis));
   vec3 under = bed * through + scatter * (1.0 - through);
 
   // The reflection, and the sky where nothing is reflected: looking down at 30 degrees, the water mirrors the sky 30 degrees up.
@@ -680,13 +697,13 @@ void main() {
   vec4 refl = (texture(uReflect, ruv) * 2.0 + texture(uReflect, ruv + vec2(rt.x, 0.0)) + texture(uReflect, ruv - vec2(rt.x, 0.0))
     + texture(uReflect, ruv + vec2(0.0, rt.y)) + texture(uReflect, ruv - vec2(0.0, rt.y))) / 6.0;
   // The upper sky, and on the ripples' crests, which tilt towards the horizon, the glow low in it: a mean of the two would be grey.
-  vec3 sky = mix(uSkyTop, uSkyBottom, 0.25);
+  vec3 sky = exposeHere(mix(uSkyTop, uSkyBottom, 0.25));
   vec3 mirrored = sky * (1.0 - refl.a) + refl.rgb;
   // Mostly see-through: the bed shows in the shallows, and the reflection grows only where the water is deep and dark.
   float depthy = 1.0 - (through.g * 0.5 + through.b * 0.5);
   float fres = clamp(0.08 + depthy * 0.22 + ripple * 0.1, 0.0, 0.5);
   vec3 col = mix(under, mirrored, fres);
-  col = mix(col, mix(uSkyBottom, vec3(1.0), 0.25), smoothstep(0.5, 0.9, ripple) * 0.25 * depthy);
+  col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.25)), smoothstep(0.5, 0.9, ripple) * 0.25 * depthy);
   // Sparkle: glints of sun on the ripples' crests, little dashes lying across the flow, carried along by it, each winking
   // in and out on its own beat. Sparse and soft, so they sit on the clear water rather than whiting it out.
   vec2 fq = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x))) * vec2(3.5, 1.6);
@@ -695,10 +712,11 @@ void main() {
   float wink = max(0.0, sin(uTime * (2.0 + h * 3.0) + h * 40.0));
   float crest = smoothstep(-0.15, 0.35, ripple);
   float spark = (1.0 - smoothstep(0.5, 1.0, length(f / vec2(0.15, 0.3)))) * step(0.5, h) * wink * crest;
-  col = mix(col, mix(vec3(1.0), sunTint(), 0.5), spark * vis * (0.2 + depthy * 0.4));
+  // No glints under a cloud.
+  col = mix(col, exposeHere(mix(vec3(1.0), sunTint(), 0.5)), spark * vis * (1.0 - gCloud) * (0.2 + depthy * 0.4));
   // Whitecaps on the chop's crests in a storm.
   float caps = smoothstep(0.55, 0.9, chop) * smoothstep(0.45, 1.0, windForce()) * smoothstep(0.4, 0.9, windGust(p.xz) + 0.2);
-  col = mix(col, mix(uSkyBottom, vec3(1.0), 0.6) * skyTint(), caps * 0.45);
+  col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.6) * skyTint()), caps * 0.45);
   writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
 }
 `;

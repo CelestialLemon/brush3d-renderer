@@ -11,7 +11,8 @@
     "dev": "vite --port 5190",
     "build": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "shot": "node tools/shot.ts"
+    "shot": "node tools/shot.ts",
+    "test:clouds": "node tools/clouds.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

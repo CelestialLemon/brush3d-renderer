@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { CAMERA_DISTANCE, ViewCamera } from './camera';
+import { CloudMap } from './cloudMap';
+import { CLOUD_SHAPE, type CloudShape } from './clouds';
 import type { Look } from './look';
-import { OVERCAST, overcastLook, skyShare } from './overcast';
+import { CLOUD_DEPTHS, CLOUD_NIGHT, gapCover, OVERCAST, overcastLook, skyShare, UNDER_CLOUD_FADE } from './overcast';
 import {
   createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
 } from './materials';
@@ -12,10 +14,10 @@ import type { PassTimer } from './timer';
 import { WeatherState, type Weather } from './weather';
 import { leafStorm, WindState, type Wind } from './wind';
 
-// The renderer: a sun shadow map; for the water, the bed drawn without it and the scene mirrored in it (both at half size,
-// and only round the water on screen); a multisampled G-buffer (colour plus view normal, depth and ink), its silhouettes
-// drawn first so the painting runs only where a surface shows; and a post pass that inks the lines, hazes the distance and
-// grades. It draws at the screen's own resolution: no art-pixel grid. docs/PERFORMANCE.md has what each pass costs.
+// The renderer: the clouds' shade over the land (#8); a sun shadow map; for the water, the bed drawn without it and the
+// scene mirrored in it (both at half size, and only round the water on screen); a multisampled G-buffer (colour plus view
+// normal, depth and ink), its silhouettes drawn first so the painting runs only where a surface shows; and a post pass
+// that inks the lines, hazes the distance and grades. It draws at the screen's own resolution: no art-pixel grid. docs/PERFORMANCE.md has what each pass costs.
 
 export interface RendererOptions {
   /** Shadow-map size in texels. */
@@ -134,6 +136,12 @@ export class BrushRenderer {
    * call shelter.changed() after moving cover; adding a mesh or showing or hiding a kind does it already.
    */
   readonly shelter: ShelterMap;
+  /** The cloud field's shade over the land, drawn each frame the clouds move (#8). */
+  readonly cloudMap: CloudMap;
+  /** The clouds' shape (clouds.ts): the game's, the same one it reads its solar panels by. */
+  cloudShape: CloudShape = CLOUD_SHAPE;
+  /** How deep a cloud's shade is beside the sunny gaps (see CLOUD_DEPTHS). */
+  cloudDepth: number = CLOUD_DEPTHS.mid;
 
   constructor(readonly canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true });
@@ -157,6 +165,7 @@ export class BrushRenderer {
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
     });
     this.shelter = new ShelterMap(options.shelterSize ?? 1024);
+    this.cloudMap = new CloudMap(this.shared);
     this.underTarget = half();
     this.reflectTarget = half();
     this.shared.uUnder.value = this.underTarget.textures[0];
@@ -383,31 +392,48 @@ export class BrushRenderer {
   /** The hour's look; the weather is laid over it as each frame is drawn. */
   setLook(look: Look) { this.look = look; }
 
-  /** Sets the light's uniforms from the hour's look under the weather as drawn. */
+  /**
+   * Sets the light's uniforms from the hour's look under the weather as drawn. Three looks: the grade's (the post pass's
+   * haze, sky and exposure) under the cover as eased; the light in the gaps between the clouds; and the light under a
+   * cloud, the overcast look's, which each pixel mixes in by the cloud's shade there (CLOUD_LIGHT). With no cloud the
+   * three are the clear look; under full cover all three are the overcast one, as before the clouds (#7).
+   */
   private applyLook(clear: Look) {
     const cover = this.weather.overcast, r = OVERCAST;
-    const look = overcastLook(clear, cover, r);
+    // The cloud shadows are as strong as the sun is direct: none before dawn, faint by the moon. Where they're weak the
+    // cover lies over the whole picture, as it did before the clouds; where they're strong the gaps are in the sun.
+    const dim = THREE.MathUtils.smoothstep(clear.sunEl, -8, 6);
+    const strength = dim * THREE.MathUtils.lerp(1, CLOUD_NIGHT, clear.night);
+    const gap = THREE.MathUtils.lerp(cover, gapCover(cover), strength);
+    const grade = overcastLook(clear, cover, r), look = overcastLook(clear, gap, r), under = overcastLook(clear, 1, r);
     const s = this.shared;
-    const shape = skyShare(cover);
+    const shape = skyShare(gap), lift = shape * r.shadowLift;
     s.uOvercast.value.set(shape * r.sky, shape * r.shadowFade, shape * r.shadowBlur);
+    s.uCloudOvercast.value.set(r.sky, THREE.MathUtils.lerp(UNDER_CLOUD_FADE, r.shadowFade, lift), r.shadowBlur);
+    s.uCloudStrength.value = strength;
     const az = THREE.MathUtils.degToRad(look.sunAz), el = THREE.MathUtils.degToRad(Math.max(look.sunEl, 4));
     s.uSunDir.value.set(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
     // The shadows that are left fall from the sky's brightest part, overhead, the thicker the cloud.
     this.shadowDir.copy(s.uSunDir.value);
-    if (shape * r.shadowLift > 0) this.shadowDir.lerp(new THREE.Vector3(0, 1, 0), shape * r.shadowLift).normalize();
+    if (lift > 0) this.shadowDir.lerp(new THREE.Vector3(0, 1, 0), lift).normalize();
     // Below the horizon the sun still lights the scene from low down, dimmed: dusk and dawn stay readable.
-    const dim = THREE.MathUtils.smoothstep(look.sunEl, -8, 6);
     s.uSunColor.value.copy(look.sunColor).lerp(look.skyColor, 1 - dim);
+    s.uCloudSunColor.value.copy(under.sunColor).lerp(under.skyColor, 1 - dim);
     s.uSkyColor.value.copy(look.skyColor);
     s.uRimColor.value.copy(look.rimColor).multiplyScalar(dim);
+    s.uCloudRimColor.value.copy(under.rimColor).multiplyScalar(dim);
     const rad = THREE.MathUtils.degToRad;
     s.uShadeHue.value = rad(look.shadeHue); s.uShadeLean.value = look.shadeLean; s.uShadeDepth.value = look.shadeDepth;
     s.uLitHue.value = rad(look.litHue); s.uLitLean.value = look.litLean;
+    // The exposures over the grade's, which the post pass lays over everything.
+    s.uLightExposure.value = look.exposure / grade.exposure;
+    const deeper = THREE.MathUtils.lerp(this.cloudDepth, 1, gap);
+    s.uCloudBands.value.set(rad(((under.shadeHue - look.shadeHue + 540) % 360) - 180), under.shadeDepth, under.litLean, (under.exposure * deeper) / grade.exposure);
     const u = this.post.uniforms;
-    u.uHazeColor.value.copy(look.hazeColor); u.uHazeDensity.value = look.hazeDensity; u.uHazeMax.value = look.hazeMax; u.uHazeFloor.value = look.hazeFloor;
-    u.uSkyTop.value.copy(look.skyTop); u.uSkyBottom.value.copy(look.skyBottom);
-    s.uSkyTop.value.copy(look.skyTop); s.uSkyBottom.value.copy(look.skyBottom);
-    u.uExposure.value = look.exposure; u.uSaturation.value = look.saturation; u.uNightShift.value = look.nightShift; u.uShadeHue.value = rad(look.shadeHue);
+    u.uHazeColor.value.copy(grade.hazeColor); u.uHazeDensity.value = grade.hazeDensity; u.uHazeMax.value = grade.hazeMax; u.uHazeFloor.value = grade.hazeFloor;
+    u.uSkyTop.value.copy(grade.skyTop); u.uSkyBottom.value.copy(grade.skyBottom);
+    s.uSkyTop.value.copy(grade.skyTop); s.uSkyBottom.value.copy(grade.skyBottom);
+    u.uExposure.value = grade.exposure; u.uSaturation.value = grade.saturation; u.uNightShift.value = grade.nightShift; u.uShadeHue.value = rad(grade.shadeHue);
     this.applyFog();
     this.updateSunCamera();
   }
@@ -516,6 +542,20 @@ export class BrushRenderer {
     });
   }
 
+  /** Draws the cloud map (when the clouds or their shape have changed), over the ground's square the first time. */
+  private drawClouds() {
+    if (!this.cloudArea) {
+      const ground = this.scene.children.find((o) => o.userData.kind === 'ground' && o.userData.fields);
+      const f = ground?.userData.fields as MeshOptions['fields'] | undefined;
+      // The turned square's bounds, and a little more.
+      const half = f ? (f.side / 2) * (Math.abs(Math.cos(f.turn)) + Math.abs(Math.sin(f.turn))) + 2 : 64;
+      this.cloudMap.setArea((f?.x ?? 0) - half, (f?.z ?? 0) - half, 2 * half);
+      this.cloudArea = true;
+    }
+    this.cloudMap.draw(this.gl, this.weather.clouds, this.cloudShape);
+  }
+  private cloudArea = false;
+
   render(time: number) {
     if (!this.look) throw new Error('setLook before render');
     const t = this.timer;
@@ -552,6 +592,10 @@ export class BrushRenderer {
     // The shelter map, only when cover has changed: nothing to do most frames.
     t?.mark('shelter', this.shelter.dirty);
     if (this.shelter.dirty) this.drawShelter();
+
+    // The clouds' shade over the land, as the game has them now.
+    t?.mark('clouds');
+    this.drawClouds();
 
     // The sun's shadow map: redrawn every frame, because foliage and grass move in the wind.
     t?.mark('shadow');

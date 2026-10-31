@@ -118,6 +118,21 @@ Before the cuts, the scene was 47 ms on the laptop on the farm and 26 on the mea
 No line in the budget: it changes the light's numbers and two shader terms, with no new pass, and measures the same as
 clear (the farm at 1080p in a storm, 11.64 ms clear, 11.65 overcast, here).
 
+### Cloud shadows (#8)
+
+The cloud field (src/renderer/clouds.ts) is drawn into a 512² texture over the land, a half-float shade a texel (0.5 MB),
+and every surface reads its shade there with one lookup. The map is redrawn only when the clouds have moved (the game's
+drift, every frame while they drift) or the cover has changed; never on a clear or fully overcast sky. RX 570, 1080p storm,
+GPU ms, at 45% cover (`clouds` is the map's own pass in `node tools/profile.ts` and `?profile`):
+
+| | the map | frame, before → with clouds |
+|---|---:|---:|
+| farm | 0.12 | 11.67 → 11.80 |
+| meadow | 0.12 | 4.87 → 5.08 |
+
+About 0.1 for the map, the same on any scene (it's 262,000 texels of noise whatever is on them), and up to 0.1 for the
+reads, within the 0.3 a frame. The laptop's numbers come from `?profile` on #8's preview.
+
 ### The shelter map (#10)
 
 Two depth maps of the land from straight above, 1024² each (10 MB, with the byte a texel of colour a target must have):

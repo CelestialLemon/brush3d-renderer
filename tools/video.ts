@@ -2,7 +2,8 @@
 //   node tools/video.ts [out-dir] [move ...]      moves: pan, pan-wide, pan-up, turn, zoom, wind (default: all but the
 //   wind strengths), wind-calm, wind-breeze, wind-gale, wind-storm, wind-hurricane, wind-ramp (calm to hurricane and back),
 //   weather-ramp (clear to overcast and back, sent in steps as the game sends it), weather-snap (the same, the cover
-//   jumping clear, overcast, clear: what the ease has to hide), timeline (the demo's scripted shower at 3x the game's speed),
+//   jumping clear, overcast, clear: what the ease has to hide), clouds (the clouds drifting, the camera still),
+//   clouds-views (the same in each view in turn), timeline (the demo's scripted shower at 3x the game's speed),
 //   fog-lift (the scripted morning fog lifting to a mist and clearing, at 3x; QUERY="hour=7" for a dawn)
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
@@ -28,6 +29,7 @@ interface Move {
 /** The game's updates: a few a second (src/app/timeline.ts), so the weather comes in steps the renderer eases over. */
 const tick = (t: number) => Math.floor(t * 4) / 4;
 const STILL = { x: -1, z: 4, zoom: 48, view: 0 };
+const CLOUDS = { x: -1, z: 4, zoom: 24, view: 0 };
 const MOVES: Record<string, Move> = {
   // A slow drag to the right and a little up, at an everyday zoom: 60 px a second.
   pan: { seconds: 5, at: (t) => pan({ x: 0, z: 0, zoom: 40, view: 0 }, 60 * t, 15 * t) },
@@ -47,6 +49,10 @@ const MOVES: Record<string, Move> = {
   // The cover rising from clear to overcast over 6 s, held, and clearing again, at the game's ticks.
   'weather-ramp': { seconds: 16, at: () => STILL, cloud: (t) => Math.sin(Math.min(1, tick(t) / 14) * Math.PI) ** 0.5, ease: true, extra: true },
   'weather-snap': { seconds: 12, at: () => STILL, cloud: (t) => (t >= 2 && t < 7 ? 1 : 0), ease: true, extra: true },
+  // The clouds drifting over the land as the clock runs, the camera still and zoomed out; and the same in each of the four
+  // views in turn (QUERY sets the cover, e.g. "cloud=0.45", and the hour).
+  clouds: { seconds: 8, at: () => CLOUDS, extra: true },
+  'clouds-views': { seconds: 16, at: (t) => ({ ...CLOUDS, view: Math.min(3, Math.floor(t / 4)) }), extra: true },
   timeline: { seconds: 40, at: () => STILL, timeline: (t) => t, ease: true, extra: true },
   'fog-lift': { seconds: 22, at: () => ({ x: -6, z: 4, zoom: 28, view: 0 }), timeline: (t) => t, spell: 'fog', ease: true, extra: true },
 };
