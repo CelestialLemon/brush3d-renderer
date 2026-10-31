@@ -2,7 +2,8 @@
 //   node tools/video.ts [out-dir] [move ...]      moves: pan, pan-wide, pan-up, turn, zoom, wind (default: all but the
 //   wind strengths), wind-calm, wind-breeze, wind-gale, wind-storm, wind-hurricane, wind-ramp (calm to hurricane and back),
 //   weather-ramp (clear to overcast and back, sent in steps as the game sends it), weather-snap (the same, the cover
-//   jumping clear, overcast, clear: what the ease has to hide), timeline (the demo's scripted weather at 3x the game's speed)
+//   jumping clear, overcast, clear: what the ease has to hide), timeline (the demo's scripted shower at 3x the game's speed),
+//   fog-lift (the scripted morning fog lifting to a mist and clearing, at 3x; QUERY="hour=7" for a dawn)
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
 // tools/browser.ts for the rest.
@@ -22,7 +23,7 @@ const STRENGTHS = { calm: 0, breeze: 5, gale: 17, storm: 25, hurricane: 35 };
  */
 interface Move {
   seconds: number; at: (t: number) => Cam; wind?: (t: number) => number; cloud?: (t: number) => number;
-  timeline?: (t: number) => number; ease?: boolean; extra?: boolean;
+  timeline?: (t: number) => number; spell?: 'shower' | 'fog'; ease?: boolean; extra?: boolean;
 }
 /** The game's updates: a few a second (src/app/timeline.ts), so the weather comes in steps the renderer eases over. */
 const tick = (t: number) => Math.floor(t * 4) / 4;
@@ -47,6 +48,7 @@ const MOVES: Record<string, Move> = {
   'weather-ramp': { seconds: 16, at: () => STILL, cloud: (t) => Math.sin(Math.min(1, tick(t) / 14) * Math.PI) ** 0.5, ease: true, extra: true },
   'weather-snap': { seconds: 12, at: () => STILL, cloud: (t) => (t >= 2 && t < 7 ? 1 : 0), ease: true, extra: true },
   timeline: { seconds: 40, at: () => STILL, timeline: (t) => t, ease: true, extra: true },
+  'fog-lift': { seconds: 22, at: () => ({ x: -6, z: 4, zoom: 28, view: 0 }), timeline: (t) => t, spell: 'fog', ease: true, extra: true },
 };
 
 /** The camera moved by screen pixels (right, up), as dragging does. */
@@ -77,7 +79,8 @@ try {
       const png = await page.evaluate((cam, time, wind, weather, timeline, ease) => {
         (window as any).__draw(cam, { time, wind, weather, timeline, ease });
         return document.querySelector('canvas')!.toDataURL('image/png');
-      }, move.at(t), 3 + t, wind, weather, move.timeline ? { time: move.timeline(t), speed: 3 } : undefined, !!move.ease && i > 0);
+      }, move.at(t), 3 + t, wind, weather, move.timeline ? { time: move.timeline(t), speed: 3, spell: move.spell ?? 'shower' } : undefined,
+      !!move.ease && i > 0);
       await writeFile(join(dir, `${String(i).padStart(4, '0')}.png`), Buffer.from(png.split(',')[1], 'base64'));
     }
     const file = join(out, `${name}.mp4`);

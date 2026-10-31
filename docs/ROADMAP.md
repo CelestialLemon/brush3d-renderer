@@ -111,6 +111,14 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   half to three-quarter cover than either end); judge it again with #8's cloud shadows, which change what part cover looks
   like.
 
+- **Mist and fog (#9, part 1, in review).** The haze from `setWeather` lies on the land: thickest low down and thinning
+  to its top, so a shallow mist pools along the water and in the hollows and a deep fog veils the land while roofs and
+  crowns rise out of it; thin, it breaks into patches keyed to the world that drift with the wind (a gale thins it and
+  drags it into streaks). An optional `base` lifts it off the ground (low cloud). Its colour is the game's in noon's
+  light, lit by the hour. The game lifts a mist by lowering its amount and top (the demo's timeline has a morning fog
+  lifting). To choose on the preview: ink lines in fog (fade, soft, crisp) and how the fog sits over the paint (veil,
+  wash, keep). Dust and the heat wave come next.
+
 ### Motion and stability
 
 First round done 2026-10-29: `tools/motion.ts` measures crawl (sub-pixel pans, frames lined back up), `tools/video.ts`

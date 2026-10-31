@@ -5,6 +5,7 @@ import { OVERCAST, overcastLook, skyShare } from './overcast';
 import {
   createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
 } from './materials';
+import { fogNoiseTexture, litFog } from './fog';
 import { POST_FRAG, POST_VERT } from './post';
 import { ShelterMap, type Cover } from './shelter';
 import type { PassTimer } from './timer';
@@ -48,6 +49,10 @@ export interface Settings {
   falling: boolean;
   /** Show the shelter map over the frame: what's under cover, and the map from above in the corner. */
   shelterDebug: boolean;
+  /** How far ink lines fade into fog: 1 with what they draw, 0 not at all (crisp). A look to choose (#9). */
+  fogInk: number;
+  /** How much of the paint's own colour the fog keeps: 0 a plain veil. A look to choose (#9). */
+  fogKeep: number;
 }
 
 /** The kinds in the air, which settings.falling leaves out: the leaves the wind lifts (rain, snow and dust to come). */
@@ -80,7 +85,9 @@ export class BrushRenderer {
   readonly scene = new THREE.Scene();
   readonly view = new ViewCamera();
   readonly shared: SharedUniforms = createSharedUniforms();
-  readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true, falling: true, shelterDebug: false };
+  readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true, falling: true, shelterDebug: false,
+    fogInk: 1, fogKeep: 0,
+  };
   width = 1; height = 1;
   /** Device pixels per CSS pixel asked for (see RendererOptions): the screen's pixels, which the zoom counts in. */
   readonly screenRatio: number;
@@ -121,6 +128,8 @@ export class BrushRenderer {
   private underTarget: THREE.WebGLRenderTarget;
   private reflectTarget: THREE.WebGLRenderTarget;
   private look: Look | null = null;
+  /** The water's level, if the scene has water: the fog measures how deep it lies from it. */
+  private waterLevel: number | null = null;
   /** The wind as drawn, easing towards what the game last asked for (see setWind). */
   readonly wind = new WindState();
   /** The weather as drawn: the cover as the game sent it, the looks easing towards it (see setWeather). */
@@ -167,6 +176,10 @@ export class BrushRenderer {
         uTargetDepth: { value: CAMERA_DISTANCE }, uHazeColor: { value: new THREE.Color() }, uHazeDensity: { value: 0.02 },
         uHazeMax: { value: 0.4 }, uHazeFloor: { value: 0 }, uSkyTop: { value: new THREE.Color() }, uSkyBottom: { value: new THREE.Color() },
         uExposure: { value: 1 }, uSaturation: { value: 1 }, uNightShift: { value: 0 }, uShadeHue: { value: 0 }, uGrain: { value: 0.012 },
+        uCamPos: { value: new THREE.Vector3() }, uCamRight: { value: new THREE.Vector3() }, uCamUp: { value: new THREE.Vector3() },
+        uCamFwd: { value: new THREE.Vector3() }, uFogColor: { value: new THREE.Color() }, uFog: { value: new THREE.Vector4() },
+        uFogDrift: { value: new THREE.Vector2() }, tFogNoise: { value: fogNoiseTexture() }, uFogWind: { value: new THREE.Vector3(1, 0, 1) }, uFogInk: { value: 1 },
+        uFogKeep: { value: 0 },
       },
     });
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.post));
@@ -336,7 +349,7 @@ export class BrushRenderer {
   }
 
   /** The height of the water's surface, the plane it mirrors the scene in. */
-  setWaterLevel(y: number) { this.shared.uMirrorY.value = y; }
+  setWaterLevel(y: number) { this.shared.uMirrorY.value = y; this.waterLevel = y; }
 
   resize(cssWidth: number, cssHeight: number) {
     this.pixelRatio = Math.min(this.screenRatio, Math.sqrt(this.maxPixels / Math.max(1, cssWidth * cssHeight)));
@@ -381,7 +394,26 @@ export class BrushRenderer {
     u.uSkyTop.value.copy(look.skyTop); u.uSkyBottom.value.copy(look.skyBottom);
     s.uSkyTop.value.copy(look.skyTop); s.uSkyBottom.value.copy(look.skyBottom);
     u.uExposure.value = look.exposure; u.uSaturation.value = look.saturation; u.uNightShift.value = look.nightShift; u.uShadeHue.value = rad(look.shadeHue);
+    this.applyFog();
     this.updateSunCamera();
+  }
+
+  /**
+   * The fog's uniforms from the weather as drawn and the light just set. Its colour is the game's in noon's clear light,
+   * lit by the hour's sun and sky as they are now (pink-gold at dawn, moonlight blue at night, the grey day's light under
+   * cloud); the exposure dims it with everything else. Wind thins it and drags it out downwind.
+   */
+  private applyFog() {
+    const w = this.weather, wind = this.wind, u = this.post.uniforms, s = this.shared;
+    litFog(u.uFogColor.value, w.hazeColor, s.uSunColor.value, s.uSkyColor.value);
+    const thin = 1 / (1 + Math.max(0, wind.speed - 5) / 20);
+    // It thins over most of its depth, measured from its base or else the water (the valley's floor).
+    const floor = Math.max(w.hazeBase, this.waterLevel ?? w.hazeTop - 4);
+    u.uFog.value.set(w.haze * thin, w.hazeBase, w.hazeTop, Math.max(0.5, 0.7 * (w.hazeTop - floor)));
+    u.uFogDrift.value.set(w.hazeDriftX, w.hazeDriftZ);
+    u.uFogWind.value.set(wind.dirX, wind.dirZ, 1 + wind.speed / 10);
+    u.uFogInk.value = this.settings.fogInk;
+    u.uFogKeep.value = this.settings.fogKeep;
   }
 
   private updateSunCamera() {
@@ -485,6 +517,7 @@ export class BrushRenderer {
     s.uWindDrift.value.set(w.driftX, w.driftZ);
     s.uWindFlutter.value = w.flutter;
     this.weather.update(time);
+    this.weather.drift(time, w.dirX, w.dirZ, w.speed);
     this.applyLook(this.look);
     const grounded: THREE.Object3D[] = [];
     if (!this.settings.falling) {
@@ -495,6 +528,12 @@ export class BrushRenderer {
     this.view.apply(this.width * toScreen, this.height * toScreen);
     s.uViewBack.value.copy(this.view.backward());
     s.uViewTarget.value.copy(this.view.target);
+    // Where each pixel is in the world, for the fog: the camera's frame, scaled to half the view.
+    const cam = this.view.camera, pu = this.post.uniforms;
+    pu.uCamPos.value.copy(cam.position);
+    pu.uCamRight.value.setFromMatrixColumn(cam.matrixWorld, 0).multiplyScalar(cam.right);
+    pu.uCamUp.value.setFromMatrixColumn(cam.matrixWorld, 1).multiplyScalar(cam.top);
+    pu.uCamFwd.value.setFromMatrixColumn(cam.matrixWorld, 2).negate();
     this.scene.updateMatrixWorld();
     for (const [mesh, twin] of this.twins) twin.matrixWorld.copy(mesh.matrixWorld);
     const gl = this.gl;

@@ -1,6 +1,7 @@
+import { FOG_NOISE_CELLS } from './fog';
 import { NOISE, OKLAB } from './glsl';
 
-// The post pass: lines on inked things, haze, the sky, a grade, and out to sRGB.
+// The post pass: lines on inked things, the fog lying on the land, the distance's haze, the sky, a grade, and out to sRGB.
 
 export const POST_VERT = /* glsl */ `
 varying vec2 vUv;
@@ -26,12 +27,82 @@ uniform float uSaturation;
 uniform float uNightShift;
 uniform float uShadeHue;
 uniform float uGrain;
+// Where a pixel is in the world: the camera's position, its right and up scaled to half the view, and its forward (the
+// camera is orthographic, so every pixel looks the same way and its depth is a distance along it).
+uniform vec3 uCamPos;
+uniform vec3 uCamRight;
+uniform vec3 uCamUp;
+uniform vec3 uCamFwd;
+// The fog (#9): its colour as lit; x how thick, y its base, z its top, w how far under its top it thins (metres); its patches' drift (metres) and the wind's
+// direction and how far it stretches them along it; how far lines fade into it and how much of the paint's colour it keeps.
+uniform sampler2D tFogNoise;
+uniform vec3 uFogColor;
+uniform vec4 uFog;
+uniform vec2 uFogDrift;
+uniform vec3 uFogWind;
+uniform float uFogInk;
+uniform float uFogKeep;
 varying vec2 vUv;
 ${NOISE}
 ${OKLAB}
 
 const float FAR = 1e4;
 float depthOf(vec4 a) { return a.z <= 0.0 ? FAR : a.z; }
+
+// The fog gathers over FOG_SOFT_BASE metres above its base, if it has one, and thins to nothing at its top over uFog.w
+// metres: most of its depth, so a shallow mist lies thickest along the water and in the hollows, and a deep fog veils all
+// the land while roofs and crowns rise out of it. Its thickness is per depth of the layer, so a shallow mist and a deep fog
+// of the same amount hide the bottom of the layer alike.
+const float FOG_SOFT_BASE = 1.0;
+const float FOG_NOISE_CELLS = ${FOG_NOISE_CELLS.toFixed(1)};
+const float FOG_DENSITY = 2.5;
+// The most it hides: the farm still shows through the thickest.
+const float FOG_MAX = 0.85;
+
+// The baked noise (fog.ts) at a point in noise cells: about -1..1.
+float fogNoise(vec2 p) { return texture2D(tFogNoise, p / FOG_NOISE_CELLS).r * 2.0 - 1.0; }
+
+// How thick the fog is at a height, 0..1.
+float fogProfile(float y) {
+  return clamp((uFog.z - y) / uFog.w, 0.0, 1.0) * clamp((y - uFog.y) / FOG_SOFT_BASE, 0.0, 1.0);
+}
+
+// Patches, keyed to the world and drifting with the wind, stretched along it: a thick fog covers everything, a thin one
+// breaks up, and the low parts of the layer keep it longest. Two sizes, drifting at different speeds, so the patches
+// change shape as they go rather than sliding as one sheet.
+float fogPatch(vec2 xz, float y) {
+  vec2 w = uFogWind.xy;
+  vec2 q = xz - uFogDrift;
+  q = vec2(dot(q, w) / uFogWind.z, dot(q, vec2(-w.y, w.x)));
+  float n = fogNoise(q * 0.055) * 0.65 + fogNoise(q * 0.14 + uFogDrift * 0.25 + 11.0) * 0.35;
+  float bias = (uFog.x - 0.35) * 2.5 + fogProfile(y) * 0.5 - 0.25;
+  return smoothstep(-0.5, 0.5, n + bias);
+}
+
+// The share of a surface the fog hides: summed along the view's path up out of the layer from the surface, in a few
+// steps, so a patch veils what's under it and things rising out of the fog clear it.
+float fogAt(vec3 p) {
+  float ya = max(p.y, uFog.y), yb = uFog.z;
+  if (yb <= ya) return 0.0;
+  vec3 back = -uCamFwd;
+  float dy = (yb - ya) / 4.0, sum = 0.0;
+  for (int i = 0; i < 4; i++) {
+    float y = ya + (float(i) + 0.5) * dy;
+    vec3 q = p + back * ((y - p.y) / back.y);
+    sum += fogProfile(y) * fogPatch(q.xz, y);
+  }
+  return FOG_MAX * (1.0 - exp(-sum * dy / uFog.w * uFog.x * FOG_DENSITY));
+}
+
+// Laid over a colour: a veil of its colour, and (keep > 0) some of the paint's own colour given back over it, at the
+// veil's lightness, so a field in fog is a paler, softer yellow rather than grey.
+vec3 fogOver(vec3 c, float f) {
+  vec3 v = mix(c, uFogColor, f);
+  if (uFogKeep <= 0.0) return v;
+  vec3 lab = linToOklab(v);
+  lab.yz += linToOklab(c).yz * uFogKeep * f;
+  return oklabToLinFit(lab);
+}
 
 vec3 toSrgb(vec3 c) {
   c = clamp(c, 0.0, 1.0);
@@ -65,6 +136,14 @@ void main() {
     edge *= aux.w;
   }
 
+  // Fog: lying on the land, over the surface and under the distance's haze.
+  float fog = 0.0;
+  if (!sky && uFog.x > 0.0) {
+    vec2 ndc = vUv * 2.0 - 1.0;
+    fog = fogAt(uCamPos + uCamRight * ndc.x + uCamUp * ndc.y + uCamFwd * d);
+    c = fogOver(c, fog);
+  }
+
   // Haze: the hour's air over everything, thickening with distance past the camera's target.
   if (!sky) {
     float far = max(d - uTargetDepth, 0.0);
@@ -72,6 +151,8 @@ void main() {
     c = mix(c, uHazeColor, haze);
   }
 
+  // In fog, lines fade with what they draw, or stay (uFogInk).
+  edge *= 1.0 - fog / FOG_MAX * uFogInk;
   if (edge > 0.0) {
     vec3 lab = linToOklab(c);
     vec3 ink = hueToward(lchShift(lab, -0.45 * lab.x, 1.25, 0.0), uShadeHue, 0.25);

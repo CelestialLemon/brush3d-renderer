@@ -4,18 +4,20 @@ import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
 import type { MaterialKind } from '../renderer/materials';
-import { WEATHER_PRESETS, type Haze, type Weather, type WeatherName } from '../renderer/weather';
+import { GROUND, WEATHER_PRESETS, type Haze, type Weather, type WeatherName } from '../renderer/weather';
 import { WIND_SCALE, windName, type Wind, type WindStrength } from '../renderer/wind';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
-import { SPEEDS, timelineAt, timelinePhase } from './timeline';
+import { SPEEDS, SPELLS, timelineAt, timelinePhase, type SpellName } from './timeline';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
 //   view=0..3  zoom=16..96 (screen px per metre)  hour=0..24  x, z (camera target)  t (seconds: freeze the clock there)
 //   scene=farm|meadow  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   weather (clear|scattered|overcast|soft-rain|storm|fog|dust|heat-wave|snow|blizzard), then each value over it:
-//     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop (metres)
+//     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop, hazeBase (metres)
+//   fogInk=fade|soft|crisp (ink lines in fog), fogLook=veil|wash|keep (the fog over the paint): looks to choose between (#9)
 //   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
+//   spell=shower|fog (which scripted weather: a shower, or a morning fog lifting)
 //   falling=0 (leave out the things in the air: the wind's leaves, and rain, snow and dust to come)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
 //   prepass=0 (paint without drawing the silhouettes first)  scissor=0 (the water's passes over the whole screen)
@@ -78,13 +80,25 @@ const preset: Weather = WEATHER_PRESETS[presetName ?? 'clear'];
 const presetHaze: Haze = preset.haze ?? { amount: 0, color: 0xcfd6d8, top: 4 };
 const weather: Required<Weather> & { haze: Haze } = {
   cloud: num('cloud', preset.cloud), rain: num('rain', preset.rain ?? 0), snow: num('snow', preset.snow ?? 0), heat: num('heat', preset.heat ?? 0),
-  haze: { amount: num('haze', presetHaze.amount), color: params.has('hazeColor') ? parseInt(params.get('hazeColor')!, 16) : presetHaze.color, top: num('hazeTop', presetHaze.top) },
+  haze: {
+    amount: num('haze', presetHaze.amount), color: params.has('hazeColor') ? parseInt(params.get('hazeColor')!, 16) : presetHaze.color,
+    top: num('hazeTop', presetHaze.top), base: num('hazeBase', presetHaze.base ?? GROUND),
+  },
 };
-if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop'].some((k) => params.has(k))) presetName = null;
+if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase'].some((k) => params.has(k))) presetName = null;
+// Looks to choose between (#9), each a button and a URL option: how ink lines fare in fog, and how the fog sits over the paint.
+const FOG_INK = { fade: 1, soft: 0.5, crisp: 0 } as const;
+const FOG_LOOK = { veil: 0, wash: 0.3, keep: 0.6 } as const;
+type FogInk = keyof typeof FOG_INK; type FogLook = keyof typeof FOG_LOOK;
+let fogInk: FogInk = (params.get('fogInk') as FogInk) in FOG_INK ? params.get('fogInk') as FogInk : 'fade';
+let fogLook: FogLook = (params.get('fogLook') as FogLook) in FOG_LOOK ? params.get('fogLook') as FogLook : 'veil';
+const applyFogLooks = () => { renderer.settings.fogInk = FOG_INK[fogInk]; renderer.settings.fogKeep = FOG_LOOK[fogLook]; };
+applyFogLooks();
 renderer.setWeather(weather, true);
 renderer.settings.falling = num('falling', 1) !== 0;
 // The scripted timeline, at a game speed: it sends the weather as the game would, a few times a second.
 let playing = params.has('timeline'), speed = Number(params.get('timeline')) || 1;
+let spell: SpellName = (params.get('spell') ?? '') in SPELLS ? params.get('spell') as SpellName : 'shower';
 if (playing) presetName = null;
 let timelineStart: number | null = null, timelineSent = '';
 const frozen = params.has('t') ? num('t', 0) : null;
@@ -157,7 +171,7 @@ function hud() {
     if (!(pick.value in WEATHER_PRESETS)) return;
     const p: Weather = WEATHER_PRESETS[pick.value as WeatherName];
     Object.assign(weather, { cloud: p.cloud, rain: p.rain ?? 0, snow: p.snow ?? 0, heat: p.heat ?? 0 });
-    weather.haze = p.haze ? { ...p.haze } : { ...weather.haze, amount: 0 };
+    weather.haze = p.haze ? { base: GROUND, ...p.haze } : { ...weather.haze, amount: 0 };
     presetName = pick.value as WeatherName; playing = false; timelineEl.textContent = '';
     renderer.setWeather(weather);
     hud();
@@ -174,12 +188,19 @@ function hud() {
   hudEl.append(slider('Snow', 0, 1, 0.01, () => weather.snow, weatherSet((v) => { weather.snow = v; }), share, true));
   hudEl.append(slider('Heat', 0, 1, 0.01, () => weather.heat, weatherSet((v) => { weather.heat = v; }), share, true));
   hudEl.append(slider('Haze', 0, 1, 0.01, () => weather.haze.amount, weatherSet((v) => { weather.haze.amount = v; }), share, true));
-  hudEl.append(slider('up to', 0, 30, 0.5, () => weather.haze.top, weatherSet((v) => { weather.haze.top = v; }), (v) => `${v.toFixed(1)} m`, true));
+  hudEl.append(slider('from', -2, 20, 0.25, () => Math.max(-2, weather.haze.base ?? GROUND), weatherSet((v) => { weather.haze.base = v <= -2 ? GROUND : v; }),
+    (v) => (v <= -2 ? 'ground' : `${v.toFixed(1)} m`), true));
+  hudEl.append(slider('up to', -1, 30, 0.25, () => weather.haze.top, weatherSet((v) => { weather.haze.top = v; }), (v) => `${v.toFixed(1)} m`, true));
   const colour = Object.assign(document.createElement('input'), { type: 'color', value: `#${weather.haze.color.toString(16).padStart(6, '0')}` });
   colour.oninput = () => weatherSet((v) => { weather.haze.color = v; })(parseInt(colour.value.slice(1), 16));
   hudEl.append(colour);
   const play = Object.assign(document.createElement('button'), { textContent: 'Timeline', className: playing ? 'on' : '' });
-  play.title = 'Clear, cloud building, a shower, clearing again: sent as the game sends it';
+  play.title = 'The scripted weather, sent as the game sends it';
+  const spells = document.createElement('select');
+  for (const name of Object.keys(SPELLS)) spells.append(new Option(name === 'fog' ? 'morning fog' : name, name, false, name === spell));
+  spells.title = 'shower: clear, cloud building, a shower, clearing again · morning fog: a fog lifting, then mist gathering in the evening';
+  spells.onchange = () => { spell = spells.value as SpellName; timelineStart = null; timelineSent = ''; };
+  spells.onkeydown = (e) => e.stopPropagation();
   play.onclick = () => {
     playing = !playing; timelineStart = null; timelineSent = '';
     if (playing) { presetName = null; pick.value = 'custom'; } else timelineEl.textContent = '';
@@ -193,7 +214,19 @@ function hud() {
     if (playing && timelineStart !== null) timelineStart = lastTime - ((lastTime - timelineStart) * speed) / next;
     speed = next; pace.textContent = `${speed}× speed`;
   };
-  hudEl.append(play, pace, timelineEl);
+  hudEl.append(play, spells, pace, timelineEl);
+
+  // The looks to choose between (#9): a button each, cycling through the candidates.
+  hudEl.append(Object.assign(document.createElement('div'), { className: 'break' }));
+  const cycle = <K extends string>(label: string, all: readonly K[], get: () => K, set: (k: K) => void, title: string) => {
+    const b = Object.assign(document.createElement('button'), { textContent: `${label}: ${get()}`, title });
+    b.onclick = () => { set(all[(all.indexOf(get()) + 1) % all.length]); applyFogLooks(); hud(); };
+    hudEl.append(b);
+  };
+  cycle('Ink in fog', Object.keys(FOG_INK) as FogInk[], () => fogInk, (k) => { fogInk = k; },
+    'fade: lines fade with what they draw · soft: halfway · crisp: lines stay');
+  cycle('Fog', Object.keys(FOG_LOOK) as FogLook[], () => fogLook, (k) => { fogLook = k; },
+    'veil: a veil of the fog\'s colour · wash: it keeps a little of the paint\'s colour under it · keep: more');
 }
 const timelineEl = document.createElement('span');
 /** The weather controls' values, put back to what they show (the timeline moves them). */
@@ -222,12 +255,13 @@ function playTimeline(time: number) {
   lastTime = time;
   if (!playing) return;
   timelineStart ??= time;
-  const w = timelineAt(time - timelineStart, speed), key = JSON.stringify(w);
-  timelineEl.textContent = timelinePhase(time - timelineStart, speed);
+  const w = timelineAt(time - timelineStart, speed, spell), key = JSON.stringify(w);
+  timelineEl.textContent = timelinePhase(time - timelineStart, speed, spell);
   if (key === timelineSent) return;
   timelineSent = key;
-  // The game sends the whole weather: what the spell leaves out is none.
-  Object.assign(weather, whole(w), { haze: { ...weather.haze, amount: 0 } });
+  // The game sends the whole weather: what the spell leaves out is none (a haze thinned away keeps its colour and height).
+  const { haze, ...rest } = whole(w);
+  Object.assign(weather, rest, { haze: haze ? { base: GROUND, ...haze } : { ...weather.haze, amount: 0 } });
   renderer.setWeather(weather);
   for (const r of refreshers) r();
 }
@@ -236,12 +270,13 @@ function playTimeline(time: number) {
 // somewhere (a fractional view turns part way), leaves some kinds out, and draws, leaving the frame on the canvas.
 if (params.has('shot')) {
   // options.wind sets the wind, options.weather the weather (a preset's name, whole, or values over the demo's), and
-  // options.timeline the scripted weather (whole) at a time (seconds, at a game speed, the demo's by default); all at once, unless ease is
+  // options.timeline the scripted weather (whole) at a time (seconds, at a game speed and in a spell, the demo's by
+  // default); all at once, unless ease is
   // set: then they ease as the clock runs. options.hour sets the hour.
   const draw = (cam?: { x: number; z: number; zoom: number; view: number },
     options: {
       hide?: MaterialKind[]; grain?: boolean; time?: number; hour?: number; wind?: Partial<Wind>;
-      weather?: Partial<Weather> | WeatherName; timeline?: { time: number; speed?: number }; ease?: boolean;
+      weather?: Partial<Weather> | WeatherName; timeline?: { time: number; speed?: number; spell?: SpellName }; ease?: boolean;
     } = {}) => {
     if (cam) { view.target.set(cam.x, 0, cam.z); view.zoom = cam.zoom; view.view = cam.view; view.update(0, true); }
     if (options.hour !== undefined) hour = options.hour;
@@ -250,7 +285,10 @@ if (params.has('shot')) {
       const w = typeof options.weather === 'string' ? whole(WEATHER_PRESETS[options.weather]) : { ...weather, ...options.weather };
       renderer.setWeather(w, !options.ease);
     }
-    if (options.timeline) renderer.setWeather(whole(timelineAt(options.timeline.time, options.timeline.speed ?? speed)), !options.ease);
+    if (options.timeline) {
+      const t = options.timeline;
+      renderer.setWeather(whole(timelineAt(t.time, t.speed ?? speed, t.spell ?? spell)), !options.ease);
+    }
     const kinds: MaterialKind[] = ['ground', 'paint', 'crop', 'ink', 'water', 'foliage', 'grass', 'debris'];
     for (const k of kinds) renderer.setVisible(k, !options.hide?.includes(k));
     const grain = renderer.settings.grain;
