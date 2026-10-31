@@ -1,4 +1,4 @@
-import { CLOUD_MAP_GLSL } from './cloudMap';
+import { CLOUD_MAP_GLSL, MIRROR } from './cloudMap';
 
 // Shared GLSL: noise, OKLab colour, and the painted light model every surface uses.
 //
@@ -190,6 +190,50 @@ vec3 sunColorHere() { return mix(uSunColor, uCloudSunColor, gCloud); }
 vec3 rimColorHere() { return mix(uRimColor, uCloudRimColor, gCloud); }
 float shadeHueHere() { return uShadeHue + uCloudBands.x * gCloud; }
 vec3 exposeHere(vec3 c) { return c * mix(uLightExposure, uCloudBands.w, gCloud); }
+`;
+
+/**
+ * The sky mirrored in the water and the solar glass (#8): the gaps' sky, and the clouds in it from the sky map (cloudMap.ts,
+ * MIRROR), lit by the hour (warm at dawn and dusk), thickening into the overcast sky as it closes. The uniforms are set by
+ * the renderer from the looks. Needs CLOUD_LIGHT and PAINT.
+ */
+export const MIRROR_SKY = /* glsl */ `
+uniform sampler2D uSkyMap;
+uniform vec4 uSkyRect;        // the sky map's corner (x, z) and 1 / its side
+uniform vec3 uGapSkyTop;      // the sky in the gaps between the clouds, overhead
+uniform vec3 uGapSkyBottom;   // and low down
+uniform vec3 uCloudLit;       // a cloud's sunlit side, in the hour's light
+uniform vec3 uCloudBelly;     // its underside; and the whole sky once it closes
+uniform vec4 uMirrorSky;      // how far the sky has closed (0..1), the look (candidates: 0 plain, 1 lit, 2 painted), how
+                              // much more the water mirrors a cloud (0..1)
+float skyCloudAt(vec2 xz) { return texture(uSkyMap, (xz - uSkyRect.xy) * uSkyRect.zw).r; }
+// Where a ray from p along r meets the clouds; rays near the horizon as if a little higher.
+vec2 skyPoint(vec3 p, vec3 r) { return p.xz + r.xz / max(r.y, ${MIRROR.rise.toFixed(2)}) * ${MIRROR.height.toFixed(1)}; }
+// The sky at xz, the gaps' between the top and the bottom by low (0 overhead .. 1 the horizon); cloud is how much of it
+// is cloud.
+vec3 mirrorSky(vec2 xz, float low, out float cloud) {
+  vec3 gap = mix(uGapSkyTop, uGapSkyBottom, low);
+  cloud = skyCloudAt(xz);
+  float closed = uMirrorSky.x;
+  int look = int(uMirrorSky.y + 0.5);
+  vec3 col = mix(uCloudLit, uCloudBelly, closed);
+  if (look == 1) {
+    // Lit: the side towards the sun bright, the thick middle a cooler grey.
+    float sunward = skyCloudAt(xz + normalize(uSunDir.xz + vec2(1e-4, 0.0)) * 8.0);
+    float edge = smoothstep(0.0, 0.25, cloud - sunward);
+    vec3 belly = mix(mix(uCloudLit, uCloudBelly, 0.85) * 0.9, uCloudBelly, closed);
+    col = mix(mix(col, belly, smoothstep(0.5, 1.0, cloud)), uCloudLit * 1.15, edge * (1.0 - closed));
+  } else if (look == 2) {
+    // Painted: three soft tones, their edges broken by strokes lying across the view. The strokes are fixed to the world
+    // (along x or along z, whichever lies more across the view), so turning the camera never sweeps them over the land;
+    // and they only break edges, never making a cloud in a clear sky or a gap in a closed one.
+    float across = smoothstep(0.3, 0.7, abs(uViewBack.x));
+    float stroke = mix(snoise(xz * vec2(0.08, 1.2)), snoise(xz.yx * vec2(0.08, 1.2) + 31.0), across);
+    float t = clamp(cloud + stroke * 0.3 * min(1.0, 4.0 * cloud * (1.0 - cloud)), 0.0, 1.0) * 3.0;
+    cloud = (floor(t) + smoothstep(0.35, 0.65, fract(t))) / 3.0;
+  }
+  return mix(gap, col, cloud);
+}
 `;
 
 /** Sun visibility from the shadow map, softened by a small rotated disc of taps and nudged by the brush, in 0..1. */

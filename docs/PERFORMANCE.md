@@ -99,7 +99,7 @@ laptop.
 | | laptop | RX 570 |
 |---|---:|---:|
 | The scene (shadow, water, main view, post) | 17.0 | 9.0 |
-| Cloud shadows (#8): a cloud texture, read where the sun's light is | 0.5 | 0.3 |
+| Clouds (#8): a cloud texture, read where the sun's light is, and a coarser one for the water and glass to mirror | 0.5 | 0.3 |
 | Mist, fog, dust and haze (#9), in the post pass | 0.8 | 0.4 |
 | The shelter map (#10): buildings from above, redrawn only when they change | 0.2 | 0.1 |
 | Rain or snow falling (#11, #14) | 1.5 | 0.8 |
@@ -134,6 +134,11 @@ The map is 262,000 texels of noise whatever is on them, so it costs the same on 
 (below 30%) or near full (above 85%), where it's one layer of cloud, and 0.24 between, where the light clouds turn into
 the heavy ones and both layers are worked out. With the reads, about 0.35 a frame at worst, a little over the 0.3 set
 aside, which the developer accepted for the clouds' look (#8). The laptop's numbers come from `?profile` on #8's preview.
+
+The water and the solar glass mirror the clouds from a second map (`MIRROR` in src/renderer/cloudMap.ts): 256², covering
+the land and 80 m round it (how far a mirrored ray reaches the clouds), drawn in the same pass whenever the first is. It
+adds 0.06 to the map (0.30 at 45% cover), and the frame goes 11.91 → 11.96 on the farm, 5.21 → 5.27 on the meadow: about
+0.4 a frame at worst for the clouds altogether.
 
 ### The shelter map (#10)
 
