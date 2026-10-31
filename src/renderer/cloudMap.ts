@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CLOUD_GLSL, CLOUD_SHAPE, cloudShift, cloudThreshold, seedOf, type CloudField, type CloudShape } from './clouds';
+import { CLOUD_GLSL, CLOUD_SHAPE, cloudUniforms, type CloudField, type CloudShape } from './clouds';
 
 // The cloud map (#8): the cloud field's shade (clouds.ts) drawn into a small texture over the land whenever the clouds
 // move, so every surface reads its shade with one lookup rather than working the recipe out in every pixel
@@ -13,7 +13,7 @@ uniform vec4 uCloudRect;     // the map's corner (x, z) and 1 / its side
 float cloudMapShade(vec2 xz) { return texture(uCloudMap, (xz - uCloudRect.xy) * uCloudRect.zw).r; }
 `;
 
-// The points from the map's corner, which goes in the shift (cloudShift's origin): small numbers wherever the land is.
+// The points from the map's corner, which goes in the shift (cloudUniforms' origin): small numbers wherever the land is.
 const VERT = /* glsl */ `
 precision highp float;
 in vec3 position;
@@ -56,8 +56,9 @@ export class CloudMap {
       glslVersion: THREE.GLSL3, vertexShader: VERT, fragmentShader: FRAG, depthTest: false, depthWrite: false,
       uniforms: {
         uCloudRect: this.uniforms.uCloudRect,
-        uCloudShape: { value: new THREE.Vector4() }, uCloudShift: { value: new THREE.Vector2() },
-        uCloudThreshold: { value: new THREE.Vector2() }, uCloudSeed: { value: 0 },
+        uCloudShape: { value: new THREE.Vector4() }, uCloudHeavy: { value: new THREE.Vector4() },
+        uCloudShift: { value: new THREE.Vector4() }, uCloudNorm: { value: new THREE.Vector4() },
+        uCloudThreshold: { value: new THREE.Vector4() }, uCloudSeed: { value: 0 },
       },
     });
     const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material);
@@ -83,11 +84,10 @@ export class CloudMap {
     if (key === this.drawn) return;
     this.drawn = key;
     const u = this.material.uniforms;
-    (u.uCloudShape.value as THREE.Vector4).set(1 / shape.size, shape.warp, shape.rough, shape.billow);
     const rect = this.uniforms.uCloudRect.value;
-    (u.uCloudShift.value as THREE.Vector2).fromArray(cloudShift(field, shape, rect.x, rect.y));
-    (u.uCloudThreshold.value as THREE.Vector2).fromArray(cloudThreshold(field.cover, shape));
-    u.uCloudSeed.value = seedOf(field.seed);
+    const { uCloudSeed, ...vectors } = cloudUniforms(field, shape, rect.x, rect.y);
+    for (const [name, v] of Object.entries(vectors)) (u[name].value as THREE.Vector4).fromArray(v);
+    u.uCloudSeed.value = uCloudSeed;
     gl.setRenderTarget(this.target);
     gl.render(this.scene, this.camera);
   }

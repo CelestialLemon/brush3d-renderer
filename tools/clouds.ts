@@ -12,7 +12,7 @@
 //    falls rather than its exact value: what's read at a point must be a shade the recipe gives within a texel of it
 //    (19 cm on the farm), give or take a fiftieth. The shadows are drawn where the game has them, to within that.
 // Exits with 1 if any of them is off by more than its tolerance.
-import { CLOUD_GLSL, CLOUD_SHAPES, PERIOD, cloudShade, cloudShift, cloudThreshold, seedOf, type CloudField, type CloudShape } from '../src/renderer/clouds.ts';
+import { CLOUD_GLSL, CLOUD_SHAPES, cloudShade, cloudSpan, cloudUniforms, type CloudField, type CloudShape } from '../src/renderer/clouds.ts';
 import { launch, open } from './browser.ts';
 
 let failed = false;
@@ -38,7 +38,7 @@ for (const [name, shape] of shapes) {
   }
   check(`shape ${name}: the shaded share against the cover, worst of five`, worst, 0.03);
   let repeat = 0;
-  const field: CloudField = { cover: 0.5, x: 3.3, z: -1.7, seed: 9 }, span = PERIOD * shape.size;
+  const field: CloudField = { cover: 0.5, x: 3.3, z: -1.7, seed: 9 }, span = cloudSpan(shape);
   for (let i = 0; i < 400; i++) {
     const x = i * 1.37, z = i * -0.91;
     repeat = Math.max(repeat, Math.abs(cloudShade(x, z, field, shape) - cloudShade(x + span, z - 2 * span, field, shape)));
@@ -64,10 +64,7 @@ try {
   await open(page, 't=0&scene=meadow');
   console.log('\nThe GLSL twin on the GPU, against the TypeScript');
   // Each case's uniforms, worked out here as the renderer does.
-  const uniforms = cases.map((c) => {
-    const shape = CLOUD_SHAPES[c.shape as keyof typeof CLOUD_SHAPES], field = { cover: c.cover, x: c.x, z: c.z, seed: c.seed };
-    return { shape: [1 / shape.size, shape.warp, shape.rough, shape.billow], shift: cloudShift(field, shape), threshold: cloudThreshold(c.cover, shape), seed: seedOf(c.seed) };
-  });
+  const uniforms = cases.map((c) => cloudUniforms({ cover: c.cover, x: c.x, z: c.z, seed: c.seed }, CLOUD_SHAPES[c.shape as keyof typeof CLOUD_SHAPES]));
   const results = await page.evaluate(runTwin, CLOUD_GLSL, uniforms, GRID, X0, Z0, STEP);
   for (const [k, c] of cases.entries()) {
     const shape = CLOUD_SHAPES[c.shape as keyof typeof CLOUD_SHAPES], gpu = results[k];
@@ -119,7 +116,7 @@ try {
 process.exit(failed ? 1 : 0);
 
 /** In the page: the GLSL twin at the grid's points, for each case, read back as floats. */
-function runTwin(glsl: string, uniforms: { shape: number[]; shift: number[]; threshold: number[]; seed: number }[], grid: number, x0: number, z0: number, step: number) {
+function runTwin(glsl: string, uniforms: ({ uCloudSeed: number } & Record<string, number[] | number>)[], grid: number, x0: number, z0: number, step: number) {
   const canvas = document.createElement('canvas');
   const gl = canvas.getContext('webgl2')!;
   if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('no float render targets');
@@ -158,10 +155,8 @@ void main() { o = vec4(cloudShadeAt(uGrid.xy + gl_FragCoord.xy * uGrid.z), 0.0, 
   const u = (name: string) => gl.getUniformLocation(program, name);
   const out: number[][] = [];
   for (const c of uniforms) {
-    gl.uniform4fv(u('uCloudShape'), c.shape);
-    gl.uniform2fv(u('uCloudShift'), c.shift);
-    gl.uniform2fv(u('uCloudThreshold'), c.threshold);
-    gl.uniform1i(u('uCloudSeed'), c.seed);
+    for (const [name, v] of Object.entries(c)) if (Array.isArray(v)) gl.uniform4fv(u(name), v);
+    gl.uniform1i(u('uCloudSeed'), c.uCloudSeed);
     gl.uniform3f(u('uGrid'), x0, z0, step);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     const px = new Float32Array(grid * grid * 4);

@@ -3,8 +3,9 @@
 //   wind strengths), wind-calm, wind-breeze, wind-gale, wind-storm, wind-hurricane, wind-ramp (calm to hurricane and back),
 //   weather-ramp (clear to overcast and back, sent in steps as the game sends it), weather-snap (the same, the cover
 //   jumping clear, overcast, clear: what the ease has to hide), clouds (the clouds drifting, the camera still),
-//   clouds-views (the same in each view in turn), timeline (the demo's scripted shower at 3x the game's speed),
-//   fog-lift (the scripted morning fog lifting to a mist and clearing, at 3x; QUERY="hour=7" for a dawn)
+//   clouds-views (the same in each view in turn), clouds-ramp (the cover rising, zoomed out), timeline (the demo's
+//   scripted shower at 3x the game's speed), fog-lift (the scripted morning fog lifting to a mist and clearing, at 3x;
+//   QUERY="hour=7" for a dawn)
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
 // tools/browser.ts for the rest.
@@ -53,6 +54,8 @@ const MOVES: Record<string, Move> = {
   // views in turn (QUERY sets the cover, e.g. "cloud=0.45", and the hour).
   clouds: { seconds: 8, at: () => CLOUDS, extra: true },
   'clouds-views': { seconds: 16, at: (t) => ({ ...CLOUDS, view: Math.min(3, Math.floor(t / 4)) }), extra: true },
+  // The cover rising from clear to overcast over 16 s at the game's ticks, the clouds drifting, zoomed out to see their shapes.
+  'clouds-ramp': { seconds: 20, at: () => ({ ...CLOUDS, zoom: 16 }), cloud: (t) => Math.min(1, tick(t) / 16), ease: true, extra: true },
   timeline: { seconds: 40, at: () => STILL, timeline: (t) => t, ease: true, extra: true },
   'fog-lift': { seconds: 22, at: () => ({ x: -6, z: 4, zoom: 28, view: 0 }), timeline: (t) => t, spell: 'fog', ease: true, extra: true },
 };
