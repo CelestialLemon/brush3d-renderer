@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { CloudField } from './clouds';
 
 // Weather: the game says what the sky is doing; the renderer draws it (#3, #7). The game owns the weather's state, its
 // logic and its pace (a shower building is the game changing its values over time); the renderer only eases the looks
@@ -25,10 +26,22 @@ export interface Haze {
   base?: number;
 }
 
-/** The weather the game asks for. Values left out are 0 (no haze). */
+/**
+ * Where the clouds have drifted to (metres, x and z: how far the wind aloft has carried the cloud field, clouds.ts), and
+ * how fast they're going now (metres a second of the time the renderer is given, x and z; see cloudDriftSpeed). Between
+ * the game's updates the renderer carries them on at that speed, so at each update they're exactly where the game says
+ * and in between they move smoothly, never behind (decided 2026-10-31, #8).
+ */
+export interface CloudDrift { x: number; z: number; vx?: number; vz?: number }
+
+/** The weather the game asks for. Values left out are 0 (no haze), but for the clouds' drift and seed, which carry on. */
 export interface Weather {
-  /** How much of the sky is covered, 0..1. Drawn exactly as given: gameplay reads it. */
+  /** How much of the sky is covered, 0..1. Drawn exactly as given: gameplay reads it (the cloud field, clouds.ts). */
   cloud: number;
+  /** Where the clouds have drifted to and how fast they're going: drawn exactly as given (see CloudDrift). */
+  drift?: CloudDrift;
+  /** Which cloud field, of many (a level's seed): a whole number. */
+  cloudSeed?: number;
   /** How hard it rains, 0..1. */
   rain?: number;
   /** How hard it snows, 0..1. Rain and snow are apart, so sleet is both and one can ease into the other. */
@@ -72,6 +85,9 @@ export class WeatherState {
   };
   /** The cover, exactly the game's: for what gameplay reads (the cloud field, #8). */
   cloud = 0;
+  /** The cloud field as drawn now: the cover, the drift carried on from the game's last at its speed, and the seed. */
+  readonly clouds: CloudField = { cover: 0, x: 0, z: 0, seed: 0 };
+  private drift = { x: 0, z: 0, vx: 0, vz: 0, since: null as number | null };
   /** The cover as the light shows it (the grey-day look), eased. */
   overcast = 0;
   rain = 0; snow = 0; heat = 0;
@@ -108,8 +124,14 @@ export class WeatherState {
       // A haze rising from none starts in its own colour and height, not the last one's.
       if (this.haze < 0.01) { this.hazeColor.copy(g.hazeColor); this.hazeTop = g.hazeTop; this.hazeBase = this.baseGoal(); }
     }
-    // The cover is never eased.
-    this.cloud = g.cloud;
+    // The cover is never eased, nor the drift.
+    this.cloud = this.clouds.cover = g.cloud;
+    if (w.drift) {
+      const d = this.drift;
+      d.x = w.drift.x; d.z = w.drift.z; d.vx = w.drift.vx ?? 0; d.vz = w.drift.vz ?? 0; d.since = null;
+      this.clouds.x = d.x; this.clouds.z = d.z;
+    }
+    if (w.cloudSeed !== undefined) this.clouds.seed = w.cloudSeed;
     if (immediate) this.snap();
   }
 
@@ -122,6 +144,12 @@ export class WeatherState {
 
   /** Advances to a time in seconds. The first time, and a jump back (a tool seeking), only take the time. */
   update(time: number) {
+    // The drift: where the game last put it, carried on at its speed from the first frame drawn after (a tool seeking
+    // back holds it there).
+    const d = this.drift;
+    d.since ??= time;
+    const ahead = Math.max(0, time - d.since);
+    this.clouds.x = d.x + d.vx * ahead; this.clouds.z = d.z + d.vz * ahead;
     const dt = this.time === null ? 0 : time - this.time;
     this.time = time;
     if (dt <= 0) return;

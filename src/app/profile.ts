@@ -30,7 +30,7 @@ export interface ProfileRow {
   uncapped: number;
 }
 
-export const PASSES = ['setup', 'shelter', 'shadow', 'under', 'reflect', 'main', 'post'];
+export const PASSES = ['setup', 'shelter', 'clouds', 'shadow', 'under', 'reflect', 'main', 'post'];
 const KINDS: MaterialKind[] = ['ground', 'paint', 'grass', 'foliage', 'crop', 'ink', 'water', 'debris'];
 const STORM = WIND_SCALE.storm;
 

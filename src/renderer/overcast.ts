@@ -70,6 +70,31 @@ function muted(c: THREE.Color, keep: number) {
 /** How far the light's shape (sky light, shadows) has turned under a cover: late, as the sky closes. */
 export const skyShare = (cover: number) => cover * cover;
 
+// The clouds (#8). Under part cover the land is in patches: the gaps between the clouds in the sun, the land under a cloud
+// in the overcast look (the developer's choice, 2026-10-31: the gaps are a clear day's sun until the sky is nearly
+// closed). The cloud field says where (clouds.ts); the renderer mixes the two lights by its shade.
+
+/** How overcast the gaps between the clouds look under a cover, with the sun direct: clear until the sky nearly closes. */
+export const gapCover = (cover: number) => {
+  const t = Math.min(1, Math.max(0, (cover - 0.85) / 0.15));
+  return t * t * (3 - 2 * t);
+};
+/**
+ * How much of the sun's cast shadows a cloud takes away while the sun's shadows still fall from it (part cover): most,
+ * as there's no sun under a cloud, but a trace keeps things standing on the ground. At full cover the recipe's soft
+ * darkening under things takes over (shadowFade, shadowLift).
+ */
+export const UNDER_CLOUD_FADE = 0.8;
+/** How strong the cloud shadows are by the moon, of the sun's (the developer's "yes, faintly", 2026-10-31). */
+export const CLOUD_NIGHT = 0.4;
+/**
+ * How much deeper a cloud's shade is than the overcast look's while there are gaps in the sun: the overcast light was set
+ * for a whole grey day, which the eye adapts to, and beside sunlit land it reads as barely a shadow. Eases back to the
+ * overcast look's as the sky closes (gapCover). Candidates for the developer (#8).
+ */
+export const CLOUD_DEPTHS = { light: 0.8, mid: 0.65, deep: 0.5 } as const;
+export type CloudDepthName = keyof typeof CLOUD_DEPTHS;
+
 /** The hour's look under a cover (0 clear .. 1 overcast), by a recipe. */
 export function overcastLook(look: Look, cover: number, r: OvercastRecipe): Look {
   if (cover <= 0) return look;

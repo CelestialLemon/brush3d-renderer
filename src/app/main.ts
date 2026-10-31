@@ -4,10 +4,12 @@ import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
 import type { MaterialKind } from '../renderer/materials';
-import { WEATHER_PRESETS, type Haze, type Weather, type WeatherName } from '../renderer/weather';
+import { CLOUD_DEPTHS, type CloudDepthName } from '../renderer/overcast';
+import { CLOUD_PACES, CLOUD_SHAPES, cloudDriftSpeed, type CloudPaceName, type CloudShapeName } from '../renderer/clouds';
+import { WEATHER_PRESETS, type CloudDrift, type Haze, type Weather, type WeatherName } from '../renderer/weather';
 import { WIND_SCALE, windName, type Wind, type WindStrength } from '../renderer/wind';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
-import { SPEEDS, SPELLS, timelineAt, timelinePhase, type SpellName } from './timeline';
+import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, type SpellName } from './timeline';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
 //   view=0..3  zoom=16..192 (screen px per metre)  hour=0..24  x, z (camera target)  t (seconds: freeze the clock there)
@@ -17,6 +19,9 @@ import { SPEEDS, SPELLS, timelineAt, timelinePhase, type SpellName } from './tim
 //     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop, hazeBase (metres)
 //   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
 //   spell=shower|fog (which scripted weather: a shower, or a morning fog lifting)
+//   clouds=a|b|c (the cloud shapes to choose between, #8)  cloudPace=slow|mid|fast (how fast they drift for the wind)
+//   cloudShade=light|mid|deep (how deep a cloud's shade is beside the sunny gaps)
+//   cloudSeed (which cloud field: a whole number)
 //   falling=0 (leave out the things in the air: the wind's leaves, and rain, snow and dust to come)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
 //   prepass=0 (paint without drawing the silhouettes first)  scissor=0 (the water's passes over the whole screen)
@@ -77,7 +82,9 @@ const weatherParam = params.get('weather');
 let presetName: WeatherName | null = weatherParam !== null && weatherParam in WEATHER_PRESETS ? weatherParam as WeatherName : null;
 const preset: Weather = WEATHER_PRESETS[presetName ?? 'clear'];
 const presetHaze: Haze = preset.haze ?? { amount: 0, color: 0xcfd6d8, top: 4 };
-const weather: Required<Weather> & { haze: Haze } = {
+/** The weather as the demo holds it: the sky's values (the clouds' drift is added as it's sent, see send). */
+type Sky = Required<Omit<Weather, 'drift' | 'cloudSeed'>>;
+const weather: Sky & { haze: Haze } = {
   cloud: num('cloud', preset.cloud), rain: num('rain', preset.rain ?? 0), snow: num('snow', preset.snow ?? 0), heat: num('heat', preset.heat ?? 0),
   haze: {
     amount: num('haze', presetHaze.amount), color: params.has('hazeColor') ? parseInt(params.get('hazeColor')!, 16) : presetHaze.color,
@@ -85,7 +92,42 @@ const weather: Required<Weather> & { haze: Haze } = {
   },
 };
 if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase'].some((k) => params.has(k))) presetName = null;
-renderer.setWeather(weather, true);
+// The clouds: the shape and pace candidates to choose between (#8; the ones not picked go before it merges), and the field.
+const pick = <T extends string>(k: string, names: Record<T, unknown>, d: T): T => { const v = params.get(k); return v !== null && v in names ? v as T : d; };
+let cloudShape = pick<CloudShapeName>('clouds', CLOUD_SHAPES, 'a'), cloudPace = pick<CloudPaceName>('cloudPace', CLOUD_PACES, 'mid');
+let cloudDepth = pick<CloudDepthName>('cloudShade', CLOUD_DEPTHS, 'mid');
+renderer.cloudShape = CLOUD_SHAPES[cloudShape];
+renderer.cloudDepth = CLOUD_DEPTHS[cloudDepth];
+const cloudSeed = num('cloudSeed', 1);
+
+// The clouds' drift, standing in for the game's: carried along by the demo's wind (standing in for the wind aloft) at the
+// drawn speed (cloudDriftSpeed), and sent with its speed whenever the weather is, as the game would.
+const drift = { x: 0, z: 0, vx: 0, vz: 0, at: 0 };
+function cloudVelocity() {
+  const v = cloudDriftSpeed(wind.speed, CLOUD_PACES[cloudPace]);
+  return { vx: Math.cos(wind.direction) * v, vz: Math.sin(wind.direction) * v };
+}
+/**
+ * The drift at a time: carried on from the last at the speed it had, then at the wind's speed now. A time before the last
+ * (a tool seeking back) puts it where the wind now would have carried it from none at time 0, so a still frame depends
+ * only on its time.
+ */
+function driftAt(time: number): CloudDrift {
+  const v = cloudVelocity();
+  if (time >= drift.at) { drift.x += drift.vx * (time - drift.at); drift.z += drift.vz * (time - drift.at); }
+  else { drift.x = v.vx * time; drift.z = v.vz * time; }
+  Object.assign(drift, v, { at: time });
+  return { x: drift.x, z: drift.z, vx: drift.vx, vz: drift.vz };
+}
+/** The weather last sent, which each tick sends again with the clouds' drift. */
+let sent: Weather = weather;
+/** Sends the weather as the game does, the clouds' drift and seed with it. */
+function send(w: Weather, immediate = false, time = lastTime) {
+  sent = { ...w };
+  renderer.setWeather({ ...w, drift: driftAt(time), cloudSeed }, immediate);
+}
+let lastTime = 0;
+send(weather, true, 0);
 renderer.settings.falling = num('falling', 1) !== 0;
 // The scripted timeline, at a game speed: it sends the weather as the game would, a few times a second.
 let playing = params.has('timeline'), speed = Number(params.get('timeline')) || 1;
@@ -148,7 +190,8 @@ function hud() {
   shelter.title = 'What\'s under cover: blue under a roof, teal under a crown, yellow the roofs\' tops; the map from above in the corner';
   shelter.onclick = () => { renderer.settings.shelterDebug = !renderer.settings.shelterDebug; hud(); };
   hudEl.append(shelter);
-  const windSet = (f: (v: number) => void) => (v: number) => { f(v); renderer.setWind(wind); };
+  // The clouds' speed follows the wind's: sent at once, as the game would.
+  const windSet = (f: (v: number) => void) => (v: number) => { f(v); renderer.setWind(wind); send(sent); };
   hudEl.append(slider('Wind', 0, 45, 0.5, () => wind.speed, windSet((v) => { wind.speed = v; }), (v) => `${windName(v)} ${v.toFixed(1)} m/s`));
   hudEl.append(slider('towards', 0, 360, 5, () => (wind.direction * 180) / Math.PI, windSet((v) => { wind.direction = (v * Math.PI) / 180; }), (v) => `${v.toFixed(0)}°`));
   // The zoom by its doubling, so each step of the slider zooms as much as the last.
@@ -160,22 +203,22 @@ function hud() {
 
   // The weather: a preset, its values, and the timeline standing in for the game. Moving a value stops the timeline.
   hudEl.append(Object.assign(document.createElement('div'), { className: 'break' }));
-  const pick = document.createElement('select');
-  for (const name of ['custom', ...Object.keys(WEATHER_PRESETS)]) pick.append(new Option(name.replace('-', ' '), name, false, name === (presetName ?? 'custom')));
-  pick.onchange = () => {
-    if (!(pick.value in WEATHER_PRESETS)) return;
-    const p: Weather = WEATHER_PRESETS[pick.value as WeatherName];
+  const choose = document.createElement('select');
+  for (const name of ['custom', ...Object.keys(WEATHER_PRESETS)]) choose.append(new Option(name.replace('-', ' '), name, false, name === (presetName ?? 'custom')));
+  choose.onchange = () => {
+    if (!(choose.value in WEATHER_PRESETS)) return;
+    const p: Weather = WEATHER_PRESETS[choose.value as WeatherName];
     Object.assign(weather, { cloud: p.cloud, rain: p.rain ?? 0, snow: p.snow ?? 0, heat: p.heat ?? 0 });
     weather.haze = p.haze ? { ...p.haze } : { ...weather.haze, amount: 0 };
-    presetName = pick.value as WeatherName; playing = false; timelineEl.textContent = '';
-    renderer.setWeather(weather);
+    presetName = choose.value as WeatherName; playing = false; timelineEl.textContent = '';
+    send(weather);
     hud();
   };
-  pick.onkeydown = (e) => e.stopPropagation();
-  hudEl.append(Object.assign(document.createElement('label'), { textContent: 'Weather' }), pick);
+  choose.onkeydown = (e) => e.stopPropagation();
+  hudEl.append(Object.assign(document.createElement('label'), { textContent: 'Weather' }), choose);
   const weatherSet = (f: (v: number) => void) => (v: number) => {
-    f(v); presetName = null; pick.value = 'custom'; playing = false; play.className = ''; timelineEl.textContent = '';
-    renderer.setWeather(weather);
+    f(v); presetName = null; choose.value = 'custom'; playing = false; play.className = ''; timelineEl.textContent = '';
+    send(weather);
   };
   const share = (v: number) => v.toFixed(2);
   hudEl.append(slider('Cloud', 0, 1, 0.01, () => weather.cloud, weatherSet((v) => { weather.cloud = v; }), share, true));
@@ -198,7 +241,7 @@ function hud() {
   spells.onkeydown = (e) => e.stopPropagation();
   play.onclick = () => {
     playing = !playing; timelineStart = null; timelineSent = '';
-    if (playing) { presetName = null; pick.value = 'custom'; } else timelineEl.textContent = '';
+    if (playing) { presetName = null; choose.value = 'custom'; } else timelineEl.textContent = '';
     play.className = playing ? 'on' : '';
   };
   const pace = Object.assign(document.createElement('button'), { textContent: `${speed}× speed` });
@@ -210,6 +253,34 @@ function hud() {
     speed = next; pace.textContent = `${speed}× speed`;
   };
   hudEl.append(play, spells, pace, timelineEl);
+
+  // The cloud candidates (#8).
+  hudEl.append(Object.assign(document.createElement('div'), { className: 'break' }));
+  const shapes = Object.keys(CLOUD_SHAPES) as CloudShapeName[], paces = Object.keys(CLOUD_PACES) as CloudPaceName[];
+  const shapeButton = Object.assign(document.createElement('button'), { textContent: `Clouds ${cloudShape}` });
+  shapeButton.title = 'a: cumulus, b: big and soft, c: broken (URL clouds=a|b|c)';
+  shapeButton.onclick = () => {
+    cloudShape = shapes[(shapes.indexOf(cloudShape) + 1) % shapes.length];
+    renderer.cloudShape = CLOUD_SHAPES[cloudShape];
+    hud();
+  };
+  const paceButton = Object.assign(document.createElement('button'), { textContent: `Drift ${cloudPace}` });
+  paceButton.title = 'How fast the clouds drift for the wind (URL cloudPace=slow|mid|fast)';
+  paceButton.onclick = () => {
+    cloudPace = paces[(paces.indexOf(cloudPace) + 1) % paces.length];
+    send(sent);
+    hud();
+  };
+  const depths = Object.keys(CLOUD_DEPTHS) as CloudDepthName[];
+  const depthButton = Object.assign(document.createElement('button'), { textContent: `Shade ${cloudDepth}` });
+  depthButton.title = 'How deep a cloud\'s shade is beside the sunny gaps (URL cloudShade=light|mid|deep)';
+  depthButton.onclick = () => {
+    cloudDepth = depths[(depths.indexOf(cloudDepth) + 1) % depths.length];
+    renderer.cloudDepth = CLOUD_DEPTHS[cloudDepth];
+    hud();
+  };
+  const speedOf = () => { const { vx, vz } = cloudVelocity(); return Math.hypot(vx, vz); };
+  hudEl.append(shapeButton, depthButton, paceButton, Object.assign(document.createElement('span'), { textContent: `${speedOf().toFixed(1)} m/s` }));
 }
 const timelineEl = document.createElement('span');
 /** The weather controls' values, put back to what they show (the timeline moves them). */
@@ -228,14 +299,12 @@ function slider(name: string, min: number, max: number, step: number, get: () =>
 hud();
 
 /** A weather with everything it leaves out set to none, as the game sends it. */
-function whole(w: Weather): Required<Weather> {
+function whole(w: Weather): Sky {
   return { cloud: w.cloud, rain: w.rain ?? 0, snow: w.snow ?? 0, heat: w.heat ?? 0, haze: w.haze ?? null };
 }
 
 /** Plays the timeline at a time (seconds): sends the game's weather when it changes, eased, as the game would. */
-let lastTime = 0;
 function playTimeline(time: number) {
-  lastTime = time;
   if (!playing) return;
   timelineStart ??= time;
   const w = timelineAt(time - timelineStart, speed, spell), key = JSON.stringify(w);
@@ -245,7 +314,7 @@ function playTimeline(time: number) {
   // The game sends the whole weather: what the spell leaves out is none (a haze thinned away keeps its colour and height).
   const { haze, ...rest } = whole(w);
   Object.assign(weather, rest, { haze: haze ? { ...haze } : { ...weather.haze, amount: 0 } });
-  renderer.setWeather(weather);
+  send(weather, false, time);
   for (const r of refreshers) r();
 }
 
@@ -263,24 +332,28 @@ if (params.has('shot')) {
     } = {}) => {
     if (cam) { view.target.set(cam.x, 0, cam.z); view.zoom = cam.zoom; view.view = cam.view; view.update(0, true); }
     if (options.hour !== undefined) hour = options.hour;
-    if (options.wind) renderer.setWind({ ...wind, ...options.wind }, !options.ease);
+    if (options.wind) { Object.assign(wind, options.wind); renderer.setWind(wind, !options.ease); }
+    // The clouds carried on to the frame's time (see driftAt).
+    const time = options.time ?? frozen ?? 0;
     if (options.weather) {
       const w = typeof options.weather === 'string' ? whole(WEATHER_PRESETS[options.weather]) : { ...weather, ...options.weather };
-      renderer.setWeather(w, !options.ease);
+      send(w, !options.ease, time);
     }
     if (options.timeline) {
       const t = options.timeline;
-      renderer.setWeather(whole(timelineAt(t.time, t.speed ?? speed, t.spell ?? spell)), !options.ease);
+      send(whole(timelineAt(t.time, t.speed ?? speed, t.spell ?? spell)), !options.ease, time);
     }
+    if (!options.weather && !options.timeline) send(sent, false, time);
     const kinds: MaterialKind[] = ['ground', 'paint', 'crop', 'ink', 'water', 'foliage', 'grass', 'debris'];
     for (const k of kinds) renderer.setVisible(k, !options.hide?.includes(k));
     const grain = renderer.settings.grain;
     if (options.grain === false) renderer.settings.grain = 0;
     renderer.setLook(lookAt(hour));
-    for (let i = 0; i < 2; i++) renderer.render(options.time ?? frozen ?? 0);
+    for (let i = 0; i < 2; i++) renderer.render(time);
     renderer.settings.grain = grain;
   };
   loaded.then(() => Object.assign(window, {
+    __renderer: renderer,
     __draw: draw,
     __profile: (cases?: ProfileCase[]) => profile(cases),
     __profileTable: table,
@@ -294,7 +367,7 @@ async function profile(cases = defaultCases(), progress?: (row: ProfileRow, i: n
   profiling = true;
   try {
     return await runProfile(renderer, (t) => { renderer.setLook(lookAt(hour)); renderer.render(t); },
-      () => { renderer.setWind(wind, true); renderer.setWeather(weather, true); }, cases, progress);
+      () => { renderer.setWind(wind, true); send(weather, true, 0); }, cases, progress);
   } finally { profiling = false; resize(); }
 }
 if (params.has('profile')) profilePanel();
@@ -310,7 +383,7 @@ function profilePanel() {
   // Everything that sets the work, as it is when Run is pressed, so pasted results from different settings can't be
   // mistaken for each other.
   const about = () => `scene ${sceneName} · GPU ${gpu} · ${timers ? 'GPU timers' : 'no GPU timers (only the uncapped frame and the CPU)'}\n`
-    + `hour ${hour} · x ${view.target.x.toFixed(2)} · z ${view.target.z.toFixed(2)} · zoom ${view.zoom.toFixed(1)} · view ${view.view} · samples ${num('samples', 4)} · shadow map ${num('shadowMap', farm ? 4096 : 2048)} · lines ${renderer.settings.lines ? 'on' : 'off'} · shadows ${renderer.settings.shadows ? 'on' : 'off'} · prepass ${renderer.settings.prepass ? 'on' : 'off'} · water scissor ${renderer.settings.waterScissor ? 'on' : 'off'} · equal depth ${renderer.settings.equalDepth ? 'on' : 'off'} · ground ${bakeName('ground')} · crop ${bakeName('crop')} · grass ${bakeName('grass')} · weather ${presetName ?? JSON.stringify(weather)}\n`
+    + `hour ${hour} · x ${view.target.x.toFixed(2)} · z ${view.target.z.toFixed(2)} · zoom ${view.zoom.toFixed(1)} · view ${view.view} · samples ${num('samples', 4)} · shadow map ${num('shadowMap', farm ? 4096 : 2048)} · lines ${renderer.settings.lines ? 'on' : 'off'} · shadows ${renderer.settings.shadows ? 'on' : 'off'} · prepass ${renderer.settings.prepass ? 'on' : 'off'} · water scissor ${renderer.settings.waterScissor ? 'on' : 'off'} · equal depth ${renderer.settings.equalDepth ? 'on' : 'off'} · ground ${bakeName('ground')} · crop ${bakeName('crop')} · grass ${bakeName('grass')} · weather ${presetName ?? JSON.stringify(weather)} · clouds ${cloudShape} ${cloudDepth} ${cloudPace}\n`
     + `${location.href}\n${navigator.userAgent}`;
   const out = Object.assign(document.createElement('pre'), { textContent: `${about()}\n\nPlug the laptop in, close other apps, then Run. It takes a minute or two.` });
   const run = Object.assign(document.createElement('button'), { textContent: 'Run' });
@@ -331,14 +404,17 @@ function profilePanel() {
 }
 
 const start = performance.now();
-let last = start, frames = 0;
+let last = start, frames = 0, lastTick = -1;
 function frame(now: number) {
   if (profiling) { requestAnimationFrame(frame); return; }
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
   view.update(dt);
   const time = frozen ?? (now - start) / 1000;
+  lastTime = time;
   playTimeline(time);
+  // The game sends the clouds' drift a few times a second (with the weather); the renderer carries them on between.
+  if (Math.floor(time * TICK) !== lastTick) { lastTick = Math.floor(time * TICK); send(sent, false, time); }
   renderer.setLook(lookAt(hour));
   renderer.render(time);
   // Ready once a frame is drawn with everything loaded (the farm's shed comes after the first frames).
