@@ -43,8 +43,11 @@ uniform vec3 uFogColor;
 uniform vec4 uFog;
 uniform vec2 uFogDrift;
 uniform vec3 uFogWind;
-// Dust (#9): x how far the haze is dust, y how strong its streaks are.
-uniform vec2 uDust;
+// Dust (#9): x how far the haze is dust, y how strong its streaks are, z how much the gusts thicken and thin it.
+uniform vec3 uDust;
+// The wind's gusts, shared with the grass and the trees: how gusty, and how far they've rolled downwind (metres).
+uniform float uWindGustiness;
+uniform vec2 uWindDrift;
 // The heat's shimmer (#9): x how far it shifts the picture (pixels), y the time (seconds).
 uniform vec2 uShimmer;
 varying vec2 vUv;
@@ -75,23 +78,31 @@ float fogProfile(float y) {
 // Patches, keyed to the world and drifting with the wind, stretched along it: a thick fog covers everything, a thin one
 // breaks up, and the low parts of the layer keep it longest. Two sizes, drifting at different speeds, so the patches
 // change shape as they go rather than sliding as one sheet.
-// streak: dust's streaks where the view leaves the surface (fogStreak), strongest low down.
-float fogPatch(vec2 xz, float y, float streak) {
+float fogPatch(vec2 xz, float y) {
   vec2 w = uFogWind.xy;
   vec2 q = vec2(dot(xz, w) / uFogWind.z - uFogDrift.x, dot(xz, vec2(-w.y, w.x)));
-  float n = fogNoise(q * 0.055) * 0.65 + fogNoise(q * 0.14 + vec2(uFogDrift.x * 0.035, 0.0) + 11.0) * 0.35 + streak * fogProfile(y);
+  float n = fogNoise(q * 0.055) * 0.65 + fogNoise(q * 0.14 + vec2(uFogDrift.x * 0.035, 0.0) + 11.0) * 0.35;
   float bias = (uFog.x - 0.35) * 2.5 + fogProfile(y) * 0.5 - 0.25;
   return smoothstep(-0.5, 0.5, n + bias);
 }
 
-// Dust: fine streaks blowing along the wind through it, quicker than its clouds. Read once, at the surface: they're
-// fine enough that the few metres the view crosses in the layer wouldn't show, and reading them at every step cost most of
-// what dust adds.
-float fogStreak(vec2 xz) {
-  if (uDust.x <= 0.0) return 0.0;
+// Dust, how much thicker (or thinner, below 1) it is at a point: the gusts sweep it in in waves, thinning between them, and fine streaks blow along the wind through it, quicker than its clouds,
+// strongest in a gust. It thickens the dust rather than moving where its patches start, so it shows in a storm's thick
+// dust too. Read once, at the surface: the few metres the view crosses in the layer wouldn't show, and reading it at every
+// step cost most of what dust adds.
+// The gusts: windGust's (wind.ts) sizes, speeds and strength, read from the baked noise rather than worked out here (that
+// cost half again what dust does), so the waves roll through the dust as they roll through the grass, if not crest for crest.
+float dustGust(vec2 xz) {
+  float g = fogNoise((xz - uWindDrift) * 0.03) * 0.65 + fogNoise((xz - uWindDrift * 1.35) * 0.08 + 13.7) * 0.35;
+  return clamp(0.5 + g * 0.75 * (0.4 + uWindGustiness * 1.2), 0.0, 1.0);
+}
+float fogDust(vec2 xz) {
+  if (uDust.x <= 0.0) return 1.0;
+  float gust = dustGust(xz);
   vec2 w = uFogWind.xy;
   vec2 s = vec2(dot(xz, w) / ${STREAK_STRETCH.toFixed(1)} - uFogDrift.y, dot(xz, vec2(-w.y, w.x)));
-  return fogNoise(s * 0.6 + 5.0) * uDust.x * uDust.y;
+  float streak = fogNoise(s * 0.6 + 5.0) * uDust.y * (0.3 + 1.4 * gust);
+  return max(1.0 + uDust.x * (streak + (gust - 0.5) * uDust.z), 0.1);
 }
 
 // The share of a surface the fog hides: summed along the view's path up out of the layer from the surface, in a few
@@ -100,13 +111,13 @@ float fogAt(vec3 p) {
   float ya = max(p.y, uFog.y), yb = uFog.z;
   if (yb <= ya) return 0.0;
   vec3 back = -uCamFwd;
-  float dy = (yb - ya) / 4.0, sum = 0.0, streak = fogStreak(p.xz);
+  float dy = (yb - ya) / 4.0, sum = 0.0;
   for (int i = 0; i < 4; i++) {
     float y = ya + (float(i) + 0.5) * dy;
     vec3 q = p + back * ((y - p.y) / back.y);
-    sum += fogProfile(y) * fogPatch(q.xz, y, streak);
+    sum += fogProfile(y) * fogPatch(q.xz, y);
   }
-  return FOG_MAX * (1.0 - exp(-sum * dy / uFog.w * uFog.x * FOG_DENSITY));
+  return FOG_MAX * (1.0 - exp(-sum * dy / uFog.w * uFog.x * FOG_DENSITY * fogDust(p.xz)));
 }
 
 // Laid over a colour: a veil of its colour, with a trace of the paint's own colour given back over it at the veil's

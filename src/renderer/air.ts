@@ -3,8 +3,8 @@ import type { Look } from './look';
 
 // What the air does to the hour's light (#9), laid over it after the cloud (overcast.ts). Dust: the sun's light through it
 // takes its colour, deepened, and dims (the orange light of a dust storm); the sky's light and the distance's air turn
-// the dust's colour, and the far land is lost in it sooner. The heat wave: a hot, bleached light, whiter and stronger, the
-// colour washed out a little, and a pale warm haze in the air; by day only, as the sun is what makes it.
+// the dust's colour, and the far land is lost in it sooner. The heat wave: a hot yellow light, stronger, the colour washed
+// out a little, and a warm cream haze in the air; by day only, as the sun is what makes it.
 
 export interface HeatRecipe {
   /** The sun's light: the hue it turns to (sRGB hex), how far, and how much stronger it gets. */
@@ -19,25 +19,14 @@ export interface HeatRecipe {
   litLean: number;
 }
 
-/** The heat wave's candidates (#9), for the developer to choose between. */
-export const HEAT_RECIPES = {
-  /** White glare: a white-hot sun, the lights bleached towards white and the colour washed out; the shadows stay hard. */
-  glare: {
-    sun: 0xfff8ee, sunTurn: 0.8, sunGain: 1.2, skyTurn: 0.3, haze: 0xf8f2e6, hazeDensity: 1.5, hazeFloor: 0.08,
-    contrast: 0.95, exposure: 1.12, saturation: 0.78, litLean: 0.08,
-  },
-  /** Gold: a hot yellow light, the colour kept fuller, a warm cream air. */
-  gold: {
-    sun: 0xffd48e, sunTurn: 0.7, sunGain: 1.1, skyTurn: 0.35, haze: 0xf5d8a0, hazeDensity: 1.6, hazeFloor: 0.1,
-    contrast: 0.92, exposure: 1.05, saturation: 0.95, litLean: 0.25,
-  },
-  /** Dry: a pale, dusty air laid over the land, the distance flattened, the shadows softened. */
-  dry: {
-    sun: 0xffe6bc, sunTurn: 0.55, sunGain: 1.08, skyTurn: 0.5, haze: 0xe8d6b4, hazeDensity: 2.6, hazeFloor: 0.22,
-    contrast: 0.78, exposure: 1.04, saturation: 0.84, litLean: 0.14,
-  },
-} as const satisfies Record<string, HeatRecipe>;
-export type HeatLook = keyof typeof HEAT_RECIPES;
+/**
+ * The heat wave (#9, the developer's pick of three, glare, gold and dry): gold, a hot yellow light with the colour kept
+ * fuller and a warm cream air. Glare bleached it nearly white; dry laid a pale, dusty air over the land.
+ */
+export const HEAT: HeatRecipe = {
+  sun: 0xffd48e, sunTurn: 0.7, sunGain: 1.1, skyTurn: 0.35, haze: 0xf5d8a0, hazeDensity: 1.6, hazeFloor: 0.1,
+  contrast: 0.92, exposure: 1.05, saturation: 0.95, litLean: 0.25,
+};
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const luminance = (c: THREE.Color) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
