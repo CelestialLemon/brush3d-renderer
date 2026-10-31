@@ -12,7 +12,7 @@ import { POST_FRAG, POST_VERT } from './post';
 import { ShelterMap, type Cover } from './shelter';
 import type { PassTimer } from './timer';
 import { WeatherState, type Weather } from './weather';
-import { airLook, HEAT_RECIPES, heatShare, type HeatLook } from './air';
+import { airLook, HEAT, heatShare } from './air';
 import { leafStorm, WindState, type Wind } from './wind';
 
 // The renderer: the clouds' shade over the land (#8); a sun shadow map; for the water, the bed drawn without it and the
@@ -52,9 +52,9 @@ export interface Settings {
   falling: boolean;
   /** Show the shelter map over the frame: what's under cover, and the map from above in the corner. */
   shelterDebug: boolean;
-  /** The heat wave's look (air.ts), and its shimmer at full heat in pixels (0 none): to choose between (#9). */
-  heatLook: HeatLook;
+  /** The heat's shimmer at full heat, in pixels (0 none), and how much the gusts thicken and thin dust: to choose (#9). */
   shimmer: number;
+  dustGust: number;
 }
 
 /** The kinds in the air, which settings.falling leaves out: the leaves the wind lifts (rain and snow to come).
@@ -89,7 +89,7 @@ export class BrushRenderer {
   readonly view = new ViewCamera();
   readonly shared: SharedUniforms = createSharedUniforms();
   readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true, falling: true, shelterDebug: false,
-    heatLook: 'glare', shimmer: 0.6,
+    shimmer: 2, dustGust: 1.2,
   };
   width = 1; height = 1;
   /** Device pixels per CSS pixel asked for (see RendererOptions): the screen's pixels, which the zoom counts in. */
@@ -187,7 +187,8 @@ export class BrushRenderer {
         uCamPos: { value: new THREE.Vector3() }, uCamRight: { value: new THREE.Vector3() }, uCamUp: { value: new THREE.Vector3() },
         uCamFwd: { value: new THREE.Vector3() }, uFogColor: { value: new THREE.Color() }, uFog: { value: new THREE.Vector4() },
         uFogDrift: { value: new THREE.Vector2() }, tFogNoise: { value: fogNoiseTexture() }, uFogWind: { value: new THREE.Vector3(1, 0, 1) },
-        uDust: { value: new THREE.Vector2() }, uShimmer: { value: new THREE.Vector2() },
+        uDust: { value: new THREE.Vector3() },
+        uWindGustiness: this.shared.uWindGustiness, uWindDrift: this.shared.uWindDrift, uShimmer: { value: new THREE.Vector2() },
       },
     });
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.post));
@@ -412,7 +413,7 @@ export class BrushRenderer {
     const strength = dim * THREE.MathUtils.lerp(1, CLOUD_NIGHT, clear.night);
     const gap = THREE.MathUtils.lerp(cover, gapCover(cover), strength);
     // What dust and the heat do to the light (air.ts), laid over each.
-    const w = this.weather, air = (l: Look) => airLook(l, w, HEAT_RECIPES[this.settings.heatLook]);
+    const w = this.weather, air = (l: Look) => airLook(l, w, HEAT);
     const grade = air(overcastLook(clear, cover, r)), look = air(overcastLook(clear, gap, r)), under = air(overcastLook(clear, 1, r));
     const s = this.shared;
     const shape = skyShare(gap), lift = shape * r.shadowLift;
@@ -461,10 +462,10 @@ export class BrushRenderer {
     const floor = Math.max(w.hazeBase, this.waterLevel ?? w.hazeTop - 4);
     u.uFog.value.set(w.haze * thin, w.hazeBase, w.hazeTop, Math.max(0.5, 0.7 * (w.hazeTop - floor)));
     // The patches drift downwind and are drawn out along it, dust's faster and further (WindState); dust's streaks blow
-    // by faster still, stronger as the wind rises.
+    // by faster still, stronger as the wind rises, and the gusts sweep it in in waves.
     u.uFogDrift.value.set(wind.hazeDrift, wind.streakDrift);
     u.uFogWind.value.set(wind.dirX, wind.dirZ, WindState.hazeStretch(wind.speed, wind.carried));
-    u.uDust.value.set(w.dust, 0.25 + 0.5 * Math.min(wind.speed / 25, 1));
+    u.uDust.value.set(w.dust, 0.25 + 0.5 * Math.min(wind.speed / 25, 1), this.settings.dustGust);
   }
 
   private updateSunCamera() {

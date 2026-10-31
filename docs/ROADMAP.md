@@ -119,10 +119,10 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   lifting). Picked by the developer: ink lines fade halfway into fog, so the things the player can use still show,
   and the fog drains the paint's colour but keeps a trace of it. Merged in #33.
 - **Dust and the heat wave (#9, part 2, in review).** A haze can be dust (`kind: 'dust'`, the developer's call): the wind
-  carries it, in clouds and fine streaks blowing along the ground, rather than thinning it, and the light through it
-  turns orange. The heat wave (`heat`) bleaches and warms the light and lays a pale warm air over the land, by day only,
-  with a faint shimmer keyed to the land. To choose on the preview: the heat wave's light (glare, gold, dry) and the
-  shimmer (off, faint, more). The demo's timeline has a dust storm blowing through.
+  carries it, in clouds and fine streaks blowing along the ground, rather than thinning it, the gusts sweep it in in
+  waves, and the light through it turns orange. The heat wave (`heat`) gives a hot yellow light and a warm cream air over
+  the land, by day only ('gold', the developer's pick), with a shimmer keyed to the land. To choose on the preview: the
+  shimmer's strength and how much the gusts sweep the dust. The demo's timeline has a dust storm blowing through.
 
 ### Motion and stability
 

@@ -171,14 +171,14 @@ RX 570, 1080p storm, GPU ms (`1080p storm, fog` in `node tools/profile.ts` and `
 About 0.23 ms here, so about 0.45 on the laptop: the rest of the line's 0.8 is left for dust and the heat wave. With no
 haze the frame is byte-for-byte what it was.
 
-Dust is the same layer, with fine streaks read once a pixel (read at each step up the layer they cost twice as much), and
-usually deeper; the heat wave's shimmer re-reads the frame a fraction of a pixel aside. They come one at a time with fog
+Dust is the same layer, with fine streaks and the gusts' waves read once a pixel from the baked noise (read at each step
+up the layer, or worked out as the grass's gusts are, each cost half again), and usually deeper; the heat wave's shimmer re-reads the frame a fraction of a pixel aside. They come one at a time with fog
 (a haze is one or the other). RX 570, 1080p storm, the post pass, GPU ms (`1080p storm, dust` and `heat wave`):
 
 | | clear | fog | dust | heat wave |
 |---|---:|---:|---:|---:|
-| farm | 0.26 | 0.48 | 0.56 | 0.30 |
-| meadow | 0.21 | 0.45 | 0.50 | 0.24 |
+| farm | 0.26 | 0.47 | 0.56 | 0.31 |
+| meadow | 0.20 | 0.44 | 0.51 | 0.25 |
 
 Dust is the dearest at 0.3 ms here (the preset's warmth and shimmer included), about 0.6 on the laptop, inside the line's 0.8.
 
