@@ -239,7 +239,7 @@ function hud() {
     const next: HazeKind = (weather.haze.kind ?? 'fog') === 'fog' ? 'dust' : 'fog';
     weatherSet(() => { weather.haze.kind = next; })(0); kind.textContent = next;
   };
-  refreshers.push(() => { kind.textContent = weather.haze.kind ?? 'fog'; });
+  refreshers.push(() => { kind.textContent = weather.haze.kind ?? 'fog'; colour.value = `#${weather.haze.color.toString(16).padStart(6, '0')}`; });
   hudEl.append(colour, kind);
   const play = Object.assign(document.createElement('button'), { textContent: 'Timeline', className: playing ? 'on' : '' });
   play.title = 'The scripted weather, sent as the game sends it';

@@ -459,8 +459,8 @@ export class BrushRenderer {
     // It thins over most of its depth, measured from its base or else the water (the valley's floor).
     const floor = Math.max(w.hazeBase, this.waterLevel ?? w.hazeTop - 4);
     u.uFog.value.set(w.haze * thin, w.hazeBase, w.hazeTop, Math.max(0.5, 0.7 * (w.hazeTop - floor)));
-    // Dust's clouds fly with the wind (a fog turning to dust speeds up as it turns), drawn out further along it.
-    u.uFogDrift.value.set(wind.hazeX + (wind.dustX - wind.hazeX) * w.dust, wind.hazeZ + (wind.dustZ - wind.hazeZ) * w.dust);
+    // Dust's clouds fly with the wind (WindState.hazeX), drawn out further along it.
+    u.uFogDrift.value.set(wind.hazeX, wind.hazeZ);
     u.uFogWind.value.set(wind.dirX, wind.dirZ, 1 + (wind.speed / 10) * (1 + w.dust));
     // Its streaks blow by twice as fast again, stronger as the wind rises.
     u.uDust.value.set(w.dust, wind.dustX * 2, wind.dustZ * 2, 0.25 + 0.5 * Math.min(wind.speed / 25, 1));
@@ -577,6 +577,7 @@ export class BrushRenderer {
     t?.mark('setup', false);
     const s = this.shared, w = this.wind;
     s.uTime.value = time;
+    w.carried = this.weather.dust;
     w.update(time);
     s.uWindDir.value.set(w.dirX, w.dirZ);
     s.uWindSpeed.value = w.speed;

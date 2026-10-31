@@ -41,9 +41,14 @@ export class WindState {
   gust = this.goal.gust;
   /** How far the gusts have rolled downwind (metres, x and z), and the leaves' flutter phase (radians). */
   driftX = 0; driftZ = 0; flutter = 0;
-  /** How far a haze's patches have drifted downwind (metres, x and z): slowly, a fog creeps rather than flies (#9). */
+  /**
+   * How far a haze's patches have drifted downwind (metres, x and z): slowly, a fog creeps rather than flies; dust is
+   * carried (#9). Moved at a speed between the two by how far the haze is dust, so a fog turning to dust speeds up.
+   */
   hazeX = 0; hazeZ = 0;
-  /** How far dust has been carried downwind (metres, x and z): it flies with the wind (#9). */
+  /** How far the haze is dust, 0..1: the renderer sets it from the weather as drawn. */
+  carried = 0;
+  /** How far dust's streaks have blown downwind (metres, x and z), at dust's speed. */
   dustX = 0; dustZ = 0;
   private time: number | null = null;
 
@@ -65,6 +70,8 @@ export class WindState {
   static hazeSpeed(speed: number) { return 0.12 + 0.1 * speed; }
   /** How fast dust's clouds are carried, m/s: much faster than a fog, but slower than the air, so they read on screen. */
   static dustSpeed(speed: number) { return 0.3 + 0.3 * speed; }
+  /** How fast the haze's patches drift now, m/s: a fog's speed or dust's, by how far it's dust. */
+  private hazeRate() { return THREE.MathUtils.lerp(WindState.hazeSpeed(this.speed), WindState.dustSpeed(this.speed), this.carried); }
   /** The leaves' flutter rate, radians a second: quicker as the wind rises, but levelling off (Sol's fit, 1.4 Hz in a
    * breeze, 2.4 in a hurricane; slower than real leaves, which would only blur as painted cards). */
   static flutterRate(speed: number) { return 2 * Math.PI * (0.7 + (2.3 * speed) / (speed + 12)); }
@@ -80,7 +87,7 @@ export class WindState {
     if (dt < 0) {
       const d = WindState.driftSpeed(this.speed) * time;
       this.driftX = this.dirX * d; this.driftZ = this.dirZ * d;
-      const h = WindState.hazeSpeed(this.speed) * time;
+      const h = this.hazeRate() * time;
       this.hazeX = this.dirX * h; this.hazeZ = this.dirZ * h;
       const s = WindState.dustSpeed(this.speed) * time;
       this.dustX = this.dirX * s; this.dustZ = this.dirZ * s;
@@ -106,7 +113,7 @@ export class WindState {
     this.dirX = Math.cos(a); this.dirZ = Math.sin(a);
     const d = WindState.driftSpeed(this.speed) * dt;
     this.driftX += this.dirX * d; this.driftZ += this.dirZ * d;
-    const h = WindState.hazeSpeed(this.speed) * dt;
+    const h = this.hazeRate() * dt;
     this.hazeX += this.dirX * h; this.hazeZ += this.dirZ * h;
     const s = WindState.dustSpeed(this.speed) * dt;
     this.dustX += this.dirX * s; this.dustZ += this.dirZ * s;
