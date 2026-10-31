@@ -186,7 +186,7 @@ export class BrushRenderer {
         uCamPos: { value: new THREE.Vector3() }, uCamRight: { value: new THREE.Vector3() }, uCamUp: { value: new THREE.Vector3() },
         uCamFwd: { value: new THREE.Vector3() }, uFogColor: { value: new THREE.Color() }, uFog: { value: new THREE.Vector4() },
         uFogDrift: { value: new THREE.Vector2() }, tFogNoise: { value: fogNoiseTexture() }, uFogWind: { value: new THREE.Vector3(1, 0, 1) },
-        uDust: { value: new THREE.Vector4() }, uShimmer: { value: new THREE.Vector2() },
+        uDust: { value: new THREE.Vector2() }, uShimmer: { value: new THREE.Vector2() },
       },
     });
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.post));
@@ -459,11 +459,11 @@ export class BrushRenderer {
     // It thins over most of its depth, measured from its base or else the water (the valley's floor).
     const floor = Math.max(w.hazeBase, this.waterLevel ?? w.hazeTop - 4);
     u.uFog.value.set(w.haze * thin, w.hazeBase, w.hazeTop, Math.max(0.5, 0.7 * (w.hazeTop - floor)));
-    // Dust's clouds fly with the wind (WindState.hazeX), drawn out further along it.
-    u.uFogDrift.value.set(wind.hazeX, wind.hazeZ);
-    u.uFogWind.value.set(wind.dirX, wind.dirZ, 1 + (wind.speed / 10) * (1 + w.dust));
-    // Its streaks blow by twice as fast again, stronger as the wind rises.
-    u.uDust.value.set(w.dust, wind.dustX * 2, wind.dustZ * 2, 0.25 + 0.5 * Math.min(wind.speed / 25, 1));
+    // The patches drift downwind and are drawn out along it, dust's faster and further (WindState); dust's streaks blow
+    // by faster still, stronger as the wind rises.
+    u.uFogDrift.value.set(wind.hazeDrift, wind.streakDrift);
+    u.uFogWind.value.set(wind.dirX, wind.dirZ, WindState.hazeStretch(wind.speed, wind.carried));
+    u.uDust.value.set(w.dust, 0.25 + 0.5 * Math.min(wind.speed / 25, 1));
   }
 
   private updateSunCamera() {

@@ -1,5 +1,6 @@
 import { FOG_NOISE_CELLS } from './fog';
 import { NOISE, OKLAB } from './glsl';
+import { STREAK_STRETCH } from './wind';
 
 // The post pass: the heat's shimmer, lines on inked things, the fog or dust lying on the land, the distance's haze, the sky,
 // a grade, and out to sRGB.
@@ -34,15 +35,16 @@ uniform vec3 uCamPos;
 uniform vec3 uCamRight;
 uniform vec3 uCamUp;
 uniform vec3 uCamFwd;
-// The fog (#9): its colour as lit; x how thick, y its base, z its top, w how far under its top it thins (metres); its patches' drift (metres) and the wind's
-// direction and how far it stretches them along it.
+// The fog (#9): its colour as lit; x how thick, y its base, z its top, w how far under its top it thins (metres); how far
+// its patches (x) and dust's streaks (y) have drifted along the wind, in their own drawn-out frames (WindState); and the
+// wind's direction and how far it draws the patches out along it.
 uniform sampler2D tFogNoise;
 uniform vec3 uFogColor;
 uniform vec4 uFog;
 uniform vec2 uFogDrift;
 uniform vec3 uFogWind;
-// Dust (#9): x how far the haze is dust, yz how far its streaks have blown (metres), w how strong they are.
-uniform vec4 uDust;
+// Dust (#9): x how far the haze is dust, y how strong its streaks are.
+uniform vec2 uDust;
 // The heat's shimmer (#9): x how far it shifts the picture (pixels), y the time (seconds).
 uniform vec2 uShimmer;
 varying vec2 vUv;
@@ -76,9 +78,8 @@ float fogProfile(float y) {
 // streak: dust's streaks where the view leaves the surface (fogStreak), strongest low down.
 float fogPatch(vec2 xz, float y, float streak) {
   vec2 w = uFogWind.xy;
-  vec2 q = xz - uFogDrift;
-  q = vec2(dot(q, w) / uFogWind.z, dot(q, vec2(-w.y, w.x)));
-  float n = fogNoise(q * 0.055) * 0.65 + fogNoise(q * 0.14 + uFogDrift * 0.25 + 11.0) * 0.35 + streak * fogProfile(y);
+  vec2 q = vec2(dot(xz, w) / uFogWind.z - uFogDrift.x, dot(xz, vec2(-w.y, w.x)));
+  float n = fogNoise(q * 0.055) * 0.65 + fogNoise(q * 0.14 + vec2(uFogDrift.x * 0.035, 0.0) + 11.0) * 0.35 + streak * fogProfile(y);
   float bias = (uFog.x - 0.35) * 2.5 + fogProfile(y) * 0.5 - 0.25;
   return smoothstep(-0.5, 0.5, n + bias);
 }
@@ -88,9 +89,9 @@ float fogPatch(vec2 xz, float y, float streak) {
 // what dust adds.
 float fogStreak(vec2 xz) {
   if (uDust.x <= 0.0) return 0.0;
-  vec2 w = uFogWind.xy, s = xz - uDust.yz;
-  s = vec2(dot(s, w) / 6.0, dot(s, vec2(-w.y, w.x)));
-  return fogNoise(s * 0.6 + 5.0) * uDust.x * uDust.w;
+  vec2 w = uFogWind.xy;
+  vec2 s = vec2(dot(xz, w) / ${STREAK_STRETCH.toFixed(1)} - uFogDrift.y, dot(xz, vec2(-w.y, w.x)));
+  return fogNoise(s * 0.6 + 5.0) * uDust.x * uDust.y;
 }
 
 // The share of a surface the fog hides: summed along the view's path up out of the layer from the surface, in a few
