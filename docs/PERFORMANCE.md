@@ -127,11 +127,13 @@ GPU ms, at 45% cover (`clouds` is the map's own pass in `node tools/profile.ts` 
 
 | | the map | frame, before → with clouds |
 |---|---:|---:|
-| farm | 0.12 | 11.67 → 11.80 |
-| meadow | 0.12 | 4.87 → 5.08 |
+| farm | 0.24 | 11.67 → 11.91 |
+| meadow | 0.24 | 4.87 → 5.21 |
 
-About 0.1 for the map, the same on any scene (it's 262,000 texels of noise whatever is on them), and up to 0.1 for the
-reads, within the 0.3 a frame. The laptop's numbers come from `?profile` on #8's preview.
+The map is 262,000 texels of noise whatever is on them, so it costs the same on any scene: 0.12 under a light cover
+(below 30%) or near full (above 85%), where it's one layer of cloud, and 0.24 between, where the light clouds turn into
+the heavy ones and both layers are worked out. With the reads, about 0.35 a frame at worst, a little over the 0.3 set
+aside, which the developer accepted for the clouds' look (#8). The laptop's numbers come from `?profile` on #8's preview.
 
 ### The shelter map (#10)
 

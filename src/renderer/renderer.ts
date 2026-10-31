@@ -3,7 +3,7 @@ import { CAMERA_DISTANCE, ViewCamera } from './camera';
 import { CloudMap } from './cloudMap';
 import { CLOUD_SHAPE, type CloudShape } from './clouds';
 import type { Look } from './look';
-import { CLOUD_DEPTHS, CLOUD_NIGHT, gapCover, OVERCAST, overcastLook, skyShare, UNDER_CLOUD_FADE } from './overcast';
+import { CLOUD_DEPTH, CLOUD_NIGHT, gapCover, OVERCAST, overcastLook, skyShare, UNDER_CLOUD_FADE } from './overcast';
 import {
   createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
 } from './materials';
@@ -140,8 +140,6 @@ export class BrushRenderer {
   readonly cloudMap: CloudMap;
   /** The clouds' shape (clouds.ts): the game's, the same one it reads its solar panels by. */
   cloudShape: CloudShape = CLOUD_SHAPE;
-  /** How deep a cloud's shade is beside the sunny gaps (see CLOUD_DEPTHS). */
-  cloudDepth: number = CLOUD_DEPTHS.mid;
 
   constructor(readonly canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true });
@@ -428,7 +426,7 @@ export class BrushRenderer {
     s.uLitHue.value = rad(look.litHue); s.uLitLean.value = look.litLean;
     // The exposures over the grade's, which the post pass lays over everything.
     s.uLightExposure.value = look.exposure / grade.exposure;
-    const deeper = THREE.MathUtils.lerp(this.cloudDepth, 1, gap);
+    const deeper = THREE.MathUtils.lerp(CLOUD_DEPTH, 1, gap);
     s.uCloudBands.value.set(rad(((under.shadeHue - look.shadeHue + 540) % 360) - 180), under.shadeDepth, under.litLean, (under.exposure * deeper) / grade.exposure);
     const u = this.post.uniforms;
     u.uHazeColor.value.copy(grade.hazeColor); u.uHazeDensity.value = grade.hazeDensity; u.uHazeMax.value = grade.hazeMax; u.uHazeFloor.value = grade.hazeFloor;

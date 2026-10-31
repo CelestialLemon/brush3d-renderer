@@ -4,15 +4,15 @@
 //
 // 1. The TypeScript alone: the shaded share of the ground is the cover; the field repeats every period; no cover is no
 //    shade and full cover is all shade.
-// 2. The GLSL twin, worked out on the GPU at a grid of points, against the TypeScript at the same points: for every shape,
-//    several covers and seeds, and drifts from none to a thousand kilometres.
+// 2. The GLSL twin, worked out on the GPU at a grid of points, against the TypeScript at the same points: for the shape
+//    (and its light layer alone, a shape of one layer), several covers and seeds, and drifts from none to a thousand kilometres.
 // 3. The renderer's cloud map (cloudMap.ts: the twin drawn into a half-float texture whenever the clouds move, which the surfaces read),
 //    against the TypeScript at its texels, and read between them as the surfaces read it. Between texels the map is a
 //    straight blend, which can't follow a crisp edge's turns within a texel, so there it's checked for where the shade
 //    falls rather than its exact value: what's read at a point must be a shade the recipe gives within a texel of it
 //    (19 cm on the farm), give or take a fiftieth. The shadows are drawn where the game has them, to within that.
 // Exits with 1 if any of them is off by more than its tolerance.
-import { CLOUD_GLSL, CLOUD_SHAPES, cloudShade, cloudSpan, cloudUniforms, type CloudField, type CloudShape } from '../src/renderer/clouds.ts';
+import { CLOUD_GLSL, CLOUD_SHAPE, cloudShade, cloudSpan, cloudUniforms, type CloudField, type CloudShape } from '../src/renderer/clouds.ts';
 import { launch, open } from './browser.ts';
 
 let failed = false;
@@ -22,7 +22,8 @@ function check(name: string, value: number, tolerance: number, unit = '') {
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}: ${value.toPrecision(3)}${unit} (at most ${tolerance}${unit})`);
 }
 
-const shapes = Object.entries(CLOUD_SHAPES) as [string, CloudShape][];
+// The clouds' shape, and its light layer alone: a shape of one layer, which the recipe takes too.
+const shapes: [string, CloudShape][] = [['the clouds', CLOUD_SHAPE], ['light layer alone', { ...CLOUD_SHAPE, heavy: undefined }]];
 
 // 1. The TypeScript alone.
 console.log('The recipe in TypeScript');
@@ -36,24 +37,24 @@ for (const [name, shape] of shapes) {
     }
     worst = Math.max(worst, Math.abs(sum / n - cover));
   }
-  check(`shape ${name}: the shaded share against the cover, worst of five`, worst, 0.03);
+  check(`${name}: the shaded share against the cover, worst of five`, worst, 0.03);
   let repeat = 0;
   const field: CloudField = { cover: 0.5, x: 3.3, z: -1.7, seed: 9 }, span = cloudSpan(shape);
   for (let i = 0; i < 400; i++) {
     const x = i * 1.37, z = i * -0.91;
     repeat = Math.max(repeat, Math.abs(cloudShade(x, z, field, shape) - cloudShade(x + span, z - 2 * span, field, shape)));
   }
-  check(`shape ${name}: the field a period away`, repeat, 1e-9);
+  check(`${name}: the field a period away`, repeat, 1e-9);
   const none = cloudShade(10, 20, { cover: 0, x: 0, z: 0, seed: 1 }, shape), all = cloudShade(10, 20, { cover: 1, x: 0, z: 0, seed: 1 }, shape);
-  check(`shape ${name}: no cover is no shade, full cover all shade`, Math.abs(none) + Math.abs(1 - all), 0);
+  check(`${name}: no cover is no shade, full cover all shade`, Math.abs(none) + Math.abs(1 - all), 0);
 }
 
 // 2 and 3, in the browser.
-interface Case { shape: string; cover: number; seed: number; x: number; z: number }
+interface Case { name: string; shape: CloudShape; cover: number; seed: number; x: number; z: number }
 const cases: Case[] = [];
-for (const [name] of shapes) {
+for (const [name, shape] of shapes) {
   for (const [cover, seed, x, z] of [[0.3, 1, 0, 0], [0.6, 77, 123.4, -56.7], [0.85, 2 ** 31 - 5, 1e6, -3.3e5], [0.45, 12345, -98765.4, 4321]] as const) {
-    cases.push({ shape: name, cover, seed, x, z });
+    cases.push({ name, shape, cover, seed, x, z });
   }
 }
 /** The grid of points a case is checked at: 256² over a square 120 m across, its corner here. */
@@ -64,17 +65,17 @@ try {
   await open(page, 't=0&scene=meadow');
   console.log('\nThe GLSL twin on the GPU, against the TypeScript');
   // Each case's uniforms, worked out here as the renderer does.
-  const uniforms = cases.map((c) => cloudUniforms({ cover: c.cover, x: c.x, z: c.z, seed: c.seed }, CLOUD_SHAPES[c.shape as keyof typeof CLOUD_SHAPES]));
+  const uniforms = cases.map((c) => cloudUniforms({ cover: c.cover, x: c.x, z: c.z, seed: c.seed }, c.shape));
   const results = await page.evaluate(runTwin, CLOUD_GLSL, uniforms, GRID, X0, Z0, STEP);
   for (const [k, c] of cases.entries()) {
-    const shape = CLOUD_SHAPES[c.shape as keyof typeof CLOUD_SHAPES], gpu = results[k];
+    const gpu = results[k];
     let worst = 0;
     for (let j = 0; j < GRID; j++) for (let i = 0; i < GRID; i++) {
       // The points as the GPU has them: its pixels' centres.
-      const ts = cloudShade(X0 + (i + 0.5) * STEP, Z0 + (j + 0.5) * STEP, c, shape);
+      const ts = cloudShade(X0 + (i + 0.5) * STEP, Z0 + (j + 0.5) * STEP, c, c.shape);
       worst = Math.max(worst, Math.abs(ts - gpu[j * GRID + i]));
     }
-    check(`shape ${c.shape}, cover ${c.cover}, seed ${c.seed}, drift (${c.x}, ${c.z}): the largest difference`, worst, 0.005);
+    check(`${c.name}, cover ${c.cover}, seed ${c.seed}, drift (${c.x}, ${c.z}): the largest difference`, worst, 0.005);
   }
 
   console.log('\nThe renderer\'s cloud map, against the TypeScript');
@@ -82,12 +83,11 @@ try {
   const far: [number, number, number] = [1e6 - 48.3, -1e6 + 17.9, 96];
   const mapCases = cases.flatMap((c, i) => (i % 4 === 1 || i % 4 === 2 ? [{ ...c, area: null }] : i % 4 === 3 ? [{ ...c, area: far }] : []));
   for (const c of mapCases) {
-    const shape = CLOUD_SHAPES[c.shape as keyof typeof CLOUD_SHAPES];
     const map = await page.evaluate(readMap, c.shape, { cover: c.cover, x: c.x, z: c.z, seed: c.seed }, c.area);
     let texel = 0, between = 0;
     const size = map.size, side = 1 / map.rect[2];
     for (let j = 0; j < size; j += 3) for (let i = 0; i < size; i += 3) {
-      const ts = cloudShade(map.rect[0] + ((i + 0.5) / size) * side, map.rect[1] + ((j + 0.5) / size) * side, c, shape);
+      const ts = cloudShade(map.rect[0] + ((i + 0.5) / size) * side, map.rect[1] + ((j + 0.5) / size) * side, c, c.shape);
       texel = Math.max(texel, Math.abs(ts - map.values[j * size + i]));
     }
     // Between texels, as the surfaces read it (bilinear), at points off the texel grid.
@@ -100,12 +100,12 @@ try {
       const x = map.rect[0] + u * side, z = map.rect[1] + v * side, h = side / size;
       let lo = Infinity, hi = -Infinity;
       for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
-        const ts = cloudShade(x + di * h, z + dj * h, c, shape);
+        const ts = cloudShade(x + di * h, z + dj * h, c, c.shape);
         lo = Math.min(lo, ts); hi = Math.max(hi, ts);
       }
       between = Math.max(between, read < lo ? lo - read : read > hi ? read - hi : 0);
     }
-    const name = `shape ${c.shape}, cover ${c.cover}, drift (${c.x}, ${c.z})${c.area ? `, land at (${c.area[0]}, ${c.area[1]})` : ''}`;
+    const name = `${c.name}, cover ${c.cover}, drift (${c.x}, ${c.z})${c.area ? `, land at (${c.area[0]}, ${c.area[1]})` : ''}`;
     check(`${name}: at its texels (half floats)`, texel, 0.004);
     // A fiftieth of the shade to spare: a bump inside a texel, which a blend can't reach.
     check(`${name}: between them, as the surfaces read it, past the shades within a texel`, between, 0.02);
@@ -167,12 +167,11 @@ void main() { o = vec4(cloudShadeAt(uGrid.xy + gl_FragCoord.xy * uGrid.z), 0.0, 
 }
 
 /** In the page: the renderer's cloud map drawn for a field (over another square of land, if given), read back. */
-async function readMap(shape: string, field: CloudField, area: [number, number, number] | null) {
-  const { CLOUD_SHAPES: shapes } = await import('/src/renderer/clouds.ts' as string);
+function readMap(shape: CloudShape, field: CloudField, area: [number, number, number] | null) {
   const r = (window as unknown as { __renderer: any; __draw: () => void }).__renderer;
-  r.cloudShape = shapes[shape];
+  r.cloudShape = shape;
   if (area) r.cloudMap.setArea(...area);
-  r.cloudMap.draw(r.gl, field, shapes[shape]);
+  r.cloudMap.draw(r.gl, field, shape);
   const t = r.cloudMap.target, size = t.width;
   // Half floats, one a texel (the map is red only), each turned into a number.
   const raw = new Uint16Array(size * size);

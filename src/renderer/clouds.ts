@@ -50,31 +50,24 @@ export interface CloudField {
 }
 
 /**
- * The candidates, for the developer to choose between on the PR's preview (#8). The ones not picked go before it merges.
+ * The clouds' shape, the developer's pick (#8, 2026-10-31): cumulus under a light cover (middling masses with rounded
+ * lobes, a soft rim), turning into big soft masses from 30% to 85% cover, so a nearly closed sky is broad cloud with a
+ * few holes in it.
  */
-export const CLOUD_SHAPES = {
-  /** Cumulus: middling masses with rounded lobes, a soft rim. */
-  a: { size: 30, warp: 0.35, rough: 0.5, billow: 0.7, soft: 0.6 },
-  /** Big and soft: fewer, larger masses with broad soft edges. */
-  b: { size: 48, warp: 0.4, rough: 0.5, billow: 0.6, soft: 1.0 },
-  /** Broken: smaller, more ragged clouds with crisper edges. */
-  c: { size: 22, warp: 0.45, rough: 0.55, billow: 0.8, soft: 0.4 },
-  /** a under a light cover, turning into b as the sky closes: summer cumulus, then big soft masses with holes. */
-  ab: { size: 30, warp: 0.35, rough: 0.5, billow: 0.7, soft: 0.6, heavy: { size: 48, warp: 0.4, rough: 0.5, billow: 0.6, soft: 1.0, from: 0.3, to: 0.85 } },
-} as const satisfies Record<string, CloudShape>;
-export type CloudShapeName = keyof typeof CLOUD_SHAPES;
-export const CLOUD_SHAPE: CloudShape = CLOUD_SHAPES.a;
+export const CLOUD_SHAPE: CloudShape = {
+  size: 30, warp: 0.35, rough: 0.5, billow: 0.7, soft: 0.6,
+  heavy: { size: 48, warp: 0.4, rough: 0.5, billow: 0.6, soft: 1.0, from: 0.3, to: 0.85 },
+};
 
 /**
  * How fast the clouds are drawn moving, metres a second, for a wind aloft (m/s): far slower than real clouds, which
- * would race across the view, as the gusts are (WindState.driftSpeed). The game carries the drift on at this speed
- * and sends it (see CloudField), so its panels see the clouds where they're drawn. Candidates for the developer (#8).
+ * would race across the view, as the gusts are (WindState.driftSpeed); 0.85 m/s in a breeze (the developer's pick, #8).
+ * The game carries the drift on at this speed and sends it (see CloudField), so its panels see the clouds where they're
+ * drawn.
  */
-export const CLOUD_PACES = { slow: 0.06, mid: 0.12, fast: 0.2 } as const;
-export type CloudPaceName = keyof typeof CLOUD_PACES;
-export const cloudDriftSpeed = (windAloft: number, pace: number = CLOUD_PACES.mid) => 0.25 + pace * Math.max(0, windAloft);
+export const cloudDriftSpeed = (windAloft: number) => 0.25 + 0.12 * Math.max(0, windAloft);
 
-/** The field repeats every PERIOD of its coarsest cells (with shape a, 7.7 km). */
+/** The field repeats every PERIOD of its coarsest cells (7.7 km for the light layer). */
 export const PERIOD = 256;
 const OCTAVES = 5;
 const DIAG = 0.70710678;
