@@ -90,10 +90,9 @@ export const CLOUD_NIGHT = 0.4;
 /**
  * How much deeper a cloud's shade is than the overcast look's while there are gaps in the sun: the overcast light was set
  * for a whole grey day, which the eye adapts to, and beside sunlit land it reads as barely a shadow. Eases back to the
- * overcast look's as the sky closes (gapCover). Candidates for the developer (#8).
+ * overcast look's as the sky closes (gapCover). The developer's pick (#8, 2026-10-31).
  */
-export const CLOUD_DEPTHS = { light: 0.8, mid: 0.65, deep: 0.5 } as const;
-export type CloudDepthName = keyof typeof CLOUD_DEPTHS;
+export const CLOUD_DEPTH = 0.65;
 
 /** The hour's look under a cover (0 clear .. 1 overcast), by a recipe. */
 export function overcastLook(look: Look, cover: number, r: OvercastRecipe): Look {

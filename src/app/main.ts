@@ -4,8 +4,7 @@ import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
 import type { MaterialKind } from '../renderer/materials';
-import { CLOUD_DEPTHS, type CloudDepthName } from '../renderer/overcast';
-import { CLOUD_PACES, CLOUD_SHAPES, cloudDriftSpeed, type CloudPaceName, type CloudShapeName } from '../renderer/clouds';
+import { cloudDriftSpeed } from '../renderer/clouds';
 import { WEATHER_PRESETS, type CloudDrift, type Haze, type Weather, type WeatherName } from '../renderer/weather';
 import { WIND_SCALE, windName, type Wind, type WindStrength } from '../renderer/wind';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
@@ -19,8 +18,6 @@ import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, type SpellName } from 
 //     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop, hazeBase (metres)
 //   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
 //   spell=shower|fog (which scripted weather: a shower, or a morning fog lifting)
-//   clouds=a|b|c|ab (the cloud shapes to choose between, #8)  cloudPace=slow|mid|fast (how fast they drift for the wind)
-//   cloudShade=light|mid|deep (how deep a cloud's shade is beside the sunny gaps)
 //   cloudSeed (which cloud field: a whole number)
 //   falling=0 (leave out the things in the air: the wind's leaves, and rain, snow and dust to come)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
@@ -92,19 +89,14 @@ const weather: Sky & { haze: Haze } = {
   },
 };
 if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase'].some((k) => params.has(k))) presetName = null;
-// The clouds: the shape and pace candidates to choose between (#8; the ones not picked go before it merges), and the field.
-const pick = <T extends string>(k: string, names: Record<T, unknown>, d: T): T => { const v = params.get(k); return v !== null && v in names ? v as T : d; };
-let cloudShape = pick<CloudShapeName>('clouds', CLOUD_SHAPES, 'a'), cloudPace = pick<CloudPaceName>('cloudPace', CLOUD_PACES, 'mid');
-let cloudDepth = pick<CloudDepthName>('cloudShade', CLOUD_DEPTHS, 'mid');
-renderer.cloudShape = CLOUD_SHAPES[cloudShape];
-renderer.cloudDepth = CLOUD_DEPTHS[cloudDepth];
+// The clouds' field (#8).
 const cloudSeed = num('cloudSeed', 1);
 
 // The clouds' drift, standing in for the game's: carried along by the demo's wind (standing in for the wind aloft) at the
 // drawn speed (cloudDriftSpeed), and sent with its speed whenever the weather is, as the game would.
 const drift = { x: 0, z: 0, vx: 0, vz: 0, at: 0 };
 function cloudVelocity() {
-  const v = cloudDriftSpeed(wind.speed, CLOUD_PACES[cloudPace]);
+  const v = cloudDriftSpeed(wind.speed);
   return { vx: Math.cos(wind.direction) * v, vz: Math.sin(wind.direction) * v };
 }
 /**
@@ -203,21 +195,21 @@ function hud() {
 
   // The weather: a preset, its values, and the timeline standing in for the game. Moving a value stops the timeline.
   hudEl.append(Object.assign(document.createElement('div'), { className: 'break' }));
-  const choose = document.createElement('select');
-  for (const name of ['custom', ...Object.keys(WEATHER_PRESETS)]) choose.append(new Option(name.replace('-', ' '), name, false, name === (presetName ?? 'custom')));
-  choose.onchange = () => {
-    if (!(choose.value in WEATHER_PRESETS)) return;
-    const p: Weather = WEATHER_PRESETS[choose.value as WeatherName];
+  const pick = document.createElement('select');
+  for (const name of ['custom', ...Object.keys(WEATHER_PRESETS)]) pick.append(new Option(name.replace('-', ' '), name, false, name === (presetName ?? 'custom')));
+  pick.onchange = () => {
+    if (!(pick.value in WEATHER_PRESETS)) return;
+    const p: Weather = WEATHER_PRESETS[pick.value as WeatherName];
     Object.assign(weather, { cloud: p.cloud, rain: p.rain ?? 0, snow: p.snow ?? 0, heat: p.heat ?? 0 });
     weather.haze = p.haze ? { ...p.haze } : { ...weather.haze, amount: 0 };
-    presetName = choose.value as WeatherName; playing = false; timelineEl.textContent = '';
+    presetName = pick.value as WeatherName; playing = false; timelineEl.textContent = '';
     send(weather);
     hud();
   };
-  choose.onkeydown = (e) => e.stopPropagation();
-  hudEl.append(Object.assign(document.createElement('label'), { textContent: 'Weather' }), choose);
+  pick.onkeydown = (e) => e.stopPropagation();
+  hudEl.append(Object.assign(document.createElement('label'), { textContent: 'Weather' }), pick);
   const weatherSet = (f: (v: number) => void) => (v: number) => {
-    f(v); presetName = null; choose.value = 'custom'; playing = false; play.className = ''; timelineEl.textContent = '';
+    f(v); presetName = null; pick.value = 'custom'; playing = false; play.className = ''; timelineEl.textContent = '';
     send(weather);
   };
   const share = (v: number) => v.toFixed(2);
@@ -241,7 +233,7 @@ function hud() {
   spells.onkeydown = (e) => e.stopPropagation();
   play.onclick = () => {
     playing = !playing; timelineStart = null; timelineSent = '';
-    if (playing) { presetName = null; choose.value = 'custom'; } else timelineEl.textContent = '';
+    if (playing) { presetName = null; pick.value = 'custom'; } else timelineEl.textContent = '';
     play.className = playing ? 'on' : '';
   };
   const pace = Object.assign(document.createElement('button'), { textContent: `${speed}× speed` });
@@ -253,34 +245,6 @@ function hud() {
     speed = next; pace.textContent = `${speed}× speed`;
   };
   hudEl.append(play, spells, pace, timelineEl);
-
-  // The cloud candidates (#8).
-  hudEl.append(Object.assign(document.createElement('div'), { className: 'break' }));
-  const shapes = Object.keys(CLOUD_SHAPES) as CloudShapeName[], paces = Object.keys(CLOUD_PACES) as CloudPaceName[];
-  const shapeButton = Object.assign(document.createElement('button'), { textContent: `Clouds ${cloudShape}` });
-  shapeButton.title = 'a: cumulus, b: big and soft, c: broken, ab: a turning into b as the sky closes (URL clouds=a|b|c|ab)';
-  shapeButton.onclick = () => {
-    cloudShape = shapes[(shapes.indexOf(cloudShape) + 1) % shapes.length];
-    renderer.cloudShape = CLOUD_SHAPES[cloudShape];
-    hud();
-  };
-  const paceButton = Object.assign(document.createElement('button'), { textContent: `Drift ${cloudPace}` });
-  paceButton.title = 'How fast the clouds drift for the wind (URL cloudPace=slow|mid|fast)';
-  paceButton.onclick = () => {
-    cloudPace = paces[(paces.indexOf(cloudPace) + 1) % paces.length];
-    send(sent);
-    hud();
-  };
-  const depths = Object.keys(CLOUD_DEPTHS) as CloudDepthName[];
-  const depthButton = Object.assign(document.createElement('button'), { textContent: `Shade ${cloudDepth}` });
-  depthButton.title = 'How deep a cloud\'s shade is beside the sunny gaps (URL cloudShade=light|mid|deep)';
-  depthButton.onclick = () => {
-    cloudDepth = depths[(depths.indexOf(cloudDepth) + 1) % depths.length];
-    renderer.cloudDepth = CLOUD_DEPTHS[cloudDepth];
-    hud();
-  };
-  const speedOf = () => { const { vx, vz } = cloudVelocity(); return Math.hypot(vx, vz); };
-  hudEl.append(shapeButton, depthButton, paceButton, Object.assign(document.createElement('span'), { textContent: `${speedOf().toFixed(1)} m/s` }));
 }
 const timelineEl = document.createElement('span');
 /** The weather controls' values, put back to what they show (the timeline moves them). */
@@ -383,7 +347,7 @@ function profilePanel() {
   // Everything that sets the work, as it is when Run is pressed, so pasted results from different settings can't be
   // mistaken for each other.
   const about = () => `scene ${sceneName} · GPU ${gpu} · ${timers ? 'GPU timers' : 'no GPU timers (only the uncapped frame and the CPU)'}\n`
-    + `hour ${hour} · x ${view.target.x.toFixed(2)} · z ${view.target.z.toFixed(2)} · zoom ${view.zoom.toFixed(1)} · view ${view.view} · samples ${num('samples', 4)} · shadow map ${num('shadowMap', farm ? 4096 : 2048)} · lines ${renderer.settings.lines ? 'on' : 'off'} · shadows ${renderer.settings.shadows ? 'on' : 'off'} · prepass ${renderer.settings.prepass ? 'on' : 'off'} · water scissor ${renderer.settings.waterScissor ? 'on' : 'off'} · equal depth ${renderer.settings.equalDepth ? 'on' : 'off'} · ground ${bakeName('ground')} · crop ${bakeName('crop')} · grass ${bakeName('grass')} · weather ${presetName ?? JSON.stringify(weather)} · clouds ${cloudShape} ${cloudDepth} ${cloudPace}\n`
+    + `hour ${hour} · x ${view.target.x.toFixed(2)} · z ${view.target.z.toFixed(2)} · zoom ${view.zoom.toFixed(1)} · view ${view.view} · samples ${num('samples', 4)} · shadow map ${num('shadowMap', farm ? 4096 : 2048)} · lines ${renderer.settings.lines ? 'on' : 'off'} · shadows ${renderer.settings.shadows ? 'on' : 'off'} · prepass ${renderer.settings.prepass ? 'on' : 'off'} · water scissor ${renderer.settings.waterScissor ? 'on' : 'off'} · equal depth ${renderer.settings.equalDepth ? 'on' : 'off'} · ground ${bakeName('ground')} · crop ${bakeName('crop')} · grass ${bakeName('grass')} · weather ${presetName ?? JSON.stringify(weather)}\n`
     + `${location.href}\n${navigator.userAgent}`;
   const out = Object.assign(document.createElement('pre'), { textContent: `${about()}\n\nPlug the laptop in, close other apps, then Run. It takes a minute or two.` });
   const run = Object.assign(document.createElement('button'), { textContent: 'Run' });
