@@ -3,7 +3,7 @@ import * as THREE from 'three';
 // The game's camera: orthographic, a 3/4 view pitched 30° down, four views 90° apart, zoom as screen pixels per metre.
 
 export const PITCH = THREE.MathUtils.degToRad(30);
-export const MIN_ZOOM = 16, MAX_ZOOM = 96;
+export const MIN_ZOOM = 16, MAX_ZOOM = 192;
 /** How far the camera sits from its target along the view (orthographic, so this only has to clear the scene). */
 export const CAMERA_DISTANCE = 120;
 

@@ -10,7 +10,7 @@ import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } fr
 import { SPEEDS, SPELLS, timelineAt, timelinePhase, type SpellName } from './timeline';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
-//   view=0..3  zoom=16..96 (screen px per metre)  hour=0..24  x, z (camera target)  t (seconds: freeze the clock there)
+//   view=0..3  zoom=16..192 (screen px per metre)  hour=0..24  x, z (camera target)  t (seconds: freeze the clock there)
 //   scene=farm|meadow  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   weather (clear|scattered|overcast|soft-rain|storm|fog|dust|heat-wave|snow|blizzard), then each value over it:
@@ -124,6 +124,7 @@ canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   if (profiling) return;
   view.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, view.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+  for (const r of refreshers) r();
 }, { passive: false });
 addEventListener('keydown', (e) => {
   if (profiling) return;
@@ -159,6 +160,9 @@ function hud() {
   const windSet = (f: (v: number) => void) => (v: number) => { f(v); renderer.setWind(wind); };
   hudEl.append(slider('Wind', 0, 45, 0.5, () => wind.speed, windSet((v) => { wind.speed = v; }), (v) => `${windName(v)} ${v.toFixed(1)} m/s`));
   hudEl.append(slider('towards', 0, 360, 5, () => (wind.direction * 180) / Math.PI, windSet((v) => { wind.direction = (v * Math.PI) / 180; }), (v) => `${v.toFixed(0)}°`));
+  // The zoom by its doubling, so each step of the slider zooms as much as the last.
+  hudEl.append(slider('Zoom', Math.log2(MIN_ZOOM), Math.log2(MAX_ZOOM), 0.01, () => Math.log2(view.zoom), (v) => { view.zoom = 2 ** v; },
+    (v) => `${(2 ** v).toFixed(0)} px/m`, true));
   const info = document.createElement('span');
   info.textContent = 'drag to pan · wheel to zoom · Q/E to turn';
   hudEl.append(info);
