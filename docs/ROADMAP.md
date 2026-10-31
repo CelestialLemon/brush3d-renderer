@@ -12,16 +12,18 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
      2026-10-31, #29 and #30: see Weather);
   3. #8 clouds: one cloud recipe the game shares (cloud shadows will cut solar panels' power, CelestialLemon/Soil-n-Silo#198),
      shadows on the land, reflections in the water and panels;
-  4. #9 mist, fog, dust and heat haze;
+  4. #9 mist, fog, dust and heat haze (done 2026-10-31, #33 and #35: see Weather);
   5. #10 the shelter map, so rain and snow stop at roofs, and a test shed (done 2026-10-31, #31 and #32: two depth maps
      from above, roofs and crowns (a crown keeps off 60%), drawn only when cover changes, `?shelter` to see it; a
      barn-red shed (the developer's pick of three) modelled by `tools/blender/shed.py`, the first model made in Blender);
-  6. #18 dynamic water: a state the game drives;
-  7. #11 rain and wet ground;
-  8. #12 storms and lightning;
-  9. #13 seasons;
-  10. #14 snow, frost and ice;
-  11. #19 the water's own look, chosen under every weather.
+  6. #36 wind: gusts and lulls as fronts sweeping the land, one gust field for the grass, trees, water and dust (with
+     depth, a rolling head), and for the game to query. It grew out of #9: dust's gusts didn't read;
+  7. #18 dynamic water: a state the game drives;
+  8. #11 rain and wet ground;
+  9. #12 storms and lightning;
+  10. #13 seasons;
+  11. #14 snow, frost and ice;
+  12. #19 the water's own look, chosen under every weather.
 - **The demo on GitHub Pages** (#15, shipped 2026-10-30): https://celestiallemon.github.io/brush3d-renderer/main/, and a preview
   of every open pull request from this repo at `.../pr-<number>/`, removed when it closes.
 - **Wind, issue #2** (2026-10-30, shipped in #5): `renderer.setWind({ speed, direction, gust })`, eased, from calm to a
@@ -111,19 +113,20 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   half to three-quarter cover than either end); judge it again with #8's cloud shadows, which change what part cover looks
   like.
 
-- **Mist and fog (#9, part 1, in review).** The haze from `setWeather` lies on the land: thickest low down and thinning
+- **Mist and fog (#9, part 1, merged in #33).** The haze from `setWeather` lies on the land: thickest low down and thinning
   to its top, so a shallow mist pools along the water and in the hollows and a deep fog veils the land while roofs and
   crowns rise out of it; thin, it breaks into patches keyed to the world that drift with the wind (a gale thins it and
   drags it into streaks). An optional `base` lifts it off the ground (low cloud). Its colour is the game's in noon's
   light, lit by the hour. The game lifts a mist by lowering its amount and top (the demo's timeline has a morning fog
   lifting). Picked by the developer: ink lines fade halfway into fog, so the things the player can use still show,
-  and the fog drains the paint's colour but keeps a trace of it. Merged in #33.
-- **Dust and the heat wave (#9, part 2, in review).** A haze can be dust (`kind: 'dust'`, the developer's call): the wind
+  and the fog drains the paint's colour but keeps a trace of it.
+- **Dust and the heat wave (#9, part 2, merged in #35).** A haze can be dust (`kind: 'dust'`, the developer's call): the wind
   carries it, in clouds and fine streaks blowing along the ground, rather than thinning it, the gusts sweep it in in
   waves, and the light through it turns orange. The heat wave (`heat`) gives a hot yellow light and a warm cream air over
   the land, by day only ('gold', the developer's pick), with a shimmer keyed to the land that grows with the heat (3.5
-  pixels at full heat, 'clear'). The dust's gusts ('strong') are a stopgap until the wind's gusts are rebuilt as fronts
-  sweeping the land. The demo's timeline has a dust storm blowing through.
+  pixels at full heat, 'clear'). The dust's gusts ('strong') are a stopgap: they're hard to see in a thick storm, and the
+  wind's gusts are to be rebuilt as fronts sweeping the land (#36). The demo's timeline has a dust storm blowing through.
+  Left for #36: the haze's patches (fog and dust) swing when the wind turns, the further from the map's centre the more.
 
 ### Motion and stability
 
@@ -148,6 +151,8 @@ since #2). Left, most visible first (Sol's ranking):
 
 ### Wind (first pass shipped with #2)
 
+- **Gusts (#36, next):** today's are soft round patches, slower than the air, that don't match from grass to dust.
+  #36 rebuilds them as one gust field, starting from the research in the issue.
 - **The flying leaves are fast.** In a hurricane they cross several pixels a frame, which may read as confetti; slow them
   if it does. They also ignore the ground and the trees (they fly at a few metres, round the camera).
 - **The game's half** isn't drawn yet: snapped branches, fallen trees, a field flattened by a storm. The renderer will take
