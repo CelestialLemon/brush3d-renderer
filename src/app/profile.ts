@@ -10,12 +10,15 @@ import * as THREE from 'three';
 import type { BrushRenderer } from '../renderer/renderer';
 import type { MaterialKind } from '../renderer/materials';
 import { PassTimer } from '../renderer/timer';
+import { WEATHER_PRESETS, type Weather } from '../renderer/weather';
 import { WIND_SCALE } from '../renderer/wind';
 
 export interface ProfileCase {
   label: string; width: number; height: number; wind: number; hide?: MaterialKind[];
   /** Draw the shelter map every frame, to time it (the game draws it only when cover changes). */
   shelter?: boolean;
+  /** The weather, if not the demo's. */
+  weather?: Weather;
 }
 export interface ProfileRow {
   label: string; width: number; height: number;
@@ -41,12 +44,13 @@ export function defaultCases(): ProfileCase[] {
   }
   for (const k of KINDS) cases.push({ label: `1080p storm, no ${k}`, width: 1920, height: 1080, wind: STORM, hide: [k] });
   cases.push({ label: '1080p storm, shelter every frame', width: 1920, height: 1080, wind: STORM, shelter: true });
+  cases.push({ label: '1080p storm, fog', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS.fog });
   return cases;
 }
 
 /**
  * Runs the cases. `draw(time)` draws one frame as the demo does (the look, then the renderer); `restore` puts the demo's
- * size and wind back. `progress` hears each row as it's done.
+ * size, wind and weather back (and is called before each case). `progress` hears each row as it's done.
  */
 export async function runProfile(
   renderer: BrushRenderer, draw: (time: number) => void, restore: () => void, cases: ProfileCase[],
@@ -68,6 +72,8 @@ export async function runProfile(
       output.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
       view.zoom = (zoom * c.height) / 1080;
       view.update(0, true);
+      restore();
+      if (c.weather) renderer.setWeather(c.weather, true);
       renderer.setWind({ speed: c.wind, direction: (31 * Math.PI) / 180, gust: 0.5 }, true);
       for (const k of KINDS) renderer.setVisible(k, !c.hide?.includes(k));
       const frame = (t: number) => { if (c.shelter) renderer.shelter.changed(); draw(t); };

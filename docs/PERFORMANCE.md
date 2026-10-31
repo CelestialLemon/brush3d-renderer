@@ -138,6 +138,21 @@ the uncapped frame, its GPU timers count waiting): the farm's 1080p storm 14.99 
 0.67. Reading the map costs its readers (rain, wetness, snow),
 counted in their own lines.
 
+### Mist and fog (#9)
+
+In the post pass: each pixel's place in the world rebuilt from its depth, and the fog summed in four steps up the view's
+path out of the layer, reading drifting noise at each. The noise is baked once into a 256² texture (64 KB) that repeats;
+worked out in every pixel it cost 0.8 ms here, twice the line's budget. Skipped where there's no fog, and above its top.
+RX 570, 1080p storm, GPU ms (`1080p storm, fog` in `node tools/profile.ts` and `?profile`):
+
+| | post, clear | post, fog | frame |
+|---|---:|---:|---:|
+| farm | 0.26 | 0.38 | 11.62 → 11.86 |
+| meadow | 0.20 | 0.35 | 4.89 → 5.05 |
+
+About 0.15 ms here, so about 0.3 on the laptop: the rest of the line's 0.8 is left for dust and the heat wave. With no
+haze the frame is byte-for-byte what it was.
+
 ## Quality settings
 
 One look on every machine for now. These are the knobs a weather task builds in, so a machine that misses its 45 fps can
