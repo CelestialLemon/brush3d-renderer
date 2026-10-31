@@ -81,8 +81,8 @@ export class WeatherState {
    */
   haze = 0; hazeColor = new THREE.Color(FOG); hazeTop = 4; hazeBase = -50;
   /**
-   * Where a haze lying on the ground starts: just under the lowest land (the renderer sets it from the water). A real
-   * height, so a fog rising into low cloud eases its base up from the land, not from far underground.
+   * Where a haze lying on the ground starts: just under the lowest land (the renderer sets it from the ground and the
+   * water). A real height, so a fog rising into low cloud eases its base up from the land, not from far underground.
    */
   ground = -50;
   private time: number | null = null;
