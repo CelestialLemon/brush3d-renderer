@@ -86,7 +86,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   view). Fine from the aerial camera, flat otherwise.
 - **The stream is brook-sized.** A wider river or a pond would show the reflections off better.
 - **Half-res reflections smear up close.** Soft by design, but edges blur at high zoom.
-- **Cloud reflections** wait on the cloud layer (#8).
+- **Cloud reflections** (#8): the water and the solar glass mirror the clouds; the look is being chosen on its PR.
 - **Order** (decided 2026-10-30): #1's later steps are now their own issues in the weather epic. The dynamic water, #18, comes
   in the middle, before rain (#11); the water's own look, #19, comes last, so it's chosen under every sky.
 - **Grass and reeds are reflected again** (2026-10-29), read through the reflection's small blur. What the water still adds

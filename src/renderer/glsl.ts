@@ -224,10 +224,12 @@ vec3 mirrorSky(vec2 xz, float low, out float cloud) {
     vec3 belly = mix(mix(uCloudLit, uCloudBelly, 0.85) * 0.9, uCloudBelly, closed);
     col = mix(mix(col, belly, smoothstep(0.5, 1.0, cloud)), uCloudLit * 1.15, edge * (1.0 - closed));
   } else if (look == 2) {
-    // Painted: three soft tones, their edges broken by strokes lying across the view.
-    vec2 side = vec2(uViewBack.z, -uViewBack.x);
-    vec2 st = vec2(dot(xz, side) * 0.08, dot(xz, uViewBack.xz) * 1.2);
-    float t = clamp(cloud + snoise(st) * 0.3, 0.0, 1.0) * 3.0;
+    // Painted: three soft tones, their edges broken by strokes lying across the view. The strokes are fixed to the world
+    // (along x or along z, whichever lies more across the view), so turning the camera never sweeps them over the land;
+    // and they only break edges, never making a cloud in a clear sky or a gap in a closed one.
+    float across = smoothstep(0.3, 0.7, abs(uViewBack.x));
+    float stroke = mix(snoise(xz * vec2(0.08, 1.2)), snoise(xz.yx * vec2(0.08, 1.2) + 31.0), across);
+    float t = clamp(cloud + stroke * 0.3 * min(1.0, 4.0 * cloud * (1.0 - cloud)), 0.0, 1.0) * 3.0;
     cloud = (floor(t) + smoothstep(0.35, 0.65, fract(t))) / 3.0;
   }
   return mix(gap, col, cloud);
