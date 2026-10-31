@@ -144,10 +144,10 @@ export class WeatherState {
 
   /** Advances to a time in seconds. The first time, and a jump back (a tool seeking), only take the time. */
   update(time: number) {
-    // The drift: where the game last put it, carried on at its speed from the first frame drawn after (a tool seeking
-    // back holds it there).
+    // The drift: where the game last put it, carried on at its speed from the first frame drawn after. A clock gone back
+    // (a tool seeking) starts it again from there.
     const d = this.drift;
-    d.since ??= time;
+    if (d.since === null || time < d.since) d.since = time;
     const ahead = Math.max(0, time - d.since);
     this.clouds.x = d.x + d.vx * ahead; this.clouds.z = d.z + d.vz * ahead;
     const dt = this.time === null ? 0 : time - this.time;

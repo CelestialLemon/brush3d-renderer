@@ -13,13 +13,14 @@ uniform vec4 uCloudRect;     // the map's corner (x, z) and 1 / its side
 float cloudMapShade(vec2 xz) { return texture(uCloudMap, (xz - uCloudRect.xy) * uCloudRect.zw).r; }
 `;
 
+// The points from the map's corner, which goes in the shift (cloudShift's origin): small numbers wherever the land is.
 const VERT = /* glsl */ `
 precision highp float;
 in vec3 position;
 uniform vec4 uCloudRect;
 out vec2 vXZ;
 void main() {
-  vXZ = uCloudRect.xy + (position.xy * 0.5 + 0.5) / uCloudRect.zw;
+  vXZ = (position.xy * 0.5 + 0.5) / uCloudRect.zw;
   gl_Position = vec4(position.xy, 0.0, 1.0);
 }
 `;
@@ -75,7 +76,8 @@ export class CloudMap {
     this.drawn = key;
     const u = this.material.uniforms;
     (u.uCloudShape.value as THREE.Vector4).set(1 / shape.size, shape.warp, shape.rough, shape.billow);
-    (u.uCloudShift.value as THREE.Vector2).fromArray(cloudShift(field, shape));
+    const rect = this.uniforms.uCloudRect.value;
+    (u.uCloudShift.value as THREE.Vector2).fromArray(cloudShift(field, shape, rect.x, rect.y));
     (u.uCloudThreshold.value as THREE.Vector2).fromArray(cloudThreshold(field.cover, shape));
     u.uCloudSeed.value = seedOf(field.seed);
     gl.setRenderTarget(this.target);

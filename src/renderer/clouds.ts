@@ -6,7 +6,8 @@
 // agree to a few thousandths (tools/clouds.ts checks). What makes them agree:
 // - the noise's random part is a whole-number hash, which TypeScript (Math.imul) and GLSL (uint) work out bit for bit;
 // - the field repeats every PERIOD cells (a few kilometres), and the drift is taken round that period before the GPU
-//   sees it, so however far the clouds have drifted, the numbers stay small enough for its 32-bit floats;
+//   sees it, so however far the clouds have drifted, the numbers stay small enough for its 32-bit floats; the GPU is
+//   given points near an origin (cloudShift's), not far out in the world, for the same reason;
 // - no sines, exponentials or powers: only + - * / and floor, which every machine works out alike.
 //
 // The game owns the clouds (#3): it sets the cover and the drift (where the wind aloft has carried them), and the
@@ -123,10 +124,13 @@ function cellOf(x: number, z: number, field: CloudField, shape: CloudShape): [nu
   return [x * k - sx, z * k - sz];
 }
 
-/** The drift in cells, taken round the period: what the GLSL twin is given (uCloudShift). */
-export function cloudShift(field: CloudField, shape: CloudShape = CLOUD_SHAPE): [number, number] {
-  const k = 1 / shape.size;
-  return [field.x * k - PERIOD * Math.floor((field.x * k) / PERIOD), field.z * k - PERIOD * Math.floor((field.z * k) / PERIOD)];
+/**
+ * The drift in cells, taken round the period: what the GLSL twin is given (uCloudShift). With an origin (ox, oz), the
+ * twin is then asked for points less the origin: a point far out in the world is a small number to the GPU.
+ */
+export function cloudShift(field: CloudField, shape: CloudShape = CLOUD_SHAPE, ox = 0, oz = 0): [number, number] {
+  const k = 1 / shape.size, x = (field.x - ox) * k, z = (field.z - oz) * k;
+  return [x - PERIOD * Math.floor(x / PERIOD), z - PERIOD * Math.floor(z / PERIOD)];
 }
 
 interface Calibration { soft: number; covers: Float64Array }
@@ -199,8 +203,10 @@ export function cloudShade(x: number, z: number, field: CloudField, shape: Cloud
 export const seedOf = (seed: number) => (Math.floor(seed) >>> 0) & 0x7fffffff;
 
 /**
- * The twin in GLSL: cloudShadeAt(xz), as cloudShade. Its uniforms: uCloudShape (1 / the shape's size, its warp, rough
- * and billow), uCloudShift (cloudShift), uCloudThreshold (cloudThreshold) and uCloudSeed (seedOf). Needs GLSL ES 3.
+ * The twin in GLSL: cloudShadeAt(xz), as cloudShade, xz taken from cloudShift's origin (keep it within a few hundred
+ * metres: a 32-bit float far out can't hold a point to the noise's detail). Its uniforms: uCloudShape (1 / the shape's
+ * size, its warp, rough and billow), uCloudShift (cloudShift), uCloudThreshold (cloudThreshold) and uCloudSeed (seedOf).
+ * Needs GLSL ES 3.
  */
 export const CLOUD_GLSL = /* glsl */ `
 uniform vec4 uCloudShape;

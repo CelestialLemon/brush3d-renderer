@@ -81,9 +81,12 @@ try {
   }
 
   console.log('\nThe renderer\'s cloud map, against the TypeScript');
-  for (const c of cases.filter((_, i) => i % 4 === 2 || i % 4 === 1)) {
+  // Over the scene's land, and over land a thousand kilometres out (a game whose world sits far from the origin).
+  const far: [number, number, number] = [1e6 - 48.3, -1e6 + 17.9, 96];
+  const mapCases = cases.flatMap((c, i) => (i % 4 === 1 || i % 4 === 2 ? [{ ...c, area: null }] : i % 4 === 3 ? [{ ...c, area: far }] : []));
+  for (const c of mapCases) {
     const shape = CLOUD_SHAPES[c.shape as keyof typeof CLOUD_SHAPES];
-    const map = await page.evaluate(readMap, c.shape, { cover: c.cover, x: c.x, z: c.z, seed: c.seed });
+    const map = await page.evaluate(readMap, c.shape, { cover: c.cover, x: c.x, z: c.z, seed: c.seed }, c.area);
     let texel = 0, between = 0;
     const size = map.size, side = 1 / map.rect[2];
     for (let j = 0; j < size; j += 3) for (let i = 0; i < size; i += 3) {
@@ -105,7 +108,7 @@ try {
       }
       between = Math.max(between, read < lo ? lo - read : read > hi ? read - hi : 0);
     }
-    const name = `shape ${c.shape}, cover ${c.cover}, drift (${c.x}, ${c.z})`;
+    const name = `shape ${c.shape}, cover ${c.cover}, drift (${c.x}, ${c.z})${c.area ? `, land at (${c.area[0]}, ${c.area[1]})` : ''}`;
     check(`${name}: at its texels (half floats)`, texel, 0.004);
     // A fiftieth of the shade to spare: a bump inside a texel, which a blend can't reach.
     check(`${name}: between them, as the surfaces read it, past the shades within a texel`, between, 0.02);
@@ -168,11 +171,12 @@ void main() { o = vec4(cloudShadeAt(uGrid.xy + gl_FragCoord.xy * uGrid.z), 0.0, 
   return out;
 }
 
-/** In the page: the renderer's cloud map drawn for a field, read back. */
-async function readMap(shape: string, field: CloudField) {
+/** In the page: the renderer's cloud map drawn for a field (over another square of land, if given), read back. */
+async function readMap(shape: string, field: CloudField, area: [number, number, number] | null) {
   const { CLOUD_SHAPES: shapes } = await import('/src/renderer/clouds.ts' as string);
   const r = (window as unknown as { __renderer: any; __draw: () => void }).__renderer;
   r.cloudShape = shapes[shape];
+  if (area) r.cloudMap.setArea(...area);
   r.cloudMap.draw(r.gl, field, shapes[shape]);
   const t = r.cloudMap.target, size = t.width;
   // Half floats, one a texel (the map is red only), each turned into a number.
