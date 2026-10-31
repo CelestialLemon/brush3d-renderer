@@ -34,7 +34,7 @@ the clock), `lines=0`, `shadows=0`, `still` (hide the buttons), and the wind: `w
 over it, `cloud`, `rain`, `snow`, `heat`, `haze` (0-1), `hazeColor` (hex), `hazeTop` and `hazeBase` (metres) and `hazeKind`
 (`fog` or `dust`); `timeline` plays a scripted spell standing in for the game (`timeline=3` at 3× its speed; `spell` a
 `shower`, a morning `fog` or a `dust` storm), and `falling=0` leaves out the things in the air
-(rain, snow, dust, the wind's leaves) for the stability tools. `samples` (MSAA) and `shadowMap`
+(rain, snow, the wind's leaves) for the stability tools. `samples` (MSAA) and `shadowMap`
 (texels) try quality settings, `prepass=0`, `scissor=0` and `equal=0` turn off speed-ups (for comparing), `ground=live`,
 `grass=live` and `crop=live` work that kind's brush out in every pixel rather than reading it from the textures baked
 at load, and `profile` times
