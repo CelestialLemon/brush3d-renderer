@@ -22,7 +22,7 @@ import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, timelineWind, type Spe
 //   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
 //   spell=shower|fog|dust (which scripted weather: a shower, a morning fog lifting, or a dust storm blowing through)
 //   cloudSeed (which cloud field: a whole number)
-//   falling=0 (leave out the things in the air: the wind's leaves, and rain, snow and dust to come)
+//   falling=0 (leave out the things in the air: the wind's leaves, and rain and snow to come; dust is in the haze)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
 //   prepass=0 (paint without drawing the silhouettes first)  scissor=0 (the water's passes over the whole screen)
 //   equal=0 (paint at or nearer the silhouettes' depth, not only at it)

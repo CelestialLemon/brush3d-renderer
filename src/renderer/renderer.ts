@@ -57,7 +57,8 @@ export interface Settings {
   shimmer: number;
 }
 
-/** The kinds in the air, which settings.falling leaves out: the leaves the wind lifts (rain, snow and dust to come). */
+/** The kinds in the air, which settings.falling leaves out: the leaves the wind lifts (rain and snow to come).
+ * Dust is drawn in the haze (post.ts), keyed to the world like a fog's patches, so it stays. */
 export const FALLING: readonly MaterialKind[] = ['debris'];
 
 /** How a mesh takes part in the passes. */

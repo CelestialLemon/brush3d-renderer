@@ -13,7 +13,7 @@
 // It is not a floor: zoom-dependent choices (the grass's minimum width, line width, detail that fades with size, the water's
 // half-size passes) come out differently there, and supersampling doesn't remove all aliasing.
 // A query takes the weather like the demo's ("weather=storm"); add falling=0 to leave out the things in the air (rain,
-// snow, dust, the wind's leaves), which a still frame can't line up, and measure the land under them.
+// snow, the wind's leaves), which a still frame can't line up, and measure the land under them.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gpuName, launch, open } from './browser.ts';
