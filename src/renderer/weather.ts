@@ -87,6 +87,15 @@ export class WeatherState {
   ground = -50;
   private time: number | null = null;
 
+  /**
+   * Sets the ground's height. A drawn base under it rises to it at once: under the land it can't be seen, and easing it up
+   * from there would hold the haze on the land.
+   */
+  setGround(y: number) {
+    this.ground = y;
+    this.hazeBase = Math.max(this.hazeBase, Math.min(y, this.goal.hazeTop));
+  }
+
   /** The base asked for, a haze on the ground's at the ground, never above its top. */
   private baseGoal() { return Math.min(this.goal.hazeBase ?? this.ground, this.goal.hazeTop); }
 
