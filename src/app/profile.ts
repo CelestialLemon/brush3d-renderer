@@ -45,6 +45,8 @@ export function defaultCases(): ProfileCase[] {
   for (const k of KINDS) cases.push({ label: `1080p storm, no ${k}`, width: 1920, height: 1080, wind: STORM, hide: [k] });
   cases.push({ label: '1080p storm, shelter every frame', width: 1920, height: 1080, wind: STORM, shelter: true });
   cases.push({ label: '1080p storm, fog', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS.fog });
+  cases.push({ label: '1080p storm, dust', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS.dust });
+  cases.push({ label: '1080p storm, heat wave', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS['heat-wave'] });
   return cases;
 }
 

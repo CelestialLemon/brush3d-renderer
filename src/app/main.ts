@@ -5,10 +5,11 @@ import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
 import type { MaterialKind } from '../renderer/materials';
 import { cloudDriftSpeed } from '../renderer/clouds';
-import { WEATHER_PRESETS, type CloudDrift, type Haze, type Weather, type WeatherName } from '../renderer/weather';
+import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weather, type WeatherName } from '../renderer/weather';
+import { HEAT_RECIPES, type HeatLook } from '../renderer/air';
 import { WIND_SCALE, windName, type Wind, type WindStrength } from '../renderer/wind';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
-import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, type SpellName } from './timeline';
+import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, timelineWind, type SpellName } from './timeline';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
 //   view=0..3  zoom=16..192 (screen px per metre)  hour=0..24  x, z (camera target)  t (seconds: freeze the clock there)
@@ -16,8 +17,10 @@ import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, type SpellName } from 
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   weather (clear|scattered|overcast|soft-rain|storm|fog|dust|heat-wave|snow|blizzard), then each value over it:
 //     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop, hazeBase (metres)
+//     hazeKind=fog|dust
+//   heatLook=glare|gold|dry (the heat wave's light), shimmer=off|faint|more: looks to choose between (#9)
 //   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
-//   spell=shower|fog (which scripted weather: a shower, or a morning fog lifting)
+//   spell=shower|fog|dust (which scripted weather: a shower, a morning fog lifting, or a dust storm blowing through)
 //   cloudSeed (which cloud field: a whole number)
 //   falling=0 (leave out the things in the air: the wind's leaves, and rain, snow and dust to come)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
@@ -86,9 +89,16 @@ const weather: Sky & { haze: Haze } = {
   haze: {
     amount: num('haze', presetHaze.amount), color: params.has('hazeColor') ? parseInt(params.get('hazeColor')!, 16) : presetHaze.color,
     top: num('hazeTop', presetHaze.top), base: params.has('hazeBase') ? num('hazeBase', 0) : presetHaze.base,
+    kind: params.get('hazeKind') === 'dust' ? 'dust' : params.get('hazeKind') === 'fog' ? 'fog' : presetHaze.kind,
   },
 };
-if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase'].some((k) => params.has(k))) presetName = null;
+if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase', 'hazeKind'].some((k) => params.has(k))) presetName = null;
+// Looks to choose between (#9), each a button and a URL option: the heat wave's light, and its shimmer (pixels at full heat).
+const SHIMMER = { off: 0, faint: 0.6, more: 1.2 } as const;
+type Shimmer = keyof typeof SHIMMER;
+const heatLook: HeatLook = (params.get('heatLook') ?? '') in HEAT_RECIPES ? params.get('heatLook') as HeatLook : 'glare';
+let shimmer: Shimmer = (params.get('shimmer') ?? '') in SHIMMER ? params.get('shimmer') as Shimmer : 'faint';
+renderer.settings.heatLook = heatLook; renderer.settings.shimmer = SHIMMER[shimmer];
 // The clouds' field (#8).
 const cloudSeed = num('cloudSeed', 1);
 
@@ -223,12 +233,21 @@ function hud() {
   hudEl.append(slider('up to', -1, 30, 0.25, () => weather.haze.top, weatherSet((v) => { weather.haze.top = v; }), (v) => `${v.toFixed(1)} m`, true));
   const colour = Object.assign(document.createElement('input'), { type: 'color', value: `#${weather.haze.color.toString(16).padStart(6, '0')}` });
   colour.oninput = () => weatherSet((v) => { weather.haze.color = v; })(parseInt(colour.value.slice(1), 16));
-  hudEl.append(colour);
+  const kind = Object.assign(document.createElement('button'), { textContent: weather.haze.kind ?? 'fog' });
+  kind.title = 'What the haze is: fog lingers and the wind thins it; dust is carried by the wind and turns the light orange';
+  kind.onclick = () => {
+    const next: HazeKind = (weather.haze.kind ?? 'fog') === 'fog' ? 'dust' : 'fog';
+    weatherSet(() => { weather.haze.kind = next; })(0); kind.textContent = next;
+  };
+  refreshers.push(() => { kind.textContent = weather.haze.kind ?? 'fog'; });
+  hudEl.append(colour, kind);
   const play = Object.assign(document.createElement('button'), { textContent: 'Timeline', className: playing ? 'on' : '' });
   play.title = 'The scripted weather, sent as the game sends it';
   const spells = document.createElement('select');
-  for (const name of Object.keys(SPELLS)) spells.append(new Option(name === 'fog' ? 'morning fog' : name, name, false, name === spell));
-  spells.title = 'shower: clear, cloud building, a shower, clearing again · morning fog: a fog lifting, then mist gathering in the evening';
+  const spellName = (s: string) => (s === 'fog' ? 'morning fog' : s === 'dust' ? 'dust storm' : s);
+  for (const name of Object.keys(SPELLS)) spells.append(new Option(spellName(name), name, false, name === spell));
+  spells.title = 'shower: clear, cloud building, a shower, clearing again · morning fog: a fog lifting, then mist gathering in the evening · ' +
+    'dust storm: the wind getting up and blowing a dust storm through';
   spells.onchange = () => { spell = spells.value as SpellName; timelineStart = null; timelineSent = ''; };
   spells.onkeydown = (e) => e.stopPropagation();
   play.onclick = () => {
@@ -245,6 +264,18 @@ function hud() {
     speed = next; pace.textContent = `${speed}× speed`;
   };
   hudEl.append(play, spells, pace, timelineEl);
+
+  // The looks to choose between (#9): a button each, cycling through the candidates.
+  hudEl.append(Object.assign(document.createElement('div'), { className: 'break' }));
+  const cycle = <K extends string>(label: string, all: readonly K[], get: () => K, set: (k: K) => void, title: string) => {
+    const b = Object.assign(document.createElement('button'), { textContent: `${label}: ${get()}`, title });
+    b.onclick = () => { set(all[(all.indexOf(get()) + 1) % all.length]); b.textContent = `${label}: ${get()}`; };
+    hudEl.append(b);
+  };
+  cycle('Heat wave', Object.keys(HEAT_RECIPES) as HeatLook[], () => renderer.settings.heatLook, (k) => { renderer.settings.heatLook = k; },
+    'glare: bleached nearly white · gold: a hot yellow light, fuller colour · dry: a pale, dusty air flattening the distance');
+  cycle('Shimmer', Object.keys(SHIMMER) as Shimmer[], () => shimmer, (k) => { shimmer = k; renderer.settings.shimmer = SHIMMER[k]; },
+    'the hot air making the land waver: none, faint, or more');
 }
 const timelineEl = document.createElement('span');
 /** The weather controls' values, put back to what they show (the timeline moves them). */
@@ -273,6 +304,9 @@ function playTimeline(time: number) {
   timelineStart ??= time;
   const w = timelineAt(time - timelineStart, speed, spell), key = JSON.stringify(w);
   timelineEl.textContent = timelinePhase(time - timelineStart, speed, spell);
+  // The wind, when the spell brings its own (the game's setWind).
+  const gust = timelineWind(time - timelineStart, speed, spell);
+  if (gust !== null && gust !== wind.speed) { wind.speed = gust; renderer.setWind(wind); for (const r of refreshers) r(); }
   if (key === timelineSent) return;
   timelineSent = key;
   // The game sends the whole weather: what the spell leaves out is none (a haze thinned away keeps its colour and height).
@@ -305,6 +339,9 @@ if (params.has('shot')) {
     }
     if (options.timeline) {
       const t = options.timeline;
+      // The spell's wind first, so the clouds' drift is sent at its speed, as the timeline does.
+      const s = timelineWind(t.time, t.speed ?? speed, t.spell ?? spell);
+      if (s !== null) { wind.speed = s; renderer.setWind(wind, !options.ease); }
       send(whole(timelineAt(t.time, t.speed ?? speed, t.spell ?? spell)), !options.ease, time);
     }
     if (!options.weather && !options.timeline) send(sent, false, time);

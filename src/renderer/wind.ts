@@ -43,6 +43,8 @@ export class WindState {
   driftX = 0; driftZ = 0; flutter = 0;
   /** How far a haze's patches have drifted downwind (metres, x and z): slowly, a fog creeps rather than flies (#9). */
   hazeX = 0; hazeZ = 0;
+  /** How far dust has been carried downwind (metres, x and z): it flies with the wind (#9). */
+  dustX = 0; dustZ = 0;
   private time: number | null = null;
 
   set(w: Wind, immediate = false) {
@@ -61,6 +63,8 @@ export class WindState {
   static driftSpeed(speed: number) { return 0.8 + 0.4 * speed; }
   /** How fast a haze's patches drift, m/s: a still mist still creeps, a gale drags it along. */
   static hazeSpeed(speed: number) { return 0.12 + 0.1 * speed; }
+  /** How fast dust's clouds are carried, m/s: much faster than a fog, but slower than the air, so they read on screen. */
+  static dustSpeed(speed: number) { return 0.3 + 0.3 * speed; }
   /** The leaves' flutter rate, radians a second: quicker as the wind rises, but levelling off (Sol's fit, 1.4 Hz in a
    * breeze, 2.4 in a hurricane; slower than real leaves, which would only blur as painted cards). */
   static flutterRate(speed: number) { return 2 * Math.PI * (0.7 + (2.3 * speed) / (speed + 12)); }
@@ -78,6 +82,8 @@ export class WindState {
       this.driftX = this.dirX * d; this.driftZ = this.dirZ * d;
       const h = WindState.hazeSpeed(this.speed) * time;
       this.hazeX = this.dirX * h; this.hazeZ = this.dirZ * h;
+      const s = WindState.dustSpeed(this.speed) * time;
+      this.dustX = this.dirX * s; this.dustZ = this.dirZ * s;
       this.flutter = WindState.flutterRate(this.speed) * time;
       return;
     }
@@ -102,6 +108,8 @@ export class WindState {
     this.driftX += this.dirX * d; this.driftZ += this.dirZ * d;
     const h = WindState.hazeSpeed(this.speed) * dt;
     this.hazeX += this.dirX * h; this.hazeZ += this.dirZ * h;
+    const s = WindState.dustSpeed(this.speed) * dt;
+    this.dustX += this.dirX * s; this.dustZ += this.dirZ * s;
     this.flutter += WindState.flutterRate(this.speed) * dt;
   }
 }
