@@ -17,6 +17,8 @@ export interface HeatRecipe {
   contrast: number; exposure: number; saturation: number;
   /** How far the lit band leans warm. */
   litLean: number;
+  /** The shimmer at full heat, in pixels: it grows with the game's heat, from none (heatShare). */
+  shimmer: number;
 }
 
 /**
@@ -26,6 +28,8 @@ export interface HeatRecipe {
 export const HEAT: HeatRecipe = {
   sun: 0xffd48e, sunTurn: 0.7, sunGain: 1.1, skyTurn: 0.35, haze: 0xf5d8a0, hazeDensity: 1.6, hazeFloor: 0.1,
   contrast: 0.92, exposure: 1.05, saturation: 0.95, litLean: 0.25,
+  // 'clear', the developer's pick of 2, 3.5 and 5 pixels: about a pixel by a third of the heat. 0.6 and 1.2 were too faint.
+  shimmer: 3.5,
 };
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;

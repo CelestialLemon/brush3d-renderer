@@ -20,6 +20,10 @@ import { leafStorm, WindState, type Wind } from './wind';
 // normal, depth and ink), its silhouettes drawn first so the painting runs only where a surface shows; and a post pass
 // that inks the lines, hazes the distance and grades. It draws at the screen's own resolution: no art-pixel grid. docs/PERFORMANCE.md has what each pass costs.
 
+// How much the gusts thicken and thin dust ('strong', the developer's pick of two, #9). A stopgap: the gusts are faint in
+// a thick storm, and the wind's gusts are to be rebuilt as fronts sweeping the land, dust with them.
+const DUST_GUST = 1.6;
+
 export interface RendererOptions {
   /** Shadow-map size in texels. */
   shadowMapSize?: number;
@@ -52,9 +56,6 @@ export interface Settings {
   falling: boolean;
   /** Show the shelter map over the frame: what's under cover, and the map from above in the corner. */
   shelterDebug: boolean;
-  /** The heat's shimmer at full heat, in pixels (0 none), and how much the gusts thicken and thin dust: to choose (#9). */
-  shimmer: number;
-  dustGust: number;
 }
 
 /** The kinds in the air, which settings.falling leaves out: the leaves the wind lifts (rain and snow to come).
@@ -88,9 +89,7 @@ export class BrushRenderer {
   readonly scene = new THREE.Scene();
   readonly view = new ViewCamera();
   readonly shared: SharedUniforms = createSharedUniforms();
-  readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true, falling: true, shelterDebug: false,
-    shimmer: 2, dustGust: 1.2,
-  };
+  readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true, falling: true, shelterDebug: false };
   width = 1; height = 1;
   /** Device pixels per CSS pixel asked for (see RendererOptions): the screen's pixels, which the zoom counts in. */
   readonly screenRatio: number;
@@ -444,7 +443,7 @@ export class BrushRenderer {
     s.uSkyTop.value.copy(grade.skyTop); s.uSkyBottom.value.copy(grade.skyBottom);
     u.uExposure.value = grade.exposure; u.uSaturation.value = grade.saturation; u.uNightShift.value = grade.nightShift; u.uShadeHue.value = rad(grade.shadeHue);
     this.applyFog();
-    u.uShimmer.value.set(heatShare(look, w.heat) * this.settings.shimmer, this.shared.uTime.value);
+    u.uShimmer.value.set(heatShare(look, w.heat) * HEAT.shimmer, this.shared.uTime.value);
     this.updateSunCamera();
   }
 
@@ -465,7 +464,7 @@ export class BrushRenderer {
     // by faster still, stronger as the wind rises, and the gusts sweep it in in waves.
     u.uFogDrift.value.set(wind.hazeDrift, wind.streakDrift);
     u.uFogWind.value.set(wind.dirX, wind.dirZ, WindState.hazeStretch(wind.speed, wind.carried));
-    u.uDust.value.set(w.dust, 0.25 + 0.5 * Math.min(wind.speed / 25, 1), this.settings.dustGust);
+    u.uDust.value.set(w.dust, 0.25 + 0.5 * Math.min(wind.speed / 25, 1), DUST_GUST);
   }
 
   private updateSunCamera() {
