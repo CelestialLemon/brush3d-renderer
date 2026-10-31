@@ -31,8 +31,9 @@ The demo's URL takes `scene` (`farm`, the default, or `meadow`), `view` (0-3), `
 the clock), `lines=0`, `shadows=0`, `still` (hide the buttons), and the wind: `wind` (m/s, or `calm`, `breeze`,
 `gale`, `storm`, `hurricane`), `windDir` (degrees it blows towards) and `gust` (0-1). The weather: `weather` (a preset:
 `clear`, `scattered`, `overcast`, `soft-rain`, `storm`, `fog`, `dust`, `heat-wave`, `snow`, `blizzard`), then any value
-over it, `cloud`, `rain`, `snow`, `heat`, `haze` (0-1), `hazeColor` (hex) and `hazeTop` (metres); `timeline` plays a
-scripted spell standing in for the game (`timeline=3` at 3× its speed), and `falling=0` leaves out the things in the air
+over it, `cloud`, `rain`, `snow`, `heat`, `haze` (0-1), `hazeColor` (hex), `hazeTop` and `hazeBase` (metres) and `hazeKind`
+(`fog` or `dust`); `timeline` plays a scripted spell standing in for the game (`timeline=3` at 3× its speed; `spell` a
+`shower`, a morning `fog` or a `dust` storm), and `falling=0` leaves out the things in the air
 (rain, snow, dust, the wind's leaves) for the stability tools. `samples` (MSAA) and `shadowMap`
 (texels) try quality settings, `prepass=0`, `scissor=0` and `equal=0` turn off speed-ups (for comparing), `ground=live`,
 `grass=live` and `crop=live` work that kind's brush out in every pixel rather than reading it from the textures baked
@@ -43,8 +44,10 @@ The game sets the wind with `renderer.setWind({ speed, direction, gust })`; the 
 rock as whole crowns, leaves flutter, gusts roll over the grass and through the wheat, the water chops, and from a gale up
 leaves show their pale undersides and blow through the air. `src/renderer/wind.ts` has the scale and the curves.
 
-The game sets the weather with `renderer.setWeather({ cloud, rain, snow, heat, haze: { amount, color, top } })`, the same
-over the whole valley, beside `setWind`. The cloud cover is drawn exactly as given (gameplay reads it: cloud shadows cut
+The game sets the weather with `renderer.setWeather({ cloud, rain, snow, heat, haze: { amount, color, top, base, kind } })`,
+the same over the whole valley, beside `setWind`. A haze lies on the land up to its `top` (from its `base`, if it has one:
+low cloud); a `fog` (the default) lingers and the wind thins it, `dust` is carried by the wind and turns the light orange.
+`heat` is the heat wave's hot, bleached light. The cloud cover is drawn exactly as given (gameplay reads it: cloud shadows cut
 solar panels' power); the looks ease over about a second and a half, hiding the steps between the game's updates, and
 `setWeather(weather, true)` skips the ease (a level loading). `src/renderer/weather.ts` has the presets.
 

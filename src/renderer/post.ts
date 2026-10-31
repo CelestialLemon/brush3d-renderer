@@ -1,7 +1,8 @@
 import { FOG_NOISE_CELLS } from './fog';
 import { NOISE, OKLAB } from './glsl';
 
-// The post pass: lines on inked things, the fog lying on the land, the distance's haze, the sky, a grade, and out to sRGB.
+// The post pass: the heat's shimmer, lines on inked things, the fog or dust lying on the land, the distance's haze, the sky,
+// a grade, and out to sRGB.
 
 export const POST_VERT = /* glsl */ `
 varying vec2 vUv;
@@ -40,6 +41,10 @@ uniform vec3 uFogColor;
 uniform vec4 uFog;
 uniform vec2 uFogDrift;
 uniform vec3 uFogWind;
+// Dust (#9): x how far the haze is dust, yz how far its streaks have blown (metres), w how strong they are.
+uniform vec4 uDust;
+// The heat's shimmer (#9): x how far it shifts the picture (pixels), y the time (seconds).
+uniform vec2 uShimmer;
 varying vec2 vUv;
 ${NOISE}
 ${OKLAB}
@@ -68,13 +73,24 @@ float fogProfile(float y) {
 // Patches, keyed to the world and drifting with the wind, stretched along it: a thick fog covers everything, a thin one
 // breaks up, and the low parts of the layer keep it longest. Two sizes, drifting at different speeds, so the patches
 // change shape as they go rather than sliding as one sheet.
-float fogPatch(vec2 xz, float y) {
+// streak: dust's streaks where the view leaves the surface (fogStreak), strongest low down.
+float fogPatch(vec2 xz, float y, float streak) {
   vec2 w = uFogWind.xy;
   vec2 q = xz - uFogDrift;
   q = vec2(dot(q, w) / uFogWind.z, dot(q, vec2(-w.y, w.x)));
-  float n = fogNoise(q * 0.055) * 0.65 + fogNoise(q * 0.14 + uFogDrift * 0.25 + 11.0) * 0.35;
+  float n = fogNoise(q * 0.055) * 0.65 + fogNoise(q * 0.14 + uFogDrift * 0.25 + 11.0) * 0.35 + streak * fogProfile(y);
   float bias = (uFog.x - 0.35) * 2.5 + fogProfile(y) * 0.5 - 0.25;
   return smoothstep(-0.5, 0.5, n + bias);
+}
+
+// Dust: fine streaks blowing along the wind through it, quicker than its clouds. Read once, at the surface: they're
+// fine enough that the few metres the view crosses in the layer wouldn't show, and reading them at every step cost most of
+// what dust adds.
+float fogStreak(vec2 xz) {
+  if (uDust.x <= 0.0) return 0.0;
+  vec2 w = uFogWind.xy, s = xz - uDust.yz;
+  s = vec2(dot(s, w) / 6.0, dot(s, vec2(-w.y, w.x)));
+  return fogNoise(s * 0.6 + 5.0) * uDust.x * uDust.w;
 }
 
 // The share of a surface the fog hides: summed along the view's path up out of the layer from the surface, in a few
@@ -83,11 +99,11 @@ float fogAt(vec3 p) {
   float ya = max(p.y, uFog.y), yb = uFog.z;
   if (yb <= ya) return 0.0;
   vec3 back = -uCamFwd;
-  float dy = (yb - ya) / 4.0, sum = 0.0;
+  float dy = (yb - ya) / 4.0, sum = 0.0, streak = fogStreak(p.xz);
   for (int i = 0; i < 4; i++) {
     float y = ya + (float(i) + 0.5) * dy;
     vec3 q = p + back * ((y - p.y) / back.y);
-    sum += fogProfile(y) * fogPatch(q.xz, y);
+    sum += fogProfile(y) * fogPatch(q.xz, y, streak);
   }
   return FOG_MAX * (1.0 - exp(-sum * dy / uFog.w * uFog.x * FOG_DENSITY));
 }
@@ -109,9 +125,24 @@ vec3 toSrgb(vec3 c) {
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
 }
 
+// Where a pixel is in the world, from its place on the screen and its depth.
+vec3 worldAt(vec2 uv, float d) {
+  vec2 ndc = uv * 2.0 - 1.0;
+  return uCamPos + uCamRight * ndc.x + uCamUp * ndc.y + uCamFwd * d;
+}
+
 void main() {
-  vec4 aux = texture2D(tAux, vUv);
-  vec3 c = texture2D(tColor, vUv).rgb;
+  vec2 uv = vUv;
+  vec4 aux = texture2D(tAux, uv);
+  // Heat shimmer: the picture wavers sideways a fraction of a pixel, in thin bands keyed to the world that rise and drift
+  // (the hot air over the land), so it stays with the land as the camera moves.
+  if (uShimmer.x > 0.0 && aux.z > 0.0) {
+    vec3 p = worldAt(uv, aux.z);
+    vec2 q = vec2(dot(p.xz, normalize(uCamRight.xz)) * 0.8, p.y * 4.0 + dot(p.xz, normalize(uCamUp.xz)) * 2.0 - uShimmer.y * 1.6);
+    uv.x += fogNoise(q + uShimmer.y * vec2(0.15, 0.0)) * uShimmer.x / uResolution.x;
+    aux = texture2D(tAux, uv);
+  }
+  vec3 c = texture2D(tColor, uv).rgb;
   float d = depthOf(aux);
   bool sky = d >= FAR;
 
@@ -127,7 +158,7 @@ void main() {
     for (int i = 0; i < 8; i++) {
       float a = float(i) * 0.785398;
       vec2 o = vec2(cos(a), sin(a)) * px;
-      vec4 b = texture2D(tAux, vUv + o);
+      vec4 b = texture2D(tAux, uv + o);
       float dd = depthOf(b) - d;
       float sil = smoothstep(0.06, 0.16, dd);
       float crease = b.w * smoothstep(0.3, 0.55, length(aux.xy - b.xy));
@@ -136,11 +167,10 @@ void main() {
     edge *= aux.w;
   }
 
-  // Fog: lying on the land, over the surface and under the distance's haze.
+  // Fog or dust: lying on the land, over the surface and under the distance's haze.
   float fog = 0.0;
   if (!sky && uFog.x > 0.0) {
-    vec2 ndc = vUv * 2.0 - 1.0;
-    fog = fogAt(uCamPos + uCamRight * ndc.x + uCamUp * ndc.y + uCamFwd * d);
+    fog = fogAt(worldAt(uv, d));
     c = fogOver(c, fog);
   }
 

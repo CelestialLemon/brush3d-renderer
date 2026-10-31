@@ -16,6 +16,11 @@ import type { CloudField } from './clouds';
  * over time (#9).
  */
 export interface Haze {
+  /**
+   * What it is (#9, the developer's call): a fog (the default) lingers, and wind thins it and drags it along slowly; dust
+   * is whipped up and carried by the wind, blowing along the ground in streaks, and the light through it turns orange.
+   */
+  kind?: HazeKind;
   /** How thick, 0..1: about 0.3 a thin mist, 0.6 a fog, 1 a thick one. */
   amount: number;
   /** Its own colour in plain daylight, sRGB hex; the renderer lights it with the hour and the cloud. */
@@ -25,6 +30,8 @@ export interface Haze {
   /** Where it starts, metres: clear air under it (low cloud). Left out, it lies on the ground. */
   base?: number;
 }
+
+export type HazeKind = 'fog' | 'dust';
 
 /**
  * Where the clouds have drifted to (metres, x and z: how far the wind aloft has carried the cloud field, clouds.ts), and
@@ -67,7 +74,7 @@ export const WEATHER_PRESETS = {
   mist: { cloud: 0.2, haze: { amount: 0.4, color: FOG, top: 0.6 } },
   fog: { cloud: 0.6, haze: { amount: 0.6, color: FOG, top: 4 } },
   'low-cloud': { cloud: 1, haze: { amount: 0.7, color: FOG, top: 9, base: 4.5 } },
-  dust: { cloud: 0.4, heat: 0.5, haze: { amount: 0.7, color: DUST, top: 6 } },
+  dust: { cloud: 0.4, heat: 0.5, haze: { amount: 0.7, color: DUST, top: 6, kind: 'dust' } },
   'heat-wave': { cloud: 0, heat: 1 },
   snow: { cloud: 0.9, snow: 0.5 },
   blizzard: { cloud: 1, snow: 1 },
@@ -79,7 +86,7 @@ const EASE = 1.5;
 
 /** The weather as drawn: the cloud cover exactly as asked, the looks eased towards it. */
 export class WeatherState {
-  readonly goal = { cloud: 0, rain: 0, snow: 0, heat: 0, haze: 0, hazeColor: new THREE.Color(FOG), hazeTop: 4,
+  readonly goal = { cloud: 0, rain: 0, snow: 0, heat: 0, haze: 0, hazeColor: new THREE.Color(FOG), hazeTop: 4, dust: 0,
     /** The haze's base, or null lying on the ground. */
     hazeBase: null as number | null,
   };
@@ -96,6 +103,8 @@ export class WeatherState {
    * keeping its colour.
    */
   haze = 0; hazeColor = new THREE.Color(FOG); hazeTop = 4; hazeBase = -50;
+  /** How far the haze is dust rather than fog, 0..1: eased, so a fog the wind whips into dust turns over a second or two. */
+  dust = 0;
   /**
    * Where a haze lying on the ground starts: just under the lowest land (the renderer sets it from the ground and the
    * water). A real height, so a fog rising into low cloud eases its base up from the land, not from far underground.
@@ -120,9 +129,9 @@ export class WeatherState {
     g.cloud = clamp(w.cloud); g.rain = clamp(w.rain); g.snow = clamp(w.snow); g.heat = clamp(w.heat);
     g.haze = clamp(w.haze?.amount);
     if (w.haze) {
-      g.hazeColor.setHex(w.haze.color); g.hazeTop = w.haze.top; g.hazeBase = w.haze.base ?? null;
-      // A haze rising from none starts in its own colour and height, not the last one's.
-      if (this.haze < 0.01) { this.hazeColor.copy(g.hazeColor); this.hazeTop = g.hazeTop; this.hazeBase = this.baseGoal(); }
+      g.hazeColor.setHex(w.haze.color); g.hazeTop = w.haze.top; g.hazeBase = w.haze.base ?? null; g.dust = w.haze.kind === 'dust' ? 1 : 0;
+      // A haze rising from none starts in its own colour, height and kind, not the last one's.
+      if (this.haze < 0.01) { this.hazeColor.copy(g.hazeColor); this.hazeTop = g.hazeTop; this.hazeBase = this.baseGoal(); this.dust = g.dust; }
     }
     // The cover is never eased, nor the drift.
     this.cloud = this.clouds.cover = g.cloud;
@@ -139,7 +148,7 @@ export class WeatherState {
   snap() {
     const g = this.goal;
     this.cloud = this.overcast = g.cloud; this.rain = g.rain; this.snow = g.snow; this.heat = g.heat;
-    this.haze = g.haze; this.hazeColor.copy(g.hazeColor); this.hazeTop = g.hazeTop; this.hazeBase = this.baseGoal();
+    this.haze = g.haze; this.hazeColor.copy(g.hazeColor); this.hazeTop = g.hazeTop; this.hazeBase = this.baseGoal(); this.dust = g.dust;
   }
 
   /** Advances to a time in seconds. The first time, and a jump back (a tool seeking), only take the time. */
@@ -163,5 +172,6 @@ export class WeatherState {
     this.hazeColor.lerp(g.hazeColor, k);
     this.hazeTop += (g.hazeTop - this.hazeTop) * k;
     this.hazeBase += (this.baseGoal() - this.hazeBase) * k;
+    this.dust += (g.dust - this.dust) * k;
   }
 }

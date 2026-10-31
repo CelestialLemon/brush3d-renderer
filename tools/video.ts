@@ -5,7 +5,8 @@
 //   jumping clear, overcast, clear: what the ease has to hide), clouds (the clouds drifting, the camera still),
 //   clouds-views (the same in each view in turn), clouds-ramp (the cover rising, zoomed out), timeline (the demo's
 //   scripted shower at 3x the game's speed), fog-lift (the scripted morning fog lifting to a mist and clearing, at 3x;
-//   QUERY="hour=7" for a dawn)
+//   QUERY="hour=7" for a dawn), dust-storm (the wind getting up and blowing a dust storm through, at 3x), heat (held
+//   still, then panning; QUERY="weather=heat-wave")
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
 // tools/browser.ts for the rest.
@@ -25,7 +26,7 @@ const STRENGTHS = { calm: 0, breeze: 5, gale: 17, storm: 25, hurricane: 35 };
  */
 interface Move {
   seconds: number; at: (t: number) => Cam; wind?: (t: number) => number; cloud?: (t: number) => number;
-  timeline?: (t: number) => number; spell?: 'shower' | 'fog'; ease?: boolean; extra?: boolean;
+  timeline?: (t: number) => number; spell?: 'shower' | 'fog' | 'dust'; ease?: boolean; extra?: boolean;
 }
 /** The game's updates: a few a second (src/app/timeline.ts), so the weather comes in steps the renderer eases over. */
 const tick = (t: number) => Math.floor(t * 4) / 4;
@@ -58,6 +59,9 @@ const MOVES: Record<string, Move> = {
   'clouds-ramp': { seconds: 20, at: () => ({ ...CLOUDS, zoom: 16 }), cloud: (t) => Math.min(1, tick(t) / 16), ease: true, extra: true },
   timeline: { seconds: 40, at: () => STILL, timeline: (t) => t, ease: true, extra: true },
   'fog-lift': { seconds: 22, at: () => ({ x: -6, z: 4, zoom: 28, view: 0 }), timeline: (t) => t, spell: 'fog', ease: true, extra: true },
+  'dust-storm': { seconds: 34, at: () => ({ x: -6, z: 4, zoom: 28, view: 0 }), timeline: (t) => t, spell: 'dust', ease: true, extra: true },
+  // Held still, then panning: the heat's shimmer should stay with the land, not swim over it.
+  heat: { seconds: 8, at: (t) => pan({ x: -8, z: 6, zoom: 40, view: 0 }, 40 * Math.max(0, t - 4), 10 * Math.max(0, t - 4)), extra: true },
 };
 
 /** The camera moved by screen pixels (right, up), as dragging does. */
