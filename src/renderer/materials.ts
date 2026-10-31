@@ -611,14 +611,16 @@ void main() {
     col *= 1.0 - 0.09 * fade * (0.5 + 0.5 * cos(q * 6.2831853));
   }
   if (finish > 0.5 && finish < 1.5) {
-    // Solar glass: deep blue cells under the sky's reflection. Light drifts across the whole array (one sky over all of
-    // it, the way the water's is), brightest where the glass turns towards the horizon, with a sheen where the sun is.
+    // Solar glass: deep blue cells under the sky's reflection: the clouds drift across the whole array (one sky over all
+    // of it, the water's too), brightest where the glass turns towards the horizon, with a sheen where the sun is.
     vec2 cells = vUv * vPaint.yz;
     // Lines a pixel's worth antialiased, and fading out as the cells shrink to a few pixels, so they don't crawl.
     vec2 fw = max(fwidth(cells), 1e-4);
     vec2 line = clamp((0.03 - (0.5 - abs(fract(cells) - 0.5))) / fw + 0.5, 0.0, 1.0);
     float grid = max(line.x, line.y) * (1.0 - smoothstep(0.12, 0.3, max(fw.x, fw.y)));
     vec3 v = toCamera();
+    // In the water's reflection the glass is seen from the camera's mirror image, below the water.
+    if (uMirror > 0.5) v.y = -v.y;
     vec3 r = reflect(-v, n);
     float fres = 0.2 + 0.5 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 2.0);
     // The sky it faces, the clouds drifting through it (#8), and long glints across the rows.
