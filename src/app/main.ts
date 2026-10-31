@@ -20,6 +20,8 @@ import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, timelineWind, type Spe
 //   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
 //   spell=shower|fog|dust (which scripted weather: a shower, a morning fog lifting, or a dust storm blowing through)
 //   cloudSeed (which cloud field: a whole number)
+//   mirror=a|b|c (the clouds' look in the water and the solar glass, candidates for #8: plain, lit, painted)
+//   mirrorStrength=faint|clear|bold (how much more the water mirrors a cloud than the sky)
 //   falling=0 (leave out the things in the air: the wind's leaves, and rain and snow to come; dust is in the haze)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
 //   prepass=0 (paint without drawing the silhouettes first)  scissor=0 (the water's passes over the whole screen)
@@ -93,6 +95,14 @@ const weather: Sky & { haze: Haze } = {
 if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase', 'hazeKind'].some((k) => params.has(k))) presetName = null;
 // The clouds' field (#8).
 const cloudSeed = num('cloudSeed', 1);
+// The clouds' look in the mirror: the candidates to choose between (#8; the ones not picked go before it merges).
+const MIRRORS = ['a', 'b', 'c'] as const;
+let mirror = Math.max(0, MIRRORS.indexOf(params.get('mirror') as (typeof MIRRORS)[number]));
+renderer.mirrorLook = mirror;
+const STRENGTHS = { faint: 0, clear: 0.3, bold: 0.6 } as const;
+type Strength = keyof typeof STRENGTHS;
+let strength: Strength = (params.get('mirrorStrength') ?? '') in STRENGTHS ? params.get('mirrorStrength') as Strength : 'clear';
+renderer.mirrorStrength = STRENGTHS[strength];
 
 // The clouds' drift, standing in for the game's: carried along by the demo's wind (standing in for the wind aloft) at the
 // drawn speed (cloudDriftSpeed), and sent with its speed whenever the weather is, as the game would.
@@ -256,6 +266,20 @@ function hud() {
     speed = next; pace.textContent = `${speed}× speed`;
   };
   hudEl.append(play, spells, pace, timelineEl);
+
+  // The clouds' look in the mirror (#8).
+  const mirrorButton = Object.assign(document.createElement('button'), { textContent: `Mirror ${MIRRORS[mirror]}` });
+  mirrorButton.title = 'The clouds in the water and the solar glass: a plain, b lit, c painted (URL mirror=a|b|c)';
+  mirrorButton.onclick = () => { mirror = (mirror + 1) % MIRRORS.length; renderer.mirrorLook = mirror; hud(); };
+  const strengths = Object.keys(STRENGTHS) as Strength[];
+  const strengthButton = Object.assign(document.createElement('button'), { textContent: `Mirror ${strength}` });
+  strengthButton.title = 'How much more the water mirrors a cloud than the sky (URL mirrorStrength=faint|clear|bold)';
+  strengthButton.onclick = () => {
+    strength = strengths[(strengths.indexOf(strength) + 1) % strengths.length];
+    renderer.mirrorStrength = STRENGTHS[strength];
+    hud();
+  };
+  hudEl.append(mirrorButton, strengthButton);
 }
 const timelineEl = document.createElement('span');
 /** The weather controls' values, put back to what they show (the timeline moves them). */
@@ -364,7 +388,7 @@ function profilePanel() {
   // Everything that sets the work, as it is when Run is pressed, so pasted results from different settings can't be
   // mistaken for each other.
   const about = () => `scene ${sceneName} · GPU ${gpu} · ${timers ? 'GPU timers' : 'no GPU timers (only the uncapped frame and the CPU)'}\n`
-    + `hour ${hour} · x ${view.target.x.toFixed(2)} · z ${view.target.z.toFixed(2)} · zoom ${view.zoom.toFixed(1)} · view ${view.view} · samples ${num('samples', 4)} · shadow map ${num('shadowMap', farm ? 4096 : 2048)} · lines ${renderer.settings.lines ? 'on' : 'off'} · shadows ${renderer.settings.shadows ? 'on' : 'off'} · prepass ${renderer.settings.prepass ? 'on' : 'off'} · water scissor ${renderer.settings.waterScissor ? 'on' : 'off'} · equal depth ${renderer.settings.equalDepth ? 'on' : 'off'} · ground ${bakeName('ground')} · crop ${bakeName('crop')} · grass ${bakeName('grass')} · weather ${presetName ?? JSON.stringify(weather)}\n`
+    + `hour ${hour} · x ${view.target.x.toFixed(2)} · z ${view.target.z.toFixed(2)} · zoom ${view.zoom.toFixed(1)} · view ${view.view} · samples ${num('samples', 4)} · shadow map ${num('shadowMap', farm ? 4096 : 2048)} · lines ${renderer.settings.lines ? 'on' : 'off'} · shadows ${renderer.settings.shadows ? 'on' : 'off'} · prepass ${renderer.settings.prepass ? 'on' : 'off'} · water scissor ${renderer.settings.waterScissor ? 'on' : 'off'} · equal depth ${renderer.settings.equalDepth ? 'on' : 'off'} · ground ${bakeName('ground')} · crop ${bakeName('crop')} · grass ${bakeName('grass')} · weather ${presetName ?? JSON.stringify(weather)} · mirror ${MIRRORS[mirror]} ${strength}\n`
     + `${location.href}\n${navigator.userAgent}`;
   const out = Object.assign(document.createElement('pre'), { textContent: `${about()}\n\nPlug the laptop in, close other apps, then Run. It takes a minute or two.` });
   const run = Object.assign(document.createElement('button'), { textContent: 'Run' });

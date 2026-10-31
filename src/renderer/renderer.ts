@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CAMERA_DISTANCE, ViewCamera } from './camera';
-import { CloudMap } from './cloudMap';
+import { CloudMap, MIRROR } from './cloudMap';
 import { CLOUD_SHAPE, type CloudShape } from './clouds';
 import type { Look } from './look';
 import { CLOUD_DEPTH, CLOUD_NIGHT, gapCover, OVERCAST, overcastLook, skyShare, UNDER_CLOUD_FADE } from './overcast';
@@ -143,8 +143,14 @@ export class BrushRenderer {
   readonly shelter: ShelterMap;
   /** The cloud field's shade over the land, drawn each frame the clouds move (#8). */
   readonly cloudMap: CloudMap;
+  /** The cloud field again, coarser and further out: the sky the water and the solar glass mirror (MIRROR). */
+  readonly skyMap: CloudMap;
   /** The clouds' shape (clouds.ts): the game's, the same one it reads its solar panels by. */
   cloudShape: CloudShape = CLOUD_SHAPE;
+  /** The clouds' look in the mirror: candidates for the developer (#8), 0 plain, 1 lit, 2 painted. */
+  mirrorLook = 0;
+  /** How much more the water mirrors a cloud than the sky: candidates for the developer (#8). */
+  mirrorStrength = 0.3;
 
   constructor(readonly canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true });
@@ -169,6 +175,7 @@ export class BrushRenderer {
     });
     this.shelter = new ShelterMap(options.shelterSize ?? 1024);
     this.cloudMap = new CloudMap(this.shared);
+    this.skyMap = new CloudMap({ uCloudMap: this.shared.uSkyMap, uCloudRect: this.shared.uSkyRect }, MIRROR.size);
     this.underTarget = half();
     this.reflectTarget = half();
     this.shared.uUnder.value = this.underTarget.textures[0];
@@ -441,6 +448,13 @@ export class BrushRenderer {
     u.uHazeColor.value.copy(grade.hazeColor); u.uHazeDensity.value = grade.hazeDensity; u.uHazeMax.value = grade.hazeMax; u.uHazeFloor.value = grade.hazeFloor;
     u.uSkyTop.value.copy(grade.skyTop); u.uSkyBottom.value.copy(grade.skyBottom);
     s.uSkyTop.value.copy(grade.skyTop); s.uSkyBottom.value.copy(grade.skyBottom);
+    // The sky the water and the solar glass mirror: the gaps', and the clouds in it, lit by the hour (dimly by the moon),
+    // thickening into the overcast sky as it closes.
+    s.uGapSkyTop.value.copy(look.skyTop); s.uGapSkyBottom.value.copy(look.skyBottom);
+    s.uCloudBelly.value.copy(under.skyTop).lerp(under.skyBottom, 0.25);
+    const sun = clear.sunColor, warm = new THREE.Color(1, 1, 1).lerp(sun.clone().multiplyScalar(1 / Math.max(sun.r, sun.g, sun.b, 1e-3)), 0.85);
+    s.uCloudLit.value.copy(look.skyBottom).lerp(warm, 0.7 * THREE.MathUtils.lerp(0.15, 1, dim));
+    s.uMirrorSky.value.set(gap, this.mirrorLook, this.mirrorStrength, 0);
     u.uExposure.value = grade.exposure; u.uSaturation.value = grade.saturation; u.uNightShift.value = grade.nightShift; u.uShadeHue.value = rad(grade.shadeHue);
     this.applyFog();
     u.uShimmer.value.set(heatShare(look, w.heat) * HEAT.shimmer, this.shared.uTime.value);
@@ -556,7 +570,7 @@ export class BrushRenderer {
   }
 
   /**
-   * Draws the cloud map (when the clouds or their shape have changed), over the ground's square: found again whenever
+   * Draws the cloud map and the sky map (when the clouds or their shape have changed), over the ground's square: found again whenever
    * ground is added or taken out, and each frame until there is some.
    */
   private drawClouds() {
@@ -566,9 +580,12 @@ export class BrushRenderer {
       // The turned square's bounds, and a little more.
       const half = f ? (f.side / 2) * (Math.abs(Math.cos(f.turn)) + Math.abs(Math.sin(f.turn))) + 2 : 64;
       this.cloudMap.setArea((f?.x ?? 0) - half, (f?.z ?? 0) - half, 2 * half);
+      const sky = half + MIRROR.height / MIRROR.rise;
+      this.skyMap.setArea((f?.x ?? 0) - sky, (f?.z ?? 0) - sky, 2 * sky);
       this.cloudArea = !!f;
     }
     this.cloudMap.draw(this.gl, this.weather.clouds, this.cloudShape);
+    this.skyMap.draw(this.gl, this.weather.clouds, this.cloudShape);
   }
   private cloudArea = false;
 
