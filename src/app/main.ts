@@ -17,7 +17,6 @@ import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, timelineWind, type Spe
 //   weather (clear|scattered|overcast|soft-rain|storm|fog|dust|heat-wave|snow|blizzard), then each value over it:
 //     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop, hazeBase (metres)
 //     hazeKind=fog|dust
-//   shimmer=off|subtle|clear|strong (the heat's), dustGust=some|strong (dust surging with the gusts): looks to choose (#9)
 //   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
 //   spell=shower|fog|dust (which scripted weather: a shower, a morning fog lifting, or a dust storm blowing through)
 //   cloudSeed (which cloud field: a whole number)
@@ -92,16 +91,6 @@ const weather: Sky & { haze: Haze } = {
   },
 };
 if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase', 'hazeKind'].some((k) => params.has(k))) presetName = null;
-// Looks to choose between (#9), each a button and a URL option: the heat's shimmer (pixels at full heat), and how much the
-// gusts sweep dust in and thin it between them.
-const SHIMMER = { off: 0, subtle: 2, clear: 3.5, strong: 5 } as const;
-type Shimmer = keyof typeof SHIMMER;
-const DUST_GUST = { some: 0.8, strong: 1.6 } as const;
-type DustGust = keyof typeof DUST_GUST;
-let dustGust: DustGust = (params.get('dustGust') ?? '') in DUST_GUST ? params.get('dustGust') as DustGust : 'strong';
-renderer.settings.dustGust = DUST_GUST[dustGust];
-let shimmer: Shimmer = (params.get('shimmer') ?? '') in SHIMMER ? params.get('shimmer') as Shimmer : 'clear';
-renderer.settings.shimmer = SHIMMER[shimmer];
 // The clouds' field (#8).
 const cloudSeed = num('cloudSeed', 1);
 
@@ -267,18 +256,6 @@ function hud() {
     speed = next; pace.textContent = `${speed}× speed`;
   };
   hudEl.append(play, spells, pace, timelineEl);
-
-  // The looks to choose between (#9): a button each, cycling through the candidates.
-  hudEl.append(Object.assign(document.createElement('div'), { className: 'break' }));
-  const cycle = <K extends string>(label: string, all: readonly K[], get: () => K, set: (k: K) => void, title: string) => {
-    const b = Object.assign(document.createElement('button'), { textContent: `${label}: ${get()}`, title });
-    b.onclick = () => { set(all[(all.indexOf(get()) + 1) % all.length]); b.textContent = `${label}: ${get()}`; };
-    hudEl.append(b);
-  };
-  cycle('Shimmer', Object.keys(SHIMMER) as Shimmer[], () => shimmer, (k) => { shimmer = k; renderer.settings.shimmer = SHIMMER[k]; },
-    'the hot air making the land waver, at full heat: none, 2, 3.5 or 5 pixels');
-  cycle('Dust gusts', Object.keys(DUST_GUST) as DustGust[], () => dustGust, (k) => { dustGust = k; renderer.settings.dustGust = DUST_GUST[k]; },
-    'how much the gusts sweep dust in, in waves, and thin it between them');
 }
 const timelineEl = document.createElement('span');
 /** The weather controls' values, put back to what they show (the timeline moves them). */
