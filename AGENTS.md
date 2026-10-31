@@ -21,3 +21,6 @@
 ## Workflow
 - Before creating a PR always run review-with-sol loops unless asked otherwise.
 - Always use the pr skill when creating a PR and babysit a PR unless asked otherwise.
+- T3 kills everything a session started from its shell shortly after each turn. Run the dev server as its own service
+  (`systemd-run --user --unit=<name> --collect --same-dir --setenv=PATH="$PATH" -- npx vite --port <port> --strictPort`),
+  and finish long jobs (renders, videos) within the turn.
