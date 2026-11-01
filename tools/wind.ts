@@ -9,10 +9,15 @@
 //    ends and middle at 6 m/s, and at a light wind, a strong one and a hurricane.
 // 5. Shelter: behind a single dense hedge, 2.5 m tall, across a steady 6 m/s wind, the wind is cut and comes back over
 //    about 25 hedge heights (docs/WIND.md has the curve and why).
-// 6. Speed: a tick of the farm at 1 m, in a breeze and in a hurricane, the cost the game pays in its worker (reported,
+// 6. The game's side (client.ts), with stand-ins for the worker, a quick one and a slow one: the same calls give the
+//    same wind and every tick in order, at any frame rate and however far behind the worker falls.
+// 7. Storms: the strongest wind taken, full rare gusts, across the grid's diagonal, stays sane.
+// 8. Speed: a tick of the farm at 1 m, in a breeze and in a hurricane, the cost the game pays in its worker (reported,
 //    and failed only if far too slow, or if the air hit its safety bounds).
 // Exits with 1 if any of them is off by more than its tolerance.
 import { DRAG, TICK, WindSim, windAt, type Obstacle, type WindGoal, type WindGrid, type WindSnapshot } from '../src/wind/sim.ts';
+import { WindWorker, type WindPort } from '../src/wind/client.ts';
+import { windHost, type WindReply } from '../src/wind/host.ts';
 
 let failed = false;
 function check(name: string, ok: boolean, detail: string) {
@@ -123,7 +128,57 @@ console.log('Shelter (a single dense hedge, 2.5 m, across a steady 6 m/s)');
   check('no safety hits', sim.safetyHits === 0, `${sim.safetyHits}`);
 }
 
-// 6. Speed, in a breeze and in a hurricane (which takes more substeps: see sim.c).
+// 6. The game's side.
+console.log('The game\'s side (a quick worker and a slow one)');
+{
+  const small: WindGrid = { nx: 60, nz: 60, cell: 1, x0: -30, z0: -30 };
+  /** A stand-in worker: the host run on the same thread, each message and reply after `delay` ms (0: at once). */
+  const port = (delay: number): WindPort => {
+    const later = (f: () => void) => (delay ? setTimeout(f, delay) : queueMicrotask(f));
+    const p: WindPort = { onmessage: null, postMessage: (m) => later(() => handle(structuredClone(m))) };
+    const handle = windHost((reply) => later(() => p.onmessage!({ data: reply } as MessageEvent<WindReply>)));
+    return p;
+  };
+  const play = async (delay: number, fps: number) => {
+    const wind = new WindWorker(port(delay), small, FARM.slice(0, 3), GUSTY), ticks: number[] = [];
+    let first: WindSnapshot | null = null, consecutive = true;
+    wind.onTick((snap) => { first ??= snap; ticks.push(snap.tick); });
+    // Two seconds of frames, a goal set after 0.8 s (on the eighth tick: 48 frames of 1/60 s must count 8 ticks).
+    for (let f = 0; f < 2 * fps; f++) {
+      if (f === Math.round(0.8 * fps)) wind.setGoal({ ...GUSTY, direction: 2.5, speed: 9 });
+      wind.advance(1 / fps);
+      if (wind.prev && wind.cur && wind.cur.tick - wind.prev.tick > 1) consecutive = false;
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    while (wind.cur!.tick < 20) await new Promise((r) => setTimeout(r, 5));
+    return { snap: wind.cur!, ticks, first: first!, consecutive };
+  };
+  const quick = await play(0, 10), slow = await play(8, 60), quick60 = await play(0, 60);
+  check('the same calls give the same wind, quick or slow, at 10 or 60 frames a second',
+    identical(quick.snap, slow.snap) && identical(quick.snap, quick60.snap), `tick ${quick.snap.tick}, a goal set on a tick`);
+  const all = (t: number[]) => t.length === 21 && t.every((x, i) => x === i);
+  check('every tick reaches the game, in order', all(quick.ticks) && all(slow.ticks) && all(quick60.ticks),
+    `the slow worker's: ${slow.ticks.join(' ')}`);
+  check('the two snapshots blended are consecutive ticks', slow.consecutive && quick60.consecutive, 'while the slow worker catches up');
+  const [mx] = windAt(quick.first, 0, 0, 8);
+  check('the first snapshot has the free air above', mx !== 0, `${mx.toFixed(2)} m/s at 8 m, before any tick`);
+}
+
+// 7. Storms.
+console.log('Storms (the strongest wind taken, full rare gusts, diagonal)');
+{
+  const sim = new WindSim(GRID, FARM, { speed: 60, direction: Math.PI / 4, gustiness: 1, rhythm: 0 });
+  let sane = true, peak = 0, substeps = 0;
+  for (let t = 0; t < 30 && sane; t++) {
+    sim.step();
+    substeps = Math.max(substeps, sim.substeps);
+    const s = sim.snapshot();
+    for (let k = 0; k < s.u.length; k++) { const v = Math.hypot(s.u[k], s.v[k]); if (!(v < 1000)) sane = false; peak = Math.max(peak, v); }
+  }
+  check('a 60 m/s storm stays sane', sane && sim.safetyHits === 0, `peak ${peak.toFixed(0)} m/s, up to ${substeps} substeps, ${sim.safetyHits} safety hits`);
+}
+
+// 8. Speed, in a breeze and in a hurricane (which takes more substeps: see sim.c).
 console.log('Speed (the farm-like obstacles, 200 m at 1 m)');
 for (const [name, goal, most] of [['a breeze', GUSTY, 40], ['a hurricane, full gusts', { ...GUSTY, speed: 35, gustiness: 1 }, 200]] as const) {
   const sim = new WindSim(GRID, FARM, goal);

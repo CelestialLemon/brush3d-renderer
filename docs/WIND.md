@@ -30,7 +30,9 @@ const wind = new WindWorker(new Worker(new URL('./wind/worker.ts', import.meta.u
 wind.setGoal({ speed, direction, gustiness, rhythm });  // what the game wants; it eases there over a few seconds
 wind.advance(gameSeconds);                               // each frame, by game time (none while paused)
 wind.at(x, z, height);                                   // m/s along x and z, between the last two ticks
-wind.onTick((snap) => { /* each new tick: the whole field, for the renderer or for gameplay */ });
+wind.onTick((snap) => { /* every tick, in order: the whole field, for the renderer or for gameplay */ });
+const save = await wind.save();                          // as of every tick due so far
+wind.restore(save);                                      // carries on from it, bit for bit
 ```
 
 - **Goal.** `speed` is the average at ground level, m/s; gusts go above it and lulls below, and they average out to it.
@@ -41,14 +43,17 @@ wind.onTick((snap) => { /* each new tick: the whole field, for the renderer or f
   `solid: true` with a height (the wind goes round it; one lower than 2 m is blown over and slows the air instead) or
   has a `drag` per second (`DRAG.hedge` 8, `DRAG.crown` 4.4, `DRAG.railFence` 0.4). The scenes list theirs as
   `scene.wind`.
-- **Ticks.** The wind steps every `TICK` (0.1 s) of game time, whatever the frame rate. In the worker, a slow machine
-  catches up a few ticks at a time. Between ticks, `at` and the renderer blend the last two snapshots.
+- **Ticks.** The wind steps every `TICK` (0.1 s) of game time, whatever the frame rate (60 frames of 1/60 s are 10
+  ticks). A slow machine's worker catches up a few ticks at a time, and every tick still reaches `onTick`, in order.
+  Between ticks, `at` and the renderer blend the last two ticks' snapshots, always consecutive ones.
+- **Order.** Goals, saves and restores are queued against the ticks: a goal set once the clock has reached tick n
+  applies from tick n + 1, however far behind the worker is, so the same calls replay the same wind.
 - **Snapshots** hold the grid, the tick, the ground air's velocity (`u`, `v`), the shelter memory (`k`) and the free air
   at ground scale (`fu`, `fv`), cell by cell with x fastest. `windAt(snap, x, z, height)` reads one in the game's own
   code, with no worker, for example in a test.
 - **Saves.** `WindSim.save()` holds the eased state, the gusts' travel and the air (about 960 KB over 200 m at 1 m).
-  `restore` carries on bit for bit as if it had never stopped. The worker takes `{ type: 'save' }` and
-  `{ type: 'restore', save }`.
+  `restore` carries on bit for bit as if it had never stopped. Through the worker: `WindWorker.save()` and `restore()`
+  (a restore drops the ticks not yet stepped).
 - **Determinism.** The same obstacles, goals and ticks give the same wind, bit for bit. The engine (`sim.c`, WebAssembly,
   float32, no fused multiply-adds) is bit-identical on every machine. The few sines and cosines in `sim.ts` that turn
   the wind are exact within one JavaScript engine (V8: Chrome, Electron, Node) but aren't specified to the last bit
@@ -78,9 +83,12 @@ Per tick:
 the pressure speed and every rate (friction, drag, reach, relaxation, eating) go up by it. So a 35 m/s storm has the same
 shapes and the same average as a breeze, only faster. Real drag grows with the wind too. Without this, at 35 m/s the
 wind outran its own pile-ups fivefold and blew up, and with only the pressure scaled the average drifted 7–25% over the
-goal. The faster wind needs more substeps. The engine works out how many from the fastest air at each tick's start (no
-substep may carry anything more than 0.7 of a cell across x and y together; about 0.85 is where a diagonal storm blew
-up), so the count is the same on every replay. At or below 6 m/s nothing changes.
+goal. The faster wind needs more substeps. No substep may carry anything more than 0.7 of a cell across x and y together
+(about 0.85 is where a diagonal storm blew up). The engine plans them from the fastest air and the inflow at the tick's
+start, and plans the rest of the tick again after each substep, since a gust can speed the air up within a tick. All of
+it is worked out from the wind itself, so the count is the same on every replay. A 60 m/s diagonal storm with full rare
+gusts takes up to 65 substeps (128 at most; air faster than that allows would be held to it, as a safety bound). At or
+below 6 m/s nothing changes.
 
 ## Calibration (Sol's rounds 4–6, checked by `npm run test:wind`)
 
