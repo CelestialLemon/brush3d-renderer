@@ -4,8 +4,9 @@ import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
 import { addModel, loadModel } from './model';
 import shedModel from './models/shed.glb?url';
 import {
-  C, MapLine, addFlowers, addReeds, addStone, addTuft, addWaterRibbon, groundOf, growTree, smooth, type Tree,
+  C, MapLine, addFlowers, addReeds, addStone, addTuft, addWaterRibbon, groundOf, growTree, smooth, treeWind, type Tree,
 } from './kit';
+import { DRAG, type Obstacle } from '../wind/sim';
 
 // A working farm, after the aerial shot in Dear Alice (0:37): a wheat field with a solar array at the back, a track along it
 // behind a rail fence, curved orchard rows in the middle with crates of apples, a dark clump of big trees with a picnic table
@@ -137,6 +138,8 @@ const ground = groundOf(height);
 
 export interface Farm {
   center: THREE.Vector3; radius: number; waterLevel: number;
+  /** What the wind meets (#36). */
+  wind: Obstacle[];
   /** Settles once the models are loaded and in the scene. */
   ready: Promise<void>;
 }
@@ -154,7 +157,48 @@ export function buildFarm(r: BrushRenderer): Farm {
   goods(r);
   stones(r);
   grass(r);
-  return { center: new THREE.Vector3(0, 0, 0), radius: HALF * Math.SQRT2, waterLevel: WATER_Y, ready: shed(r) };
+  return { center: new THREE.Vector3(0, 0, 0), radius: HALF * Math.SQRT2, waterLevel: WATER_Y, wind: windObstacles(), ready: shed(r) };
+}
+
+/**
+ * What the wind meets (#36), from the layout rather than the meshes: the trees' crowns, the orchard's and the nursery's
+ * rows, the hedges of bushes along the fork and the lane, the shed's walls and the low stone wall. The fences (rails,
+ * mostly gaps), the panels (up on posts) and the stream's thickets and the meadow's shrubs (placed at random as they're
+ * grown) are left out for now.
+ */
+function windObstacles(): Obstacle[] {
+  const strips = (path: MapLine, from: number, to: number, offset: number, width: number) => {
+    const out: Obstacle[] = [];
+    for (let s = from; s < to; s += 2) {
+      const a = path.at(s), b = path.at(Math.min(to, s + 2));
+      const ax = a.x - a.dz * offset, az = a.z + a.dx * offset, bx = b.x - b.dz * offset, bz = b.z + b.dx * offset;
+      out.push({ strip: { ax, az, bx, bz, width }, drag: DRAG.hedge });
+    }
+    return out;
+  };
+  const rows = (lines: MapLine[], width: number, drag: number): Obstacle[] => lines.flatMap((row) => {
+    const out: Obstacle[] = [];
+    for (let s = 0; s < row.length; s += 2) {
+      const a = row.at(s), b = row.at(Math.min(row.length, s + 2));
+      out.push({ strip: { ax: a.x, az: a.z, bx: b.x, bz: b.z, width }, drag });
+    }
+    return out;
+  });
+  const [sx, sz] = W(SHED.u, SHED.v), c = Math.cos(SHED.yaw), s = Math.sin(SHED.yaw);
+  const wall: Obstacle[] = [];
+  for (let d = 0; d < WALL.length; d += 1) {
+    const a = WALL.at(d), b = WALL.at(Math.min(WALL.length, d + 1));
+    wall.push({ strip: { ax: a.x, az: a.z, bx: b.x, bz: b.z, width: 0.6 }, solid: true, height: 0.6 });
+  }
+  return [
+    ...TREES.map(treeWind),
+    // The orchard's bushes, a metre and a half apart in their rows; the nursery's young trees, further apart and thin.
+    ...rows(ROWS, 1.3, DRAG.crown), ...rows(NURSERY, 1.2, DRAG.crown / 3),
+    ...strips(FORK_UP, 2, 17, -(PATH_HALF + 1.05), 1.8), ...strips(LANE, 2, 14, PATH_HALF + 1.05, 1.8),
+    // The shed's walls (the open porch in front lets the wind under its roof), about 3 m tall.
+    { box: { x: sx - 0.1 * s, z: sz - 0.1 * c, hx: 2.3, hz: 1.6, turn: -SHED.yaw }, solid: true, height: 3 },
+    ...wall,
+  ];
 }
 
 /** The shed, once its model has loaded. Its floor sits at the ground's mean height round it. */

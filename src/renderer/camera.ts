@@ -21,6 +21,9 @@ export class ViewCamera {
     this.yaw = this.goalYaw();
   }
 
+  /** Where the camera looks from now, radians (turning eases it between the views): screen right is (cos, 0, -sin). */
+  get heading() { return this.yaw; }
+
   private goalYaw() { return THREE.MathUtils.degToRad(45 + 90 * this.view); }
 
   turn(dir: number) { this.view = (this.view + dir + 4) % 4; }
