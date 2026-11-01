@@ -147,10 +147,6 @@ export class BrushRenderer {
   readonly skyMap: CloudMap;
   /** The clouds' shape (clouds.ts): the game's, the same one it reads its solar panels by. */
   cloudShape: CloudShape = CLOUD_SHAPE;
-  /** The clouds' look in the mirror: candidates for the developer (#8), 0 plain, 1 lit, 2 painted. */
-  mirrorLook = 0;
-  /** How much more the water mirrors a cloud than the sky: candidates for the developer (#8). */
-  mirrorStrength = 0.3;
 
   constructor(readonly canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true });
@@ -454,7 +450,7 @@ export class BrushRenderer {
     s.uCloudBelly.value.copy(under.skyTop).lerp(under.skyBottom, 0.25);
     const sun = clear.sunColor, warm = new THREE.Color(1, 1, 1).lerp(sun.clone().multiplyScalar(1 / Math.max(sun.r, sun.g, sun.b, 1e-3)), 0.85);
     s.uCloudLit.value.copy(look.skyBottom).lerp(warm, 0.7 * THREE.MathUtils.lerp(0.15, 1, dim));
-    s.uMirrorSky.value.set(gap, this.mirrorLook, this.mirrorStrength, 0);
+    s.uSkyClosed.value = gap;
     u.uExposure.value = grade.exposure; u.uSaturation.value = grade.saturation; u.uNightShift.value = grade.nightShift; u.uShadeHue.value = rad(grade.shadeHue);
     this.applyFog();
     u.uShimmer.value.set(heatShare(look, w.heat) * HEAT.shimmer, this.shared.uTime.value);

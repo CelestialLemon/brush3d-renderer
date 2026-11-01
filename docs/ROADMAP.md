@@ -11,7 +11,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   2. #7 the handoff from the game (`setWeather`), a scripted weather timeline in the demo, and the overcast look (done
      2026-10-31, #29 and #30: see Weather);
   3. #8 clouds: one cloud recipe the game shares (cloud shadows will cut solar panels' power, CelestialLemon/Soil-n-Silo#198),
-     shadows on the land, reflections in the water and panels;
+     shadows on the land (#34), reflections in the water and panels (#37); golden-hour light under a cloud deck next;
   4. #9 mist, fog, dust and heat haze (done 2026-10-31, #33 and #35: see Weather);
   5. #10 the shelter map, so rain and snow stop at roofs, and a test shed (done 2026-10-31, #31 and #32: two depth maps
      from above, roofs and crowns (a crown keeps off 60%), drawn only when cover changes, `?shelter` to see it; a
@@ -80,13 +80,15 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 
 ### Water (first pass shipped 2026-10-29; reviewed, these are known weak)
 
-- **Evening water is dull slate-blue.** At golden hour and sunset it should glow warm. It probably needs a sun-glare streak
-  on the water, done together with the sky and clouds.
+- **Evening water is dull slate-blue.** At golden hour and sunset it should glow warm. Under part cover the clouds in it
+  now catch the evening's warm light (#37); a clear evening's water is still slate-blue, and may want a sun-glare streak.
 - **No change with the camera's tilt.** The water looks much the same at every angle (Fresnel is fixed by depth, not by the
   view). Fine from the aerial camera, flat otherwise.
 - **The stream is brook-sized.** A wider river or a pond would show the reflections off better.
 - **Half-res reflections smear up close.** Soft by design, but edges blur at high zoom.
-- **Cloud reflections** (#8): the water and the solar glass mirror the clouds; the look is being chosen on its PR.
+- **Cloud reflections** (#8, #37): the water and the solar glass mirror the clouds overhead, drifting with them. The
+  developer's picks (2026-11-01): "lit" (each cloud bright on its sunward side, its thick middle a cooler grey, warm in
+  the evening) at "clear" strength. The other looks (plain, painted) and strengths (faint, bold) were left out.
 - **Order** (decided 2026-10-30): #1's later steps are now their own issues in the weather epic. The dynamic water, #18, comes
   in the middle, before rain (#11); the water's own look, #19, comes last, so it's chosen under every sky.
 - **Grass and reeds are reflected again** (2026-10-29), read through the reflection's small blur. What the water still adds

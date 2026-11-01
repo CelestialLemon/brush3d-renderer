@@ -59,7 +59,7 @@ export function createSharedUniforms() {
     uGapSkyBottom: { value: new THREE.Color() },
     uCloudLit: { value: new THREE.Color() },
     uCloudBelly: { value: new THREE.Color() },
-    uMirrorSky: { value: new THREE.Vector4() },
+    uSkyClosed: { value: 0 },
   };
 }
 export type SharedUniforms = ReturnType<typeof createSharedUniforms>;
@@ -724,7 +724,7 @@ void main() {
   // The clouds in it (#8), along the mirrored ray and shaken by the ripples: their light over the sky's, alike over the
   // shallows and the deep (the depth is read at half size, and its grain would show against a bright cloud and shimmer as
   // the camera moves), and over the faint things mirrored in front of them (thin blades), not the solid ones. How strongly
-  // they show: candidates.
+  // they show: the developer's pick, "clear" (#8).
   float cloud;
   vec3 clouded = exposeHere(mirrorSky(skyPoint(p, reflect(-toCamera(), n)) + nudge * ${f(MIRROR_WOBBLE)}, 0.25, cloud));
   vec2 wide = rt * 2.5;
@@ -733,7 +733,7 @@ void main() {
   float solid = smoothstep(0.35, 0.9, cover);
   // Fading out at the very edge (vUv.y runs across the ribbon), where only a film of water lies over the bank.
   float film = smoothstep(0.0, 0.3, min(vUv.y, 1.0 - vUv.y));
-  col += (clouded - sky) * (1.0 - solid) * film * (0.2 + 0.55 * uMirrorSky.z) * (0.85 + 0.3 * ripple);
+  col += (clouded - sky) * (1.0 - solid) * film * 0.365 * (0.85 + 0.3 * ripple);
   col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.25)), smoothstep(0.5, 0.9, ripple) * 0.25 * depthy);
   // Sparkle: glints of sun on the ripples' crests, little dashes lying across the flow, carried along by it, each winking
   // in and out on its own beat. Sparse and soft, so they sit on the clear water rather than whiting it out.
