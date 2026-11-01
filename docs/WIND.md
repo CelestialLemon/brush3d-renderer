@@ -88,7 +88,8 @@ goal. The faster wind needs more substeps. No substep may carry anything more th
 start, and plans the rest of the tick again after each substep, since a gust can speed the air up within a tick. All of
 it is worked out from the wind itself, so the count is the same on every replay. A 60 m/s diagonal storm with full rare
 gusts takes up to 65 substeps (128 at most; air faster than that allows would be held to it, as a safety bound). At or
-below 6 m/s nothing changes.
+below 6 m/s the physics is as calibrated; a breeze with strong gusts may take a sixth or seventh substep where its
+peaks ask for one, and is otherwise the same to the bit.
 
 ## Calibration (Sol's rounds 4–6, checked by `npm run test:wind`)
 

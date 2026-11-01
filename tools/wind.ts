@@ -10,7 +10,8 @@
 // 5. Shelter: behind a single dense hedge, 2.5 m tall, across a steady 6 m/s wind, the wind is cut and comes back over
 //    about 25 hedge heights (docs/WIND.md has the curve and why).
 // 6. The game's side (client.ts), with stand-ins for the worker, a quick one and a slow one: the same calls give the
-//    same wind and every tick in order, at any frame rate and however far behind the worker falls.
+//    same wind and every tick in order, at any frame rate and however far behind the worker falls; saves, restores and
+//    goals queued behind ticks come out as asked.
 // 7. Storms: the strongest wind taken, full rare gusts, across the grid's diagonal, stays sane.
 // 8. Speed: a tick of the farm at 1 m, in a breeze and in a hurricane, the cost the game pays in its worker (reported,
 //    and failed only if far too slow, or if the air hit its safety bounds).
@@ -160,6 +161,28 @@ console.log('The game\'s side (a quick worker and a slow one)');
   check('every tick reaches the game, in order', all(quick.ticks) && all(slow.ticks) && all(quick60.ticks),
     `the slow worker's: ${slow.ticks.join(' ')}`);
   check('the two snapshots blended are consecutive ticks', slow.consecutive && quick60.consecutive, 'while the slow worker catches up');
+  // Saves, restores and goals queued behind ticks the worker hasn't stepped yet.
+  const queued = async (delay: number) => {
+    const wind = new WindWorker(port(delay), small, FARM.slice(0, 3), GUSTY);
+    const start = await wind.save();
+    const goal = { ...GUSTY, speed: 9 };
+    wind.advance(0.5); wind.setGoal(goal); goal.speed = 20;
+    wind.advance(0.5);
+    const saved = wind.save();
+    wind.restore(start); wind.advance(0.3);
+    const at = (await saved).state;
+    // Past the save, every tick before it is in: tick 3 now is the restored wind's.
+    while (wind.cur!.tick !== 3) await new Promise((r) => setTimeout(r, 5));
+    const late = wind.save();
+    wind.dispose();
+    const rejected = await late.then(() => false, () => true);
+    return { tick: at.tick, speed: at.goal.speed, after: wind.cur!, rejected };
+  };
+  const [q, sl] = [await queued(0), await queued(8)];
+  check('a save keeps the ticks before it, through a restore', q.tick === 10 && sl.tick === 10, `ticks ${q.tick} and ${sl.tick} (10 due)`);
+  check('a goal is taken as it was set', q.speed === 9 && sl.speed === 9, `${q.speed} and ${sl.speed} m/s (set 9, then changed to 20)`);
+  check('a restore carries on from the save', q.after.tick === 3 && identical(q.after, sl.after), `tick ${q.after.tick}`);
+  check('disposing rejects a save not yet made', q.rejected && sl.rejected, '');
   const [mx] = windAt(quick.first, 0, 0, 8);
   check('the first snapshot has the free air above', mx !== 0, `${mx.toFixed(2)} m/s at 8 m, before any tick`);
 }
