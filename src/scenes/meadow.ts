@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { BrushRenderer } from '../renderer/renderer';
 import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
-import { C, addFlowers, addReeds, addStone, addTuft, groundOf, growTree, smooth, type Tree } from './kit';
+import { C, addFlowers, addReeds, addStone, addTuft, groundOf, growTree, smooth, treeWind, type Tree } from './kit';
+import type { Obstacle } from '../wind/sim';
 
 // The first slice: a corner of a farm in a meadow. A stream, a field of wheat, three trees (two broadleaf, one with fruit,
 // and a blue-green cypress), long grass and wildflowers, and one solar panel, the only inked thing.
@@ -63,7 +64,11 @@ export function height(x: number, z: number) {
 const ground = groundOf(height);
 const normalAt = ground.normal;
 
-export interface Meadow { center: THREE.Vector3; radius: number; waterLevel: number; }
+export interface Meadow {
+  center: THREE.Vector3; radius: number; waterLevel: number;
+  /** What the wind meets (#36): the trees. */
+  wind: Obstacle[];
+}
 
 export function buildMeadow(r: BrushRenderer): Meadow {
   terrain(r);
@@ -74,7 +79,7 @@ export function buildMeadow(r: BrushRenderer): Meadow {
   solarPanel(r);
   stones(r);
   reeds(r);
-  return { center: new THREE.Vector3(0, 0, 0), radius: 34, waterLevel: WATER_Y };
+  return { center: new THREE.Vector3(0, 0, 0), radius: 34, waterLevel: WATER_Y, wind: TREES.map(treeWind) };
 }
 
 function terrain(r: BrushRenderer) {

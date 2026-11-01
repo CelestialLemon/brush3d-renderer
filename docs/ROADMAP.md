@@ -154,7 +154,13 @@ since #2). Left, most visible first (Sol's ranking):
 ### Wind (first pass shipped with #2)
 
 - **Gusts (#36, next):** today's are soft round patches, slower than the air, that don't match from grass to dust.
-  #36 rebuilds them as one gust field, starting from the research in the issue.
+  #36 rebuilds them as one gust field, starting from the research in the issue. The groundwork is the living wind the
+  game owns (`src/wind`, `docs/WIND.md`): simulated over the world, going round sheds and through hedges, with
+  `?windMap` to see it. Next, the renderer reads it, then the look.
+- **Hedge density is the game's choice, when a mechanic needs it** (#36, the developer, 2026-11-01). A dense hedge (drag
+  8/s, the default) gives deep calm close behind; a medium one (Hagen's measured windbreaks) is less calm at 1 H but
+  calmer over 4–10 H. Nothing in the game is hurt by strong wind yet; decide when something is (crops flattened, things
+  blown over), with the numbers in #36.
 - **The flying leaves are fast.** In a hurricane they cross several pixels a frame, which may read as confetti; slow them
   if it does. They also ignore the ground and the trees (they fly at a few metres, round the camera).
 - **The game's half** isn't drawn yet: snapped branches, fallen trees, a field flattened by a storm. The renderer will take

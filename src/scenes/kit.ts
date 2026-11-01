@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { MeshBuilder, noise2, srgb, type Paint } from './builder';
+import { DRAG, type Obstacle } from '../wind/sim';
 
 // The pieces scenes are built from: the palette, trees, stones, grass, reeds, and lines on the map (streams, paths, fences).
 // Every piece stands on a Ground, so any scene's land can carry them.
@@ -54,6 +55,16 @@ export interface Tree {
   /** Fruit dabs, for fruit trees and orchard bushes, and how thickly they hang (1 by default). */
   fruit?: THREE.Color;
   fruitDensity?: number;
+}
+
+/**
+ * A tree as the wind meets it (#36): its crown's footprint, slowing the ground air that blows through it. Bushes and
+ * cypresses are leafy down to the ground and slow it fully; a tree with a clear trunk below its crown about half as much.
+ */
+export function treeWind(t: Tree): Obstacle {
+  const s = t.scale ?? 1, low = t.kind === 'bush' || t.kind === 'cypress';
+  const radius = (t.kind === 'cypress' ? 0.8 : t.kind === 'bush' || t.kind === 'round' ? 0.8 : 2.2) * s;
+  return { circle: { x: t.x, z: t.z, radius }, drag: low ? DRAG.crown : DRAG.crown / 2 };
 }
 
 /**

@@ -9,11 +9,15 @@ import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weathe
 import { WIND_SCALE, windName, type Wind, type WindStrength } from '../renderer/wind';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
 import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, timelineWind, type SpellName } from './timeline';
+import { WindWorker } from '../wind/client';
+import type { WindGoal } from '../wind/sim';
+import { WindView } from './windView';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
 //   view=0..3  zoom=16..192 (screen px per metre)  hour=0..24  x, z (camera target)  t (seconds: freeze the clock there)
 //   scene=farm|meadow  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
+//   rhythm (how the gusts come: 0 rare and strong, 1 frequent and mild)  windMap (the living wind from above, #36)
 //   weather (clear|scattered|overcast|soft-rain|storm|fog|dust|heat-wave|snow|blizzard), then each value over it:
 //     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop, hazeBase (metres)
 //     hazeKind=fog|dust
@@ -75,6 +79,15 @@ const wind: Wind = {
   gust: num('gust', 0.5),
 };
 renderer.setWind(wind, true);
+// The living wind (#36), standing in for the game's: simulated over 200 m around the middle, a cell a metre, in a worker,
+// on the game's clock (none while the clock is frozen). The demo's wind and gust controls set its goal, as the game would.
+let rhythm = num('rhythm', 0.5);
+const windGoal = (): WindGoal => ({ speed: wind.speed, direction: wind.direction, gustiness: wind.gust, rhythm });
+const living = new WindWorker(new Worker(new URL('../wind/worker.ts', import.meta.url), { type: 'module' }),
+  { nx: 200, nz: 200, cell: 1, x0: -100, z0: -100 }, scene.wind, windGoal());
+const windView = new WindView(living, () => wind.speed);
+let windMap = params.has('windMap') && params.get('windMap') !== '0';
+if (windMap) document.body.append(windView.el);
 // The weather: a preset, and any value given over it. Its haze is kept (thinned to nothing) so the controls can thicken it.
 const weatherParam = params.get('weather');
 let presetName: WeatherName | null = weatherParam !== null && weatherParam in WEATHER_PRESETS ? weatherParam as WeatherName : null;
@@ -184,10 +197,18 @@ function hud() {
   shelter.title = 'What\'s under cover: blue under a roof, teal under a crown, yellow the roofs\' tops; the map from above in the corner';
   shelter.onclick = () => { renderer.settings.shelterDebug = !renderer.settings.shelterDebug; hud(); };
   hudEl.append(shelter);
+  const map = document.createElement('button');
+  map.textContent = 'Wind map'; map.className = windMap ? 'on' : '';
+  map.title = 'The living wind from above, turned as the camera is: how hard it blows (or the shelter), which way, and the obstacles';
+  map.onclick = () => { windMap = !windMap; if (windMap) document.body.append(windView.el); else windView.el.remove(); hud(); };
+  hudEl.append(map);
   // The clouds' speed follows the wind's: sent at once, as the game would.
-  const windSet = (f: (v: number) => void) => (v: number) => { f(v); renderer.setWind(wind); send(sent); };
+  const windSet = (f: (v: number) => void) => (v: number) => { f(v); renderer.setWind(wind); living.setGoal(windGoal()); send(sent); };
   hudEl.append(slider('Wind', 0, 45, 0.5, () => wind.speed, windSet((v) => { wind.speed = v; }), (v) => `${windName(v)} ${v.toFixed(1)} m/s`));
   hudEl.append(slider('towards', 0, 360, 5, () => (wind.direction * 180) / Math.PI, windSet((v) => { wind.direction = (v * Math.PI) / 180; }), (v) => `${v.toFixed(0)}°`));
+  hudEl.append(slider('gusts', 0, 1, 0.05, () => wind.gust ?? 0.5, windSet((v) => { wind.gust = v; }), (v) => v.toFixed(2), true));
+  hudEl.append(slider('rhythm', 0, 1, 0.05, () => rhythm, windSet((v) => { rhythm = v; }),
+    (v) => `${v < 0.35 ? 'rare, strong' : v > 0.65 ? 'frequent, mild' : 'between'} ${v.toFixed(2)}`));
   // The zoom by its doubling, so each step of the slider zooms as much as the last.
   hudEl.append(slider('Zoom', Math.log2(MIN_ZOOM), Math.log2(MAX_ZOOM), 0.01, () => Math.log2(view.zoom), (v) => { view.zoom = 2 ** v; },
     (v) => `${(2 ** v).toFixed(0)} px/m`, true));
@@ -286,7 +307,7 @@ function playTimeline(time: number) {
   timelineEl.textContent = timelinePhase(time - timelineStart, speed, spell);
   // The wind, when the spell brings its own (the game's setWind).
   const gust = timelineWind(time - timelineStart, speed, spell);
-  if (gust !== null && gust !== wind.speed) { wind.speed = gust; renderer.setWind(wind); for (const r of refreshers) r(); }
+  if (gust !== null && gust !== wind.speed) { wind.speed = gust; renderer.setWind(wind); living.setGoal(windGoal()); for (const r of refreshers) r(); }
   if (key === timelineSent) return;
   timelineSent = key;
   // The game sends the whole weather: what the spell leaves out is none (a haze thinned away keeps its colour and height).
@@ -310,7 +331,7 @@ if (params.has('shot')) {
     } = {}) => {
     if (cam) { view.target.set(cam.x, 0, cam.z); view.zoom = cam.zoom; view.view = cam.view; view.update(0, true); }
     if (options.hour !== undefined) hour = options.hour;
-    if (options.wind) { Object.assign(wind, options.wind); renderer.setWind(wind, !options.ease); }
+    if (options.wind) { Object.assign(wind, options.wind); renderer.setWind(wind, !options.ease); living.setGoal(windGoal()); }
     // The clouds carried on to the frame's time (see driftAt).
     const time = options.time ?? frozen ?? 0;
     if (options.weather) {
@@ -394,6 +415,8 @@ function frame(now: number) {
   const time = frozen ?? (now - start) / 1000;
   lastTime = time;
   playTimeline(time);
+  if (frozen === null) living.advance(dt);
+  if (windMap) windView.draw(view.target.x, view.target.z, view.heading);
   // The game sends the clouds' drift a few times a second (with the weather); the renderer carries them on between.
   if (Math.floor(time * TICK) !== lastTick) { lastTick = Math.floor(time * TICK); send(sent, false, time); }
   renderer.setLook(lookAt(hour));
