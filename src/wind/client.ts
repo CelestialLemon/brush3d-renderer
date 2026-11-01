@@ -16,7 +16,8 @@ export interface WindPort {
   terminate?(): void;
 }
 
-type Queued = { ticks: number } | { goal: WindGoal } | { save: (s: WindSave) => void } | { restore: WindSave };
+interface Pending { resolve(s: WindSave): void; reject(e: Error): void }
+type Queued = { ticks: number } | { goal: WindGoal } | { save: Pending } | { restore: WindSave };
 
 /** How near a whole tick the clock may fall short and still count it (so 60 frames of 1/60 s are 10 ticks). */
 const ROUNDING = 1e-6;
@@ -35,7 +36,8 @@ export class WindWorker {
   private inFlight = 1;
   /** Game time past the last tick due, in ticks. */
   private clock = 0;
-  private readonly saves: ((s: WindSave) => void)[] = [];
+  private readonly saves: Pending[] = [];
+  private disposed = false;
   private readonly listeners: ((snap: WindSnapshot) => void)[] = [];
 
   private readonly worker: WindPort;
@@ -49,7 +51,7 @@ export class WindWorker {
 
   private receive(m: WindReply) {
     if (m.type === 'obstacles') { this.obstacles = { solid: m.solid, drag: m.drag }; return; }
-    if (m.type === 'save') { this.saves.shift()?.(m.save); return; }
+    if (m.type === 'save') { this.saves.shift()?.resolve(m.save); return; }
     this.prev = m.restored ? m.snap : this.cur ?? m.snap; this.cur = m.snap;
     if (m.ms) this.stepMs = m.ms;
     this.safetyHits = m.safetyHits;
@@ -59,7 +61,7 @@ export class WindWorker {
   }
 
   /** What the game asks of the wind; it applies from the next tick due. */
-  setGoal(goal: WindGoal) { this.queue.push({ goal }); this.pump(); }
+  setGoal(goal: WindGoal) { this.queue.push({ goal: structuredClone(goal) }); this.pump(); }
 
   /** Runs the wind's clock on by `seconds` of game time. */
   advance(seconds: number) {
@@ -74,13 +76,19 @@ export class WindWorker {
   }
 
   /** The wind's state, as of every tick due so far (resolved once the worker has stepped them). */
-  save(): Promise<WindSave> { return new Promise((resolve) => { this.queue.push({ save: resolve }); this.pump(); }); }
+  save(): Promise<WindSave> {
+    if (this.disposed) return Promise.reject(new Error('The wind is disposed'));
+    return new Promise((resolve, reject) => { this.queue.push({ save: { resolve, reject } }); this.pump(); });
+  }
 
-  /** Puts the wind back to a save, dropping any ticks not yet stepped; the clock starts again from it. */
+  /**
+   * Puts the wind back to a save (copied as it is now); the clock starts again from it. Ticks not yet stepped are dropped,
+   * except those a save asked for earlier needs.
+   */
   restore(save: WindSave) {
-    for (let i = this.queue.length - 1; i >= 0; i--) if ('ticks' in this.queue[i]) this.queue.splice(i, 1);
+    for (let i = this.queue.length - 1; i >= 0 && !('save' in this.queue[i]); i--) if ('ticks' in this.queue[i]) this.queue.splice(i, 1);
     this.clock = 0;
-    this.queue.push({ restore: save });
+    this.queue.push({ restore: structuredClone(save) });
     this.pump();
   }
 
@@ -98,7 +106,7 @@ export class WindWorker {
 
   /** Sends what's queued, in order, until it's waiting on ticks: at most 4 at a time. */
   private pump() {
-    while (this.inFlight === 0 && this.queue.length) {
+    while (!this.disposed && this.inFlight === 0 && this.queue.length) {
       const q = this.queue[0];
       if ('goal' in q) { this.queue.shift(); this.worker.postMessage({ type: 'goal', goal: q.goal }); }
       else if ('save' in q) { this.queue.shift(); this.saves.push(q.save); this.worker.postMessage({ type: 'save' }); }
@@ -113,5 +121,13 @@ export class WindWorker {
     }
   }
 
-  dispose() { this.worker.terminate?.(); }
+  /** Stops the worker; saves not yet made are rejected. */
+  dispose() {
+    this.disposed = true;
+    this.worker.terminate?.();
+    const error = new Error('The wind is disposed');
+    for (const q of this.queue) if ('save' in q) q.save.reject(error);
+    for (const p of this.saves) p.reject(error);
+    this.queue.length = 0; this.saves.length = 0;
+  }
 }
