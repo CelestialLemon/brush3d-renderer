@@ -13,6 +13,13 @@ uniform vec4 uCloudRect;     // the map's corner (x, z) and 1 / its side
 float cloudMapShade(vec2 xz) { return texture(uCloudMap, (xz - uCloudRect.xy) * uCloudRect.zw).r; }
 `;
 
+/**
+ * The sky the water and the solar glass mirror (#8): the same cloud field, seen a set height up along the mirrored ray, so
+ * the cloud in a pond isn't the one shading it. Drawn into a second, coarser map (MIRROR.size², over the land and
+ * MIRROR.height / MIRROR.rise further all round, about a metre a texel on the farm: the mirror is soft and rippled).
+ */
+export const MIRROR = { height: 16, rise: 0.2, size: 256 };
+
 // The points from the map's corner, which goes in the shift (cloudUniforms' origin): small numbers wherever the land is.
 const VERT = /* glsl */ `
 precision highp float;
