@@ -12,7 +12,7 @@
 // stays exactly 1. Sol's round 6 (#36): the contract is in docs/WIND.md.
 //
 // Each tick of dt seconds, in substeps of ds: at least the n set up, more when the wind is fast enough to cross too much
-// of a cell in one (worked out from the wind at the tick's start, so it's the same on every replay):
+// of a cell in one (worked out from the wind itself as the tick goes, so it's the same on every replay):
 //   1. carry k with the old ground wind: dk/dt = -div(u k) + k div(u) (carried, never compressed);
 //   2. move the air: limited second-order fluxes (Rusanov), two-stage Runge-Kutta;
 //   3. per cell, implicitly: u' = (u + ds*K*k*U) / (1 + ds*(K*k + S1 + drag)), then
@@ -41,9 +41,10 @@ static const f32 TAU = 0.5f, UPPER = 1.5f, K0 = 0.15f, KG = 2.0f, RECOVERY = 40.
 // Safety bounds on the column amount. None is reached in any tested case; they only keep a bad input from blowing up.
 static const f32 RMIN = 0.03f, RMAX = 40.0f;
 // How far a substep may carry anything, in cells, across x and y together (the fastest air plus the pressure speed, on
-// each axis): about 0.85 is where a diagonal storm starts to blow up, so this leaves room. And the most substeps a tick.
+// each axis): about 0.85 is where a diagonal storm starts to blow up, so this leaves room. And the most substeps a tick:
+// air faster than they allow is held to it (another safety bound, counted with the others; no tested wind reaches it).
 static const f32 COURANT = 0.7f;
-static const int MAXSUB = 64;
+static const int MAXSUB = 128;
 
 static int nx, ny, N, substeps, lastSubsteps;
 static f32 h, x0, y0, S1;
@@ -73,6 +74,12 @@ EXPORT(hits) unsigned hits(void) { return floorHits; }
 EXPORT(substepsUsed) int substepsUsed(void) { return lastSubsteps; }
 
 static inline f32 fabs_(f32 x) { return __builtin_fabsf(x); }
+// A float of zero or more as its bits, which order the same as the float: a running largest of these vectorises (one
+// of floats doesn't, without fast-math), and turns back exactly. NaN orders above everything.
+typedef unsigned u32;
+static inline u32 bits(f32 x) { return __builtin_bit_cast(u32, x); }
+static inline f32 unbits(u32 x) { return __builtin_bit_cast(f32, x); }
+static inline u32 umax(u32 a, u32 b) { return a > b ? a : b; }
 static inline f32 min_(f32 a, f32 b) { return a < b ? a : b; }
 static inline f32 max_(f32 a, f32 b) { return a > b ? a : b; }
 // Monotonised-central limiter: minmod((a+b)/2, minmod(2a, 2b)).
@@ -316,41 +323,62 @@ static void carryMemory(f32 ds) {
   for (int k = 0; k < N; k++) { f32 q = 0.5f * (KT[k] + KTa[k] + ds * dKTs[k]); KT[k] = q > 0 ? q : 0.0f; }
 }
 
-// The substeps this tick needs, from the fastest air on each axis at its start (COURANT leaves room for it to pick up
-// within the tick).
-static int substepsFor(f32 dt) {
-  f32 px = 0, py = 0;
-  for (int k = 0; k < N; k++) {
-    f32 ir = fluid[k] / min_(max_(R[k], RMIN), RMAX);
-    px = max_(px, fabs_(M[k] * ir));
-    py = max_(py, fabs_(V[k] * ir));
-  }
-  f32 need = dt * ((px + C) + (py + C)) / (h * COURANT);
-  int n = substeps;
+// The substeps needed for `left` seconds, with the air no faster than px, py on each axis.
+static int substepsFor(f32 left, f32 px, f32 py) {
+  f32 need = left * ((px + C) + (py + C)) / (h * COURANT);
+  int n = 1;
   while (n < MAXSUB && (f32)n < need) n++;
   return n;
 }
 
-// Advances one tick of dt seconds. dp: a substep at the pace, for the rates (recovery is per metre, so already paced).
+// Advances one tick of dt seconds, in substeps planned from the fastest air: at the tick's start, the inflow at the edges,
+// and after each substep (a gust can speed the air up within a tick; the source is implicit, so a substep never makes it
+// faster than the air before it or the free air it's pulled towards, and planning after each keeps every substep's
+// carrying within COURANT). While the plan holds, the substeps are equal: in a breeze, the n set up. dp: a substep at the
+// pace, for the rates (recovery is per metre, so already paced).
 EXPORT(step) void step(f32 dt) {
-  const int n = lastSubsteps = substepsFor(dt);
-  const f32 ds = dt / (f32)n, dp = ds * pace, relax = 1.0f / (1.0f + dp / TAU), ir40 = 1.0f / RECOVERY;
-  for (int s = 0; s < n; s++) {
+  // The air, and the free air (the inflow at the edges, which stays put through the tick).
+  u32 bx = 0, by = 0, ex = 0, ey = 0;
+  for (int k = 0; k < N; k++) {
+    f32 ir = fluid[k] / min_(max_(R[k], RMIN), RMAX);
+    bx = umax(bx, bits(fabs_(M[k] * ir))); by = umax(by, bits(fabs_(V[k] * ir)));
+    ex = umax(ex, bits(fabs_(FX[k]))); ey = umax(ey, bits(fabs_(FY[k])));
+  }
+  int n = substepsFor(dt, unbits(umax(bx, ex)), unbits(umax(by, ey)));
+  if (n < substeps) n = substeps;
+  // The most a substep can carry at, per axis, within MAXSUB substeps a tick.
+  const f32 cap = max_(0.0f, (f32)MAXSUB * h * COURANT / dt - 2.0f * C) * 0.5f;
+  f32 ds = dt / (f32)n;
+  int done = 0;
+  for (int s = 0; s < n; s++, done++) {
+    const f32 dp = ds * pace, relax = 1.0f / (1.0f + dp / TAU), ir40 = 1.0f / RECOVERY;
     carryMemory(ds);
     advect(ds);
     unsigned hit = 0;
+    u32 qx = 0, qy = 0;
     for (int k = 0; k < N; k++) {
       f32 r = Rs[k], rc = min_(max_(r, RMIN), RMAX), fl = fluid[k];
-      hit += (rc != r) & (fl != 0);
       f32 kt = KT[k], reach = K[k] * kt;
       f32 ir = 1.0f / rc, nr = 1.0f + (rc - 1.0f) * relax, keep = 1.0f / (1.0f + dp * (reach + S1 + drag[k]));
-      f32 pu = (Ms[k] * ir + dp * reach * UX[k]) * keep, pv = (Vs[k] * ir + dp * reach * UY[k]) * keep;
+      f32 pu0 = (Ms[k] * ir + dp * reach * UX[k]) * keep, pv0 = (Vs[k] * ir + dp * reach * UY[k]) * keep;
+      f32 pu = min_(max_(pu0, -cap), cap), pv = min_(max_(pv0, -cap), cap);
+      hit += ((rc != r) | (pu != pu0) | (pv != pv0)) & (fl != 0);
       R[k] = fl != 0 ? nr : 1.0f;
       M[k] = fl * (nr * pu);
       V[k] = fl * (nr * pv);
+      qx = umax(qx, bits(fl * fabs_(pu))); qy = umax(qy, bits(fl * fabs_(pv)));
       f32 rl = __builtin_sqrtf(pu * pu + pv * pv) * ir40;
       KT[k] = fl * ((kt + ds * rl) / (1.0f + ds * (rl + pace * EAT[k])));
     }
     floorHits += hit;
+    // Faster than planned for: the rest of the tick in more, shorter substeps.
+    int rest = n - s - 1;
+    if (rest > 0) {
+      f32 left = ds * (f32)rest;
+      int more = substepsFor(left, unbits(umax(qx, ex)), unbits(umax(qy, ey)));
+      if (more > MAXSUB - done - 1) more = MAXSUB - done - 1;
+      if (more > rest) { ds = left / (f32)more; n = s + 1 + more; }
+    }
   }
+  lastSubsteps = done;
 }

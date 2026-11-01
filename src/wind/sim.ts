@@ -171,6 +171,8 @@ export class WindSim {
       gusts: { hx: dirX, hz: dirZ, s: 0, o: 0 }, next: null, fade: 0, sets: 1,
     };
     this.x.reset(g.speed * dirX, g.speed * dirZ);
+    // The free air above for tick 0, so the first snapshot has it (the first step forces the same again).
+    this.force();
   }
 
   private view(ptr: number) { return new Float32Array(this.x.memory.buffer, ptr, this.N); }
