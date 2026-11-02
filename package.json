@@ -14,7 +14,8 @@
     "shot": "node tools/shot.ts",
     "test:clouds": "node tools/clouds.ts",
     "build:wind": "node tools/wind-build.ts",
-    "test:wind": "node tools/wind.ts"
+    "test:wind": "node tools/wind.ts",
+    "test:water": "node tools/water.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

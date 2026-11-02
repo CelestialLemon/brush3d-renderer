@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { BrushRenderer } from '../renderer/renderer';
 import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
-import { C, addFlowers, addReeds, addStone, addTuft, groundOf, growTree, smooth, treeWind, type Tree } from './kit';
+import { C, addFlowers, addReeds, addStone, addTuft, groundOf, growTree, smooth, treeWind, type Stream, type Tree } from './kit';
 import type { Obstacle } from '../wind/sim';
 
 // The first slice: a corner of a farm in a meadow. A stream, a field of wheat, three trees (two broadleaf, one with fruit,
@@ -65,7 +65,9 @@ const ground = groundOf(height);
 const normalAt = ground.normal;
 
 export interface Meadow {
-  center: THREE.Vector3; radius: number; waterLevel: number;
+  center: THREE.Vector3; radius: number;
+  /** The stream (#18): the demo makes the game's water map from it. */
+  stream: Stream;
   /** What the wind meets (#36): the trees. */
   wind: Obstacle[];
   /** The land's height at a point, and how bare it is (0..1): where a gust can lift dust (#36). None here: grass and wheat. */
@@ -75,14 +77,13 @@ export interface Meadow {
 
 export function buildMeadow(r: BrushRenderer): Meadow {
   terrain(r);
-  water(r);
   field(r);
   trees(r);
   grass(r);
   solarPanel(r);
   stones(r);
   reeds(r);
-  return { center: new THREE.Vector3(0, 0, 0), radius: 34, waterLevel: WATER_Y, wind: TREES.map(treeWind), height, bare: () => 0 };
+  return { center: new THREE.Vector3(0, 0, 0), radius: 34, stream: STREAM, wind: TREES.map(treeWind), height, bare: () => 0 };
 }
 
 function terrain(r: BrushRenderer) {
@@ -121,23 +122,16 @@ function terrain(r: BrushRenderer) {
   r.add(b.build(), 'ground', { under: true, fields: { x: 0, z: 0, side: SIZE, turn: 0 } });
 }
 
-function water(r: BrushRenderer) {
-  const b = new MeshBuilder('water');
-  const half = SIZE / 2, rows = Math.round(SIZE / STEP) + 1, width = 2.0;
-  const up = new THREE.Vector3(0, 1, 0);
-  for (let j = 0; j < rows; j++) {
-    const z = -half + j * STEP, x = streamX(z), s = streamSlope(z);
-    // Flowing towards -z: the direction in xz is (-s, -1).
-    const flow = Math.atan2(-1, -s);
-    const nx = 1 / Math.sqrt(1 + s * s);
-    const y = WATER_Y;
-    b.vertex({ x: x - width * nx, y, z: z + width * s * nx }, up, C.water, [0, 1, flow, 0], [z * 0.1, 0]);
-    b.vertex({ x: x + width * nx, y, z: z - width * s * nx }, up, C.water, [0, 1, flow, 0], [z * 0.1, 1]);
-  }
-  for (let j = 0; j < rows - 1; j++) { const a = j * 2; b.quad(a, a + 2, a + 3, a + 1); }
-  // Wide enough that its edges tuck under the banks: where the water meets the land is where it thins to nothing.
-  r.add(b.build(), 'water');
-}
+/**
+ * The stream for the water map (#18): a cell a metre over the land, as the game's tiles are. Its channel is where the bed
+ * lies under the water, and it flows towards -z (the direction in xz is (-slope, -1)).
+ */
+const STREAM: Stream = {
+  level: WATER_Y,
+  grid: { nx: SIZE, nz: SIZE, cell: 1, x0: -SIZE / 2, z0: -SIZE / 2 },
+  channel: (x, z) => streamDistance(x, z) < 1.6,
+  along: (x, z) => { const s = streamSlope(z), l = Math.hypot(s, 1); return [-s / l, -1 / l]; },
+};
 
 /** The field: an inked raised bed of soil in a timber frame; the wheat in it is painted. */
 function field(r: BrushRenderer) {

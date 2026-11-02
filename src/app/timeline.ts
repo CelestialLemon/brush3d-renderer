@@ -1,12 +1,14 @@
 import { WEATHER_PRESETS, type HazeKind, type Weather } from '../renderer/weather';
+import type { WaterState } from './water';
 
 // A stand-in for the game's weather (#7): scripted spells, at the game's speeds, sent the way the game sends it. The game's
 // day is 240 s at normal speed (Soil-n-Silo's DAY_SECONDS), up to 3x faster, so a game hour is 10 s; its conditions glide
 // from one to the next (its spellAt), and it ticks a few times a second, so the renderer gets steps it has to hide. Like the
 // game, it calls rain under 0.12 a drizzle in the making and sends none (its RAIN_FROM): a shower starts with a step.
-// Three spells: a shower (clear, cloud building, rain, clearing again), a morning fog that lifts (#9: the game lifts it,
-// lowering its amount and top; the renderer only draws it), and a dust storm the wind brings in and takes away again.
-// A spell may set the wind too, as the game does with setWind.
+// Four spells: a shower (clear, cloud building, rain, clearing again), a morning fog that lifts (#9: the game lifts it,
+// lowering its amount and top; the renderer only draws it), a dust storm the wind brings in and takes away again, and a
+// flood (#18): a storm swells the stream, which runs fast and muddy, spills over the land and drains away again.
+// A spell may set the wind too, as the game does with setWind, and the water, as it does with setWater.
 
 /** Seconds of a game hour at normal speed. */
 export const GAME_HOUR = 10;
@@ -17,8 +19,14 @@ export const SPEEDS = [1, 3] as const;
 
 const RAIN_FROM = 0.12;
 const FOG = WEATHER_PRESETS.fog.haze.color, DUST = WEATHER_PRESETS.dust.haze.color;
-/** The weather at a key: the haze's amount and top, the heat, and the wind's speed (m/s) if the spell sets it. */
-interface Key { hour: number; cloud: number; rain: number; haze?: number; top?: number; heat?: number; wind?: number }
+/**
+ * The weather at a key: the haze's amount and top, the heat, the wind's speed (m/s) if the spell sets it, and the water
+ * if it does: how far it stands over the usual (m), how fast it runs (times the usual) and how muddy it is.
+ */
+interface Key {
+  hour: number; cloud: number; rain: number; haze?: number; top?: number; heat?: number; wind?: number;
+  rise?: number; flow?: number; mud?: number;
+}
 /** A spell's keys, its haze's colour and kind, and what it's doing at an hour. */
 interface Spell { keys: Key[]; haze?: { color: number; kind: HazeKind }; phase: (hour: number) => string }
 
@@ -77,6 +85,25 @@ export const SPELLS = {
     haze: { color: DUST, kind: 'dust' },
     phase: (h) => (h < 1 ? 'still' : h < 3.5 ? 'the dust coming in' : h < 6 ? 'a dust storm' : h < 9 ? 'dropping' : 'still'),
   },
+  flood: {
+    keys: [
+      // A fair day, the stream as usual...
+      { hour: 0, cloud: 0.1, rain: 0, wind: 4, rise: 0, flow: 1, mud: 0 },
+      { hour: 1, cloud: 0.3, rain: 0, wind: 5, rise: 0, flow: 1, mud: 0 },
+      // ...a storm coming in, its rain swelling the stream: faster, browner, rising up its banks...
+      { hour: 2.5, cloud: 1, rain: 0.7, wind: 12, rise: 0.05, flow: 1.6, mud: 0.3 },
+      { hour: 4, cloud: 1, rain: 1, wind: 16, rise: 0.18, flow: 3.5, mud: 0.75 },
+      // ...over them, spreading over the floodplain after the rain's peak (the water from upstream comes later)...
+      { hour: 6, cloud: 0.9, rain: 0.5, wind: 10, rise: 0.38, flow: 3, mud: 0.9 },
+      { hour: 7.5, cloud: 0.6, rain: 0, wind: 6, rise: 0.42, flow: 2.5, mud: 0.9 },
+      // ...and draining away under clearing skies, the water clearing slowly after it.
+      { hour: 10, cloud: 0.3, rain: 0, wind: 5, rise: 0.2, flow: 2, mud: 0.7 },
+      { hour: 13, cloud: 0.1, rain: 0, wind: 4, rise: 0.08, flow: 1.3, mud: 0.4 },
+      { hour: 16, cloud: 0.1, rain: 0, wind: 4, rise: 0, flow: 1, mud: 0.1 },
+      { hour: 17, cloud: 0.1, rain: 0, wind: 4, rise: 0, flow: 1, mud: 0 },
+    ],
+    phase: (h) => (h < 1 ? 'fair' : h < 4 ? 'the stream swelling' : h < 7.5 ? 'a flood' : h < 16 ? 'draining' : 'fair'),
+  },
 } satisfies Record<string, Spell>;
 export type SpellName = keyof typeof SPELLS;
 
@@ -112,6 +139,13 @@ export function timelineAt(seconds: number, speed = 1, spell: SpellName = 'showe
 export function timelineWind(seconds: number, speed = 1, spell: SpellName = 'shower'): number | null {
   if ((SPELLS[spell].keys as Key[])[0].wind === undefined) return null;
   return Math.round(valueAt(spell, seconds, speed, (k) => k.wind ?? 0) * 2) / 2;
+}
+
+/** The water the game would send at a time (see Key), or null if the spell leaves the water alone. */
+export function timelineWater(seconds: number, speed = 1, spell: SpellName = 'shower'): WaterState | null {
+  if ((SPELLS[spell].keys as Key[])[0].rise === undefined) return null;
+  const at = (k: (key: Key) => number) => valueAt(spell, seconds, speed, k);
+  return { rise: at((k) => k.rise ?? 0), flow: at((k) => k.flow ?? 1), mud: at((k) => k.mud ?? 0) };
 }
 
 /** What the spell is doing at a time, for the demo's controls. */

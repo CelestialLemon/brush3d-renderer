@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CLOUD_LIGHT, GBUFFER_OUT, LIGHT_UNIFORMS, MIRROR_SKY, NOISE, OKLAB, PAINT, SHADOW } from './glsl';
 import { WIND_GLSL } from './wind';
+import { WATER_MAP_GLSL } from './water';
 
 // The scene's materials. Each has a main variant (writes colour and the G-buffer) and a depth variant for the sun's
 // shadow map, built from the same vertex code so wind and billboarding cast the shadows they should.
@@ -44,6 +45,14 @@ export function createSharedUniforms() {
     uShadowTexel: { value: new THREE.Vector2(1 / 2048, 1 / 2048) },
     uMirror: { value: 0 },
     uMirrorY: { value: 0 },
+    // The game's water map (WaterField, #18): as it was and as last sent, how far it has eased between, and where it lies.
+    tWaterA: { value: null as THREE.Texture | null },
+    tWaterB: { value: null as THREE.Texture | null },
+    uWaterBlend: { value: 1 },
+    uWaterGrid: { value: new THREE.Vector4(0, 0, 1, 0) },
+    // The land's square (the ground's, see MeshOptions.fields): its centre's x and z, half its side, its turn. The water
+    // stops at its edge (half 0: no edge).
+    uLandSquare: { value: new THREE.Vector4(0, 0, 0, 0) },
     // For the water: the bed drawn without it (colour, and the G-buffer's aux for its depth), the scene mirrored in it, the
     // screen size in pixels, and the sky it reflects where nothing else is.
     uUnder: { value: null as THREE.Texture | null },
@@ -169,6 +178,32 @@ void main() {
   vColor = color;
   vPaint = aPaint;
   vUv = uv;
+  place(wp.xyz);
+}
+`;
+
+/**
+ * The water's sheet (WaterField): a vertex per cell of the game's water map, raised to the cell's surface as eased; its
+ * flow and mud for the painting. The reflection is drawn about one surface (uMirrorY); water at another height mirrors
+ * the same picture moved up or down the screen by twice the difference (the camera is orthographic, so it's an exact
+ * shift), vMirrorShift in screen uv.
+ */
+const WATER_VERT = /* glsl */ `
+${HEAD}
+varying vec2 vFlow;
+varying float vMud;
+varying vec2 vMirrorShift;
+void main() {
+  vec4 w = waterCell(ivec2(uv + 0.5));
+  vec4 wp = modelMatrix * vec4(position.x, w.x, position.z, 1.0);
+  vRestPos = wp.xyz;
+  vWorldPos = wp.xyz;
+  vNormal = vec3(0.0, 1.0, 0.0);
+  vColor = WATER_COLOR;
+  vPaint = vec4(0.0);
+  vFlow = w.yz;
+  vMud = w.w;
+  vMirrorShift = (projectionMatrix * viewMatrix * vec4(0.0, 2.0 * (w.x - uMirrorY), 0.0, 0.0)).xy * 0.5;
   place(wp.xyz);
 }
 `;
@@ -516,7 +551,7 @@ void main() {
 #ifdef PREPASS
   // Only the dab's shape and coverage: the painting comes after, where the dab shows.
 #ifdef MIRROR_CLIP
-  if (vWorldPos.y < uMirrorY - 0.01) discard;
+  if (vWorldPos.y < waterTop(vWorldPos.xz) - 0.01) discard;
 #endif
   gColor = vec4(0.0, 0.0, 0.0, alpha);
   gAux = vec4(0.0);
@@ -665,8 +700,7 @@ const f = (x: number) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
  *   deepens to blue-green, the water's own colour scattered back.
  *   The reflection: the scene mirrored in the water (uReflect), the sky where there's nothing, more of it where the water
  *   is deep and dark, broken along the flow by ripples.
- * Ripples drift with the flow; the reflection and the bed stay put. aPaint.z is the flow's direction, aPaint.y its speed (1 a
- * stream's).
+ * Ripples drift with the flow (the game's water map, #18); the reflection and the bed stay put.
  */
 const WATER_FRAG = /* glsl */ `
 ${FRAG_HEAD}
@@ -677,20 +711,55 @@ uniform sampler2D uReflect;
 uniform vec2 uScreen;
 uniform vec3 uSkyTop;
 uniform vec3 uSkyBottom;
-varying vec2 vUv;
+varying vec2 vFlow;
+varying float vMud;
+varying vec2 vMirrorShift;
+uniform vec4 uLandSquare;
+// The flow carries the ripples and the glints along (a flow map: two copies, each carried for a while and then put back,
+// crossfaded so neither's jump shows, each place on its own beat so no pulse runs over the whole river). However the flow
+// turns and changes speed across the water, the pattern is never dragged out of shape.
+const float FLOW_CYCLE = 4.0;
+float crest(float ripple) { return smoothstep(-0.15, 0.35, ripple); }
+// Glints of sun on the ripples' crests: little dashes lying across the flow, carried along by it, each winking in and
+// out on its own beat. Sparse and soft, so they sit on the clear water rather than whiting it out.
+float sparkle(vec2 q, vec2 dir) {
+  vec2 fq = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x))) * vec2(3.5, 1.6);
+  vec2 cell = floor(fq), f = fract(fq) - 0.5 - (hash22(cell) - 0.5) * 0.5;
+  float h = hash12(cell + 7.3);
+  float wink = max(0.0, sin(uTime * (2.0 + h * 3.0) + h * 40.0));
+  return (1.0 - smoothstep(0.5, 1.0, length(f / vec2(0.15, 0.3)))) * step(0.5, h) * wink;
+}
 void main() {
+  // Not where the sheet dives under the land (its mud is how far down, negative there: see layWater).
+  if (vMud < -0.15) discard;
+  float mud = max(vMud, 0.0);
+  // No water off the edge of the land, where nothing would hide the sheet reaching past the last wet cell.
+  if (uLandSquare.z > 0.0) {
+    vec2 d = vWorldPos.xz - uLandSquare.xy;
+    float c = cos(uLandSquare.w), s = sin(uLandSquare.w);
+    if (max(abs(c * d.x - s * d.y), abs(s * d.x + c * d.y)) > uLandSquare.z) discard;
+  }
   cloudAt(vWorldPos);
   vec3 n = vec3(0.0, 1.0, 0.0);
   vec3 p = vWorldPos;
-  float flowA = vPaint.z;
+  vec2 flow = vFlow;
+  float speed = length(flow);
+  // The ripples lie along the flow; still water lies along the map's x.
+  float flowA = speed > 1e-4 ? atan(flow.y, flow.x) : 0.0;
   vec2 dir = vec2(cos(flowA), sin(flowA));
-  // aPaint.y: how fast the ripples drift, against a stream's (a pond's barely do).
-  vec2 q = p.xz - dir * uTime * 0.35 * vPaint.y;
   vec2 uv = gl_FragCoord.xy / uScreen;
+  float beat = uTime / FLOW_CYCLE + snoise(p.xz * 0.11 + 3.0) * 0.5;
+  float f1 = fract(beat), f2 = fract(beat + 0.5);
+  float w1 = 1.0 - abs(2.0 * f1 - 1.0), w2 = 1.0 - w1;
+  // The two copies' weights, keeping the pattern's strength through the crossfade (two unlike patterns averaged are fainter).
+  float norm = inversesqrt(w1 * w1 + w2 * w2);
+  vec2 q1 = p.xz - flow * f1 * FLOW_CYCLE, q2 = p.xz - flow * f2 * FLOW_CYCLE + vec2(17.3, 9.1);
   // Ripples: long, soft swells along the flow, and their screen-space nudge.
-  float r1 = strokes(q * 1.3, flowA), r2 = strokes(q * 2.9 + 7.0, flowA + 0.3);
-  float ripple = r1 * 0.65 + r2 * 0.35;
-  vec2 nudge = vec2(snoise(q * 1.7), snoise(q * 1.7 + 19.0)) * ${f(WATER_REACH.ripple)};
+  float ripple1 = strokes(q1 * 1.3, flowA) * 0.65 + strokes(q1 * 2.9 + 7.0, flowA + 0.3) * 0.35;
+  float ripple2 = strokes(q2 * 1.3, flowA) * 0.65 + strokes(q2 * 2.9 + 7.0, flowA + 0.3) * 0.35;
+  float ripple = (ripple1 * w1 + ripple2 * w2) * norm;
+  vec2 nudge = (vec2(snoise(q1 * 1.7), snoise(q1 * 1.7 + 19.0)) * w1 + vec2(snoise(q2 * 1.7), snoise(q2 * 1.7 + 19.0)) * w2) * norm
+    * ${f(WATER_REACH.ripple)};
   // Chop: the wind raises short wavelets across its direction that run downwind, rougher in the gusts. They break up the
   // reflection, and in a storm their crests whiten. They travel as short waves do, about a metre a second in a storm, far
   // slower than the gusts: any faster and they flicker, and the glints and whitecaps keyed to them blink.
@@ -737,7 +806,7 @@ void main() {
   // Taken through a small blur: the reflection is drawn at half size, and its thin bright things (grass blades above all)
   // would flicker as the camera moves.
   vec2 rt = ${f(WATER_REACH.blurPx)} / uScreen;
-  vec2 ruv = uv + nudge * ${f(WATER_REACH.reflectNudge)};
+  vec2 ruv = uv + nudge * ${f(WATER_REACH.reflectNudge)} - vMirrorShift;
   vec4 refl = (texture(uReflect, ruv) * 2.0 + texture(uReflect, ruv + vec2(rt.x, 0.0)) + texture(uReflect, ruv - vec2(rt.x, 0.0))
     + texture(uReflect, ruv + vec2(0.0, rt.y)) + texture(uReflect, ruv - vec2(0.0, rt.y))) / 6.0;
   // The upper sky, and on the ripples' crests, which tilt towards the horizon, the glow low in it: a mean of the two would be grey.
@@ -758,18 +827,12 @@ void main() {
   float cover = (refl.a * 2.0 + texture(uReflect, ruv + wide).a + texture(uReflect, ruv - wide).a
     + texture(uReflect, ruv + vec2(wide.x, -wide.y)).a + texture(uReflect, ruv - vec2(wide.x, -wide.y)).a) / 6.0;
   float solid = smoothstep(0.35, 0.9, cover);
-  // Fading out at the very edge (vUv.y runs across the ribbon), where only a film of water lies over the bank.
-  float film = smoothstep(0.0, 0.3, min(vUv.y, 1.0 - vUv.y));
+  // Fading out at the very edge, where only a film of water lies over the bank.
+  float film = smoothstep(0.0, 0.5, path);
   col += (clouded - sky) * (1.0 - solid) * film * 0.365 * (0.85 + 0.3 * ripple);
   col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.25)), smoothstep(0.5, 0.9, ripple) * 0.25 * depthy);
-  // Sparkle: glints of sun on the ripples' crests, little dashes lying across the flow, carried along by it, each winking
-  // in and out on its own beat. Sparse and soft, so they sit on the clear water rather than whiting it out.
-  vec2 fq = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x))) * vec2(3.5, 1.6);
-  vec2 cell = floor(fq), f = fract(fq) - 0.5 - (hash22(cell) - 0.5) * 0.5;
-  float h = hash12(cell + 7.3);
-  float wink = max(0.0, sin(uTime * (2.0 + h * 3.0) + h * 40.0));
-  float crest = smoothstep(-0.15, 0.35, ripple);
-  float spark = (1.0 - smoothstep(0.5, 1.0, length(f / vec2(0.15, 0.3)))) * step(0.5, h) * wink * crest;
+  // Sparkle: glints of sun on the ripples' crests (sparkle), carried by the flow as the ripples are.
+  float spark = (sparkle(q1, dir) * w1 + sparkle(q2, dir) * w2) * crest(ripple);
   // No glints under a cloud.
   // (The river's own glints dim a little in a paw, as it darkens.)
   col = mix(col, exposeHere(mix(vec3(1.0), sunTint(), 0.5)),
@@ -796,13 +859,13 @@ const PREPASS_FRAG = /* glsl */ `
 layout(location = 0) out vec4 gColor;
 layout(location = 1) out vec4 gAux;
 #ifdef MIRROR_CLIP
-uniform float uMirrorY;
+${WATER_MAP_GLSL}
 varying vec3 vWorldPos;
 #endif
 void main() {
 #ifdef MIRROR_CLIP
   // As writeGBuffer does in the reflection: what's under the water isn't reflected.
-  if (vWorldPos.y < uMirrorY - 0.01) discard;
+  if (vWorldPos.y < waterTop(vWorldPos.xz) - 0.01) discard;
 #endif
   gColor = vec4(0.0); gAux = vec4(0.0);
 }
@@ -824,7 +887,7 @@ void main() {
 `;
 
 const VERT: Record<MaterialKind, string> = {
-  paint: STATIC_VERT, ground: STATIC_VERT, crop: STATIC_VERT, ink: STATIC_VERT, water: STATIC_VERT, foliage: FOLIAGE_VERT, grass: GRASS_VERT,
+  paint: STATIC_VERT, ground: STATIC_VERT, crop: STATIC_VERT, ink: STATIC_VERT, water: WATER_VERT, foliage: FOLIAGE_VERT, grass: GRASS_VERT,
   debris: DEBRIS_VERT,
 };
 const FRAG: Record<MaterialKind, string> = {
@@ -832,7 +895,12 @@ const FRAG: Record<MaterialKind, string> = {
   debris: FOLIAGE_FRAG,
 };
 /** Painted wood bends with its tree; a crop shows the gusts. (The ground has no trees, but keeps paint's shader exactly.) */
-const DEFINES: Partial<Record<MaterialKind, Record<string, number>>> = { paint: { TREES: 1 }, ground: { TREES: 1 }, crop: { CROP: 1 } };
+/** The water's own colour (C.water before #18, when the scenes built it), linear. */
+const WATER_LINEAR = new THREE.Color(0x2c6e74);
+const DEFINES: Partial<Record<MaterialKind, Record<string, number | string>>> = {
+  paint: { TREES: 1 }, ground: { TREES: 1 }, crop: { CROP: 1 },
+  water: { WATER_COLOR: `vec3(${WATER_LINEAR.r.toFixed(6)}, ${WATER_LINEAR.g.toFixed(6)}, ${WATER_LINEAR.b.toFixed(6)})` },
+};
 const DABS = (kind: MaterialKind) => kind === 'foliage' || kind === 'debris';
 const sideOf = (kind: MaterialKind) => (kind === 'grass' || DABS(kind) || kind === 'ink' ? THREE.DoubleSide : THREE.FrontSide);
 
