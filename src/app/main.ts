@@ -88,7 +88,7 @@ const wind = {
 let rhythm = num('rhythm', 0.5);
 const windGoal = (): WindGoal => ({ speed: wind.speed, direction: wind.direction, gustiness: wind.gust, rhythm });
 const WARM = 10;
-let gustLook: GustLook = (params.get('gusts') ?? '') in GUST_LOOKS ? params.get('gusts') as GustLook : 'a';
+let gustLook: GustLook = Object.hasOwn(GUST_LOOKS, params.get('gusts') ?? '') ? params.get('gusts') as GustLook : 'a';
 const windSeed = num('windSeed', 1);
 function newWind() {
   const w = new WindWorker(new Worker(new URL('../wind/worker.ts', import.meta.url), { type: 'module' }),
