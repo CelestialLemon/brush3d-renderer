@@ -35,12 +35,10 @@ const GUST_LIFT = 1.1;
  */
 export interface DustLook { lift: number; linger: number; rise: number; top: number; head: number }
 export const DUST_LOOKS = {
-  /** Wisps: light puffs off the tracks, gone in a few seconds, low; no head. */
-  a: { lift: 0.5, linger: 3, rise: 0.4, top: 2.5, head: 0 },
-  /** Drifts: fuller puffs that hang a while, up to head height and over; a gust's front a little thicker. */
-  b: { lift: 1.2, linger: 6, rise: 0.6, top: 4, head: 0.5 },
-  /** Billows: heavy puffs that hang and spread, up to the trees' tops; each gust's front a rolling wall. */
-  c: { lift: 2, linger: 10, rise: 0.8, top: 7, head: 1 },
+  /** The developer's pick (#36), billows: heavy puffs up to the trees' tops, each gust's front a rolling wall, but not
+   * hanging behind once a gust has passed (C hung 10 s, too long): clearing in 5 s, or in 3 s. */
+  c5: { lift: 2, linger: 5, rise: 0.8, top: 7, head: 1 },
+  c3: { lift: 2, linger: 3, rise: 0.8, top: 7, head: 1 },
 } satisfies Record<string, DustLook>;
 export type DustLookName = keyof typeof DUST_LOOKS;
 /** How fast the wind must pick up for the head to lift (m/s each second), and how much it lifts over that, per unit of
@@ -70,7 +68,7 @@ export class DustField {
   /** How much of a dust storm there is, 0..1 (the renderer sets it from the weather as drawn): none, and nothing lifts. */
   storm = 0;
   /** The look (DUST_LOOKS). */
-  look: DustLook = DUST_LOOKS.b;
+  look: DustLook = DUST_LOOKS.c5;
 
   private source: DustSource | null = null;
   /** The source laid on the wind's grid: lift and ground per cell. */
