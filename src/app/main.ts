@@ -7,7 +7,6 @@ import type { MaterialKind } from '../renderer/materials';
 import { cloudDriftSpeed } from '../renderer/clouds';
 import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weather, type WeatherName } from '../renderer/weather';
 import { steadyWind, WIND_SCALE, windName, type WindStrength } from '../renderer/wind';
-import { TREE_FEELS, type TreeFeelName } from '../renderer/trees';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
 import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, timelineWind, type SpellName } from './timeline';
 import { WindWorker } from '../wind/client';
@@ -19,8 +18,6 @@ import { WindView } from './windView';
 //   scene=farm|meadow  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   rhythm (how the gusts come: 0 rare and strong, 1 frequent and mild)  windMap (the living wind from above, #36)
-//   trees=loose|stiff (how the trees answer the wind, for the developer to pick: rocking longer and slower, or settling
-//     quickly; #36)
 //   weather (clear|scattered|overcast|soft-rain|storm|fog|dust|heat-wave|snow|blizzard), then each value over it:
 //     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop, hazeBase (metres)
 //     hazeKind=fog|dust
@@ -67,7 +64,6 @@ renderer.settings.prepass = num('prepass', 1) !== 0;
 renderer.settings.waterScissor = num('scissor', 1) !== 0;
 renderer.settings.equalDepth = num('equal', 1) !== 0;
 renderer.settings.shelterDebug = params.has('shelter') && params.get('shelter') !== '0';
-if ((params.get('trees') ?? '') in TREE_FEELS) renderer.trees.feel = params.get('trees') as TreeFeelName;
 // The ground's brush, baked at load into a 2048² texture: the developer's pick (#6, #23), the same to the eye as live
 // and as 4096², at a quarter of 4096's memory. The grass's and crops' brush by place, 1024² at seven angles a scale.
 const bakes = { ground: 2048, crop: 1024, grass: 1024 };
@@ -222,11 +218,6 @@ function hud() {
   map.title = 'The living wind from above, turned as the camera is: how hard it blows (or the shelter), which way, and the obstacles';
   map.onclick = () => { windMap = !windMap; if (windMap) document.body.append(windView.el); else windView.el.remove(); hud(); };
   hudEl.append(map);
-  const feels = Object.keys(TREE_FEELS) as TreeFeelName[], trees = document.createElement('button');
-  trees.textContent = `Trees: ${renderer.trees.feel}`;
-  trees.title = 'How the trees answer the wind (a candidate to pick): loose rocks longer and slower, stiff settles quickly';
-  trees.onclick = () => { renderer.trees.feel = feels[(feels.indexOf(renderer.trees.feel) + 1) % feels.length]; hud(); };
-  hudEl.append(trees);
   // The clouds' speed follows the wind's: sent at once, as the game would.
   const windSet = (f: (v: number) => void) => (v: number) => { f(v); living.setGoal(windGoal()); send(sent); };
   hudEl.append(slider('Wind', 0, 45, 0.5, () => wind.speed, windSet((v) => { wind.speed = v; }), (v) => `${windName(v)} ${v.toFixed(1)} m/s`));

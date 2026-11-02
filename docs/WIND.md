@@ -140,8 +140,8 @@ The game gives the renderer, every frame, the wind client's last two snapshots a
   with it as far as its kind's `TREE_BEND` says: a cypress all the way, like a whip; an orchard bush hardly. Bending is
   drawn across the view only, so a crown's strokes never swap over (`tools/pops.ts`: none in a gale). The steady rocking
   of before is gone. The small quick swirls the wind's 1 m grid can't carry are added as shoves into each spring, as strong
-  as the game's gustiness: at gustiness 0 a tree leans and holds still. Two feels to pick from, `?trees=loose|stiff` and
-  the demo's *Trees* button. About 0.5 ms of the main thread a frame for the farm's 174 trees.
+  as the game's gustiness: at gustiness 0 a tree leans and holds still. The springs are the developer's pick, 'stiff' (#40):
+  trees settle within a few swings. About 0.5 ms of the main thread a frame for the farm's 174 trees.
 - **Steady is steady.** With gustiness 0 the map is the goal everywhere (but in shelter), so nothing gusts.
 - **The haze's patches** (fog and dust) are laid along the wind and drift with it. When the wind turns more than 25° from
   them, or strengthens or slackens enough to stretch or shrink them by 30%, a new set is laid along the wind as it is and fades
