@@ -189,8 +189,11 @@ The game gives the renderer, every frame, the wind client's last two snapshots a
   ground's height. Send a new map when the ground wets or dries. The demo's map is the farm's tracks and the shed's porch,
   less as rain or snow wets them.
   The ground air lifts dust where it's over 5.5 m/s and over 1.1 times the day's average, so it's the gusts that lift it,
-  a bigger puff in a stronger gust. The dust is carried downwind at 0.6 times the ground air's speed, rises from 0.5 m to
-  at most 4 m, and fades to a third over 5 s. It's the renderer's own motion, which no game logic reads, stepped a tick
+  a bigger puff in a stronger gust. The dust is carried downwind at 0.6 times the ground air's speed and rises from 0.5 m.
+  How much lifts, how long it lingers, how high it rises, and the rolling head are the look (`DUST_LOOKS`). A gust's
+  front lifts more, and higher, where the wind picks up fast. Three looks are offered while the developer picks:
+  the demo's Dust buttons, or `?dust=a|b|c`. A is wisps (gone in 3 s, up to 2.5 m, no head). B is drifts (6 s, 4 m, a
+  thicker front). C is billows (10 s, 7 m, a rolling wall). It's the renderer's own motion, which no game logic reads, stepped a tick
   of the game's wind at a time: it holds still while the game is paused. The post pass draws it as a layer
   of depth, read along each pixel's view. Its cost: none while there's no storm and no dust left up. In a storm, up to
   about 1.2 ms of the main thread per wind tick (10 a second), 200 m at 1 m, on a Ryzen 5 1600, and about 0.2 ms of the

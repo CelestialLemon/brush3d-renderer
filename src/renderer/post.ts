@@ -60,6 +60,7 @@ uniform float uDustBlend;
 uniform vec4 uDustGrid;
 uniform float uDustOn;
 uniform vec3 uDustColor;
+uniform float uDustReach;
 // The heat's shimmer (#9): x how far it shifts the picture (pixels), y the time (seconds).
 uniform vec2 uShimmer;
 varying vec2 vUv;
@@ -136,9 +137,9 @@ float fogAt(vec3 p) {
 }
 
 // Fresh dust: how much of a surface it hides. Summed along the view's path up out of the dust from the surface, in a few
-// steps, each reading the field where the path is then: a puff is a column over the ground, thick up to its top and
-// thinning over the top half metre, so it veils what's behind and below it and has depth as the view looks through it.
-const float DUST_REACH = 4.5;
+// steps (up to the look's top and half a metre over), each reading the field where the path is then: a puff is a column
+// over the ground, thick up to its top and thinning over the top half metre, so it veils what's behind and below it and
+// has depth as the view looks through it.
 const float DUST_MAX = 0.8;
 vec3 dustField(vec2 xz) {
   vec2 uv = (xz - uDustGrid.xy) * uDustGrid.zw;
@@ -149,7 +150,7 @@ float freshDust(vec3 p) {
   if (uDustOn <= 0.0) return 0.0;
   vec3 back = -uCamFwd;
   const int STEPS = 5;
-  float dy = DUST_REACH / float(STEPS), sum = 0.0;
+  float dy = uDustReach / float(STEPS), sum = 0.0;
   for (int i = 0; i < STEPS; i++) {
     float y = p.y + (float(i) + 0.5) * dy;
     vec3 f = dustField((p + back * ((y - p.y) / back.y)).xz);
