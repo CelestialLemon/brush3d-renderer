@@ -67,6 +67,7 @@ export class WindField {
   private snapB: WindSnapshot | null = null;
   private mean = new Float32Array(0);
   private meanTick = -1;
+  private meanGrid = '';
 
   private static texture(format: THREE.PixelFormat = THREE.RGFormat) {
     const t = new THREE.DataTexture(new Uint16Array(format === THREE.RGFormat ? 2 : 1), 1, 1, format, THREE.HalfFloatType);
@@ -104,11 +105,15 @@ export class WindField {
     t.needsUpdate = true;
   }
 
-  /** The usual wind carried on to a new tick; laid afresh on a new map, a jump back or a long way on. */
+  /**
+   * The usual wind carried on to a new snapshot; laid afresh on another map, a jump back or a long way on, or a new wind
+   * at the same tick (a new wind, or steadyWind's, which are all tick 0).
+   */
   private updateUsual(s: WindSnapshot) {
-    const n = s.nx * s.nz, t = this.usual;
+    const n = s.nx * s.nz, t = this.usual, grid = `${s.nx} ${s.nz} ${s.cell} ${s.x0} ${s.z0}`;
     let mean = this.mean;
-    if (mean.length !== n || s.tick < this.meanTick || s.tick > this.meanTick + 50) {
+    if (grid !== this.meanGrid || s.tick <= this.meanTick || s.tick > this.meanTick + 50) {
+      this.meanGrid = grid;
       // Laid as the shelter would have it: the ground air's speed over the map, shared out by each cell's shelter.
       mean = this.mean = new Float32Array(n);
       let sum = 0, kSum = 0;
