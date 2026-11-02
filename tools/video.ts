@@ -1,7 +1,7 @@
 // Records the camera moving as a video, to judge motion by eye: crawl, shimmer and popping show only in moving pictures.
 //   node tools/video.ts [out-dir] [move ...]      moves: pan, pan-wide, pan-up, turn, zoom, wind (default: all but the
 //   wind strengths), wind-calm, wind-breeze, wind-gale, wind-storm, wind-hurricane, wind-ramp (calm to hurricane and back),
-//   gusts (twenty seconds held still and wider, to see the gusts come and go; QUERY="gusts=b&wind=gale"),
+//   gusts (twenty seconds held still and wider, to see the gusts come and go; QUERY="wind=gale"),
 //   weather-ramp (clear to overcast and back, sent in steps as the game sends it), weather-snap (the same, the cover
 //   jumping clear, overcast, clear: what the ease has to hide), clouds (the clouds drifting, the camera still),
 //   clouds-views (the same in each view in turn), clouds-ramp (the cover rising, zoomed out), mirror-stream and

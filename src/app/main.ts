@@ -10,7 +10,7 @@ import { steadyWind, WIND_SCALE, windName, type WindStrength } from '../renderer
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
 import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, timelineWind, type SpellName } from './timeline';
 import { WindWorker } from '../wind/client';
-import { GUST_LOOKS, TICK as WIND_TICK, type GustLook, type WindGoal, type WindSave } from '../wind/sim';
+import { TICK as WIND_TICK, type WindGoal, type WindSave } from '../wind/sim';
 import { WindView } from './windView';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
@@ -18,7 +18,6 @@ import { WindView } from './windView';
 //   scene=farm|meadow  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   rhythm (how the gusts come: 0 rare and strong, 1 frequent and mild)  windMap (the living wind from above, #36)
-//   gusts=a|b|c (the gusts' look, while the developer picks, #36: a gentler, b deeper lulls, c quicker with more slaps)
 //   windSeed (which gusts: a whole number)
 //   weather (clear|scattered|overcast|soft-rain|storm|fog|dust|heat-wave|snow|blizzard), then each value over it:
 //     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop, hazeBase (metres)
@@ -88,11 +87,10 @@ const wind = {
 let rhythm = num('rhythm', 0.5);
 const windGoal = (): WindGoal => ({ speed: wind.speed, direction: wind.direction, gustiness: wind.gust, rhythm });
 const WARM = 10;
-let gustLook: GustLook = Object.hasOwn(GUST_LOOKS, params.get('gusts') ?? '') ? params.get('gusts') as GustLook : 'a';
 const windSeed = num('windSeed', 1);
 function newWind() {
   const w = new WindWorker(new Worker(new URL('../wind/worker.ts', import.meta.url), { type: 'module' }),
-    { nx: 200, nz: 200, cell: 1, x0: -100, z0: -100 }, scene.wind, windGoal(), { seed: windSeed, look: gustLook });
+    { nx: 200, nz: 200, cell: 1, x0: -100, z0: -100 }, scene.wind, windGoal(), { seed: windSeed });
   // Shot mode stops a tick short and steps it on to each frame's time from there (see windTo); the demo's still frame
   // (?t=) is run on to its time.
   w.advance(params.has('shot') ? WARM - WIND_TICK : WARM + (frozen ?? 0));
@@ -229,17 +227,6 @@ function hud() {
   hudEl.append(slider('gusts', 0, 1, 0.05, () => wind.gust ?? 0.5, windSet((v) => { wind.gust = v; }), (v) => v.toFixed(2), true));
   hudEl.append(slider('rhythm', 0, 1, 0.05, () => rhythm, windSet((v) => { rhythm = v; }),
     (v) => `${v < 0.35 ? 'rare, strong' : v > 0.65 ? 'frequent, mild' : 'between'} ${v.toFixed(2)}`));
-  // The gusts' looks, while the developer picks (#36): a new wind, warmed up again, with the same seed.
-  const looks: Record<GustLook, string> = {
-    a: 'Gentler: shallower lulls, slower fronts', b: 'Deeper lulls: the grass stands up between gusts',
-    c: 'Quicker fronts, and more sudden slaps',
-  };
-  for (const l of Object.keys(looks) as GustLook[]) {
-    const b = document.createElement('button');
-    b.textContent = `Gusts ${l.toUpperCase()}`; b.className = gustLook === l ? 'on' : ''; b.title = looks[l];
-    b.onclick = () => { gustLook = l; living.dispose(); living = newWind(); renderer.wind.restart(); renderer.trees.restart(); hud(); };
-    hudEl.append(b);
-  }
   // The zoom by its doubling, so each step of the slider zooms as much as the last.
   hudEl.append(slider('Zoom', Math.log2(MIN_ZOOM), Math.log2(MAX_ZOOM), 0.01, () => Math.log2(view.zoom), (v) => { view.zoom = 2 ** v; },
     (v) => `${(2 ** v).toFixed(0)} px/m`, true));
