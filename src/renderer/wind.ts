@@ -69,6 +69,8 @@ export class WindField {
   private meanTick = -1;
   private meanGrid = '';
   private meanSnap: WindSnapshot | null = null;
+  /** Over how many seconds the usual wind has been taken so far (up to USUAL). */
+  private meanSpan = 0;
 
   private static texture(format: THREE.PixelFormat = THREE.RGFormat) {
     const t = new THREE.DataTexture(new Uint16Array(format === THREE.RGFormat ? 2 : 1), 1, 1, format, THREE.HalfFloatType);
@@ -117,14 +119,15 @@ export class WindField {
     let mean = this.mean;
     if (grid !== this.meanGrid || s.tick <= this.meanTick || s.tick > this.meanTick + 50) {
       this.meanGrid = grid;
-      // Laid as the shelter would have it: the ground air's speed over the map, shared out by each cell's shelter.
+      // Laid as the air is now; then a plain mean of what has come since, until it spans USUAL seconds, so it settles in
+      // a few seconds rather than reading the whole map as gusty (or calm) for the first half minute.
       mean = this.mean = new Float32Array(n);
-      let sum = 0, kSum = 0;
-      for (let c = 0; c < n; c++) { sum += Math.hypot(s.u[c], s.v[c]); kSum += s.k[c]; }
-      const per = kSum > 0 ? sum / kSum : 0;
-      for (let c = 0; c < n; c++) mean[c] = kSum > 0 ? s.k[c] * per : Math.hypot(s.u[c], s.v[c]);
+      for (let c = 0; c < n; c++) mean[c] = Math.hypot(s.u[c], s.v[c]);
+      this.meanSpan = 0.1;
     } else {
-      const a = 1 - Math.exp(-((s.tick - this.meanTick) * 0.1) / USUAL);
+      const dt = (s.tick - this.meanTick) * 0.1;
+      this.meanSpan = Math.min(USUAL, this.meanSpan + dt);
+      const a = Math.max(dt / this.meanSpan, 1 - Math.exp(-dt / USUAL));
       for (let c = 0; c < n; c++) { const u = s.u[c], v = s.v[c]; mean[c] += (Math.sqrt(u * u + v * v) - mean[c]) * a; }
     }
     this.meanTick = s.tick;
