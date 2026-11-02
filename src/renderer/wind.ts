@@ -1,20 +1,12 @@
 import * as THREE from 'three';
+import { atHeight, type WindSnapshot } from '../wind/sim';
 
-// Wind: the game says how hard and which way it blows; the renderer eases towards that and draws what follows from it.
+// Wind: the game owns it (src/wind, #36) and hands the renderer each tick's snapshot of the living wind over the world; the
+// renderer draws exactly that, never easing or altering it. Every material reads the same map: grass and wheat the ground
+// air, trees the air at their crowns, the water's chop and dust's surges how hard it blows over them.
 //
-// The game owns the wind and anything it causes (a snapped branch, a flattened field); the renderer only shows it: trees
-// leaning and rocking, leaves fluttering, gusts rolling over the grass and through the wheat, chop on the water, and in a
-// storm pale leaf undersides and leaves in the air. Weather (#3) will drive this the same way it drives the water.
-
-/** The wind the game asks for. */
-export interface Wind {
-  /** Metres per second, 0 (calm) to about 35 (hurricane) and beyond. */
-  speed: number;
-  /** Where it blows towards, radians in the ground plane from +x towards +z. */
-  direction: number;
-  /** How gusty, 0 (steady) to 1 (squally). Defaults to 0.5. */
-  gust?: number;
-}
+// The renderer only adds motion no game logic reads: leaves fluttering and trees rocking about their lean, the leaves in
+// the air, the water's wavelets and the haze's patches drifting downwind.
 
 /** Named strengths, in metres per second (about Beaufort 0, 3, 8, 10 and 12). */
 export const WIND_SCALE = { calm: 0, breeze: 5, gale: 17, storm: 25, hurricane: 35 } as const;
@@ -27,49 +19,133 @@ export function windName(speed: number): WindStrength {
   return name;
 }
 
-/** How far dust's streaks are drawn out along the wind (post.ts's fogStreak). */
+/** How far dust's streaks are drawn out along the wind (post.ts's fogDust). */
 export const STREAK_STRETCH = 6;
 
-/** Seconds the drawn wind takes to close most of the gap to the asked one: trees don't snap to a new wind. */
-const EASE = 1.5;
+/**
+ * The height the trees' crowns read the wind at, metres. Up there the gusts are the free air's and a hedge's shelter has
+ * faded (see the wind's windAt); the crowns take it in the ground's terms, divided by how much stronger the wind is at
+ * that height in the open, so their calibrated lean stays as it was. How much harder the wind pushes up there is the
+ * look's to choose (#36).
+ */
+export const CROWN_HEIGHT = 6;
+/** How much stronger the open wind is at CROWN_HEIGHT than at the ground (the wind's height rule, sim.ts's atHeight). */
+const CROWN_PROFILE = 1 + 0.5 * Math.min(1, (CROWN_HEIGHT - 0.75) / 7.25) + 0.01 * Math.max(0, CROWN_HEIGHT - 8);
 
 /**
- * The wind as drawn: eased towards the game's, with the phases that move with it integrated over time, so a change of speed
- * changes how fast the patterns move rather than jumping them to where a faster wind would have taken them all along.
+ * A wind with no simulation behind it: the same everywhere, `speed` m/s towards `direction` (radians from +x towards +z),
+ * no gusts. For a scene with no game wind (the profile's cases, a model viewer): renderer.setWind(w, w, 0).
+ */
+export function steadyWind(speed: number, direction: number): WindSnapshot {
+  const dirX = Math.cos(direction), dirZ = Math.sin(direction), n = 4, fill = (v: number) => new Float32Array(n).fill(v);
+  return {
+    nx: 2, nz: 2, cell: 1e4, x0: -1e4, z0: -1e4, tick: 0, speed, dirX, dirZ, gustiness: 0,
+    u: fill(speed * dirX), v: fill(speed * dirZ), k: fill(1), fu: fill(speed * dirX), fv: fill(speed * dirZ),
+  };
+}
+
+/**
+ * The wind's map on the GPU: the last two ticks' snapshots as two textures, each texel a cell's ground air (x, z) and the
+ * air at the crowns (x, z), which the shaders blend between as the frame falls between the ticks. A new tick is uploaded
+ * once (into the older texture), so a frame costs nothing unless the wind has moved on.
+ */
+export class WindField {
+  /** The earlier tick and the later, and the frame's share of the way between them. */
+  readonly a = WindField.texture();
+  readonly b = WindField.texture();
+  blend = 0;
+  /** Where the map lies: its corner (x, z) and 1 over its size in metres (x, z). */
+  readonly grid = new THREE.Vector4(0, 0, 1, 1);
+  /** The snapshots the textures hold (by identity: another wind's snapshot may share a tick number). */
+  private snapA: WindSnapshot | null = null;
+  private snapB: WindSnapshot | null = null;
+
+  private static texture() {
+    const t = new THREE.DataTexture(new Uint16Array(4), 1, 1, THREE.RGBAFormat, THREE.HalfFloatType);
+    t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearFilter;
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    t.needsUpdate = true;
+    return t;
+  }
+
+  set(prev: WindSnapshot, cur: WindSnapshot, alpha: number) {
+    this.grid.set(cur.x0, cur.z0, 1 / (cur.nx * cur.cell), 1 / (cur.nz * cur.cell));
+    if (cur !== this.snapB || prev !== this.snapA) {
+      // The later texture becomes the earlier when the wind has moved on a tick: only the new tick is uploaded.
+      if (prev === this.snapB) {
+        const t = this.a; (this as { a: THREE.DataTexture }).a = this.b; (this as { b: THREE.DataTexture }).b = t;
+      } else WindField.upload(this.a, prev);
+      this.snapA = prev;
+      WindField.upload(this.b, cur); this.snapB = cur;
+    }
+    this.blend = prev.tick === cur.tick ? 1 : alpha;
+  }
+
+  private static upload(t: THREE.DataTexture, s: WindSnapshot) {
+    const n = s.nx * s.nz;
+    let data = t.image.data as Uint16Array;
+    if (t.image.width !== s.nx || t.image.height !== s.nz) {
+      data = new Uint16Array(n * 4);
+      t.image = { data, width: s.nx, height: s.nz };
+      t.dispose();
+    }
+    const half = THREE.DataUtils.toHalfFloat;
+    for (let k = 0; k < n; k++) {
+      const [ax, az] = atHeight(s, k, CROWN_HEIGHT);
+      data[k * 4] = half(s.u[k]); data[k * 4 + 1] = half(s.v[k]);
+      data[k * 4 + 2] = half(ax / CROWN_PROFILE); data[k * 4 + 3] = half(az / CROWN_PROFILE);
+    }
+    t.needsUpdate = true;
+  }
+}
+
+/** One frame the haze's patches lie in (see WindState.haze). */
+export interface HazeFrame {
+  /** The heading they were laid along (a unit vector, x and z), and how far they're drawn out along it. */
+  hx: number; hz: number; stretch: number;
+  /** How far the patches and dust's streaks have drifted along it, in the frame (metres over the stretch). */
+  drift: number; streak: number;
+}
+
+/** A turn further than this from the patches' heading (its cosine), or a change of stretch beyond STRETCH_CHANGE, lays
+ * new patches along the wind as it is, fading in over HAZE_FADE seconds, as the wind's gusts do. */
+const HAZE_TURN = Math.cos((25 * Math.PI) / 180);
+const STRETCH_CHANGE = 1.3;
+const HAZE_FADE = 6;
+
+/**
+ * The wind as drawn, from the game's snapshots: its strength, heading and gustiness as a whole (the game's, eased by the
+ * game), and the renderer's own motion integrated over time, so a change of speed changes how fast things move rather than
+ * jumping them to where a faster wind would have taken them all along.
  */
 export class WindState {
-  readonly goal: Required<Wind> = { speed: WIND_SCALE.breeze, direction: Math.atan2(0.6, 1), gust: 0.5 };
-  speed = this.goal.speed;
-  dirX = Math.cos(this.goal.direction); dirZ = Math.sin(this.goal.direction);
-  gust = this.goal.gust;
-  /** How far the gusts have rolled downwind (metres, x and z), and the leaves' flutter phase (radians). */
+  speed = 0;
+  dirX = 1; dirZ = 0;
+  gust = 0;
+  /** How far the leaves in the air have been carried downwind (metres, x and z), and the leaves' flutter phase (radians). */
   driftX = 0; driftZ = 0; flutter = 0;
   /**
-   * How far a haze's patches have drifted downwind (#9), in their own frame: along the wind, and drawn out along it
-   * (hazeStretch), so metres divided by the stretch. Slowly, a fog creeps rather than flies; dust is carried, and a fog
-   * turning to dust speeds up. Kept in the patches' frame, a change in the wind changes how fast they go, never where they
-   * are: worked out in the world and turned and stretched with the wind, the distance they'd come would swing with it.
+   * The haze's patches (#9): drawn out along the wind and drifting along it, slowly (a fog creeps rather than flies; dust
+   * is carried, and a fog turning to dust speeds up). Each frame of patches keeps its heading and stretch while it lasts;
+   * when the wind turns well away or strengthens a lot, new patches are laid along the wind as it is and fade in while the
+   * old fade out (fade, 0..1), so a turn never swings the patches round the map (#36).
    */
-  hazeDrift = 0;
-  /** How far dust's streaks have blown along the wind, in their frame (metres over STREAK_STRETCH). */
-  streakDrift = 0;
+  haze: HazeFrame = { hx: 1, hz: 0, stretch: 1, drift: 0, streak: 0 };
+  hazeNext: HazeFrame | null = null;
+  hazeFade = 0;
   /** How far the haze is dust, 0..1: the renderer sets it from the weather as drawn. */
   carried = 0;
   private time: number | null = null;
 
-  set(w: Wind, immediate = false) {
-    this.goal.speed = Math.max(0, w.speed); this.goal.direction = w.direction; this.goal.gust = w.gust ?? 0.5;
-    if (immediate) this.snap();
+  /** The game's wind this frame, between its last two ticks. */
+  set(prev: WindSnapshot, cur: WindSnapshot, alpha: number) {
+    const t = prev.tick === cur.tick ? 1 : alpha, mix = (a: number, b: number) => a + (b - a) * t;
+    this.speed = mix(prev.speed, cur.speed); this.gust = mix(prev.gustiness, cur.gustiness);
+    const x = mix(prev.dirX, cur.dirX), z = mix(prev.dirZ, cur.dirZ), l = Math.hypot(x, z) || 1;
+    this.dirX = x / l; this.dirZ = z / l;
   }
 
-  /** Puts the drawn wind at the goal, its patterns where a steady wind would have them at the current time. */
-  snap() {
-    this.speed = this.goal.speed; this.gust = this.goal.gust;
-    this.dirX = Math.cos(this.goal.direction); this.dirZ = Math.sin(this.goal.direction);
-    this.time = null;
-  }
-
-  /** How fast the gust pattern rolls downwind, m/s: slower than the air, so it reads at the game's zooms. */
+  /** How fast the leaves in the air are carried downwind, m/s: slower than the air, so they read at the game's zooms. */
   static driftSpeed(speed: number) { return 0.8 + 0.4 * speed; }
   /** How fast a haze's patches drift, m/s: a still mist still creeps, a gale drags it along. */
   static hazeSpeed(speed: number) { return 0.12 + 0.1 * speed; }
@@ -77,20 +153,22 @@ export class WindState {
   static dustSpeed(speed: number) { return 0.3 + 0.3 * speed; }
   /** How far a haze's patches are drawn out along the wind (1 not at all): dust further. */
   static hazeStretch(speed: number, carried: number) { return 1 + (speed / 10) * (1 + carried); }
-  /** How fast the haze's patches drift now, in their frame: a fog's speed or dust's, by how far it's dust. */
-  private hazeRate() {
-    return THREE.MathUtils.lerp(WindState.hazeSpeed(this.speed), WindState.dustSpeed(this.speed), this.carried) / WindState.hazeStretch(this.speed, this.carried);
-  }
-  /** How fast dust's streaks blow, in their frame: twice dust's speed. */
-  private streakRate() { return (2 * WindState.dustSpeed(this.speed)) / STREAK_STRETCH; }
+  /** How fast the haze's patches drift now, m/s: a fog's speed or dust's, by how far it's dust. */
+  private hazeRate() { return THREE.MathUtils.lerp(WindState.hazeSpeed(this.speed), WindState.dustSpeed(this.speed), this.carried); }
+  /** How fast dust's streaks blow, m/s: twice dust's speed. */
+  private streakRate() { return 2 * WindState.dustSpeed(this.speed); }
   /** The leaves' flutter rate, radians a second: quicker as the wind rises, but levelling off (Sol's fit, 1.4 Hz in a
    * breeze, 2.4 in a hurricane; slower than real leaves, which would only blur as painted cards). */
   static flutterRate(speed: number) { return 2 * Math.PI * (0.7 + (2.3 * speed) / (speed + 12)); }
 
+  /** New patches laid along the wind as it is now. */
+  private hazeFrame(drift = 0, streak = 0): HazeFrame {
+    return { hx: this.dirX, hz: this.dirZ, stretch: WindState.hazeStretch(this.speed, this.carried), drift, streak };
+  }
+
   /**
-   * Advances to a time in seconds. The first time, and a jump back (a tool seeking), re-anchor the phases to that time. A long
-   * frame (a stall, a tab in the background) is taken in steps, so the wind still eases and its patterns carry on from where
-   * they were.
+   * Advances to a time in seconds. The first time, and a jump back (a tool seeking), re-anchor the motion to that time. A
+   * long frame (a stall, a tab in the background) is taken in steps, so the motion carries on from where it was.
    */
   update(time: number) {
     const dt = this.time === null ? -1 : time - this.time;
@@ -98,55 +176,74 @@ export class WindState {
     if (dt < 0) {
       const d = WindState.driftSpeed(this.speed) * time;
       this.driftX = this.dirX * d; this.driftZ = this.dirZ * d;
-      this.hazeDrift = this.hazeRate() * time;
-      this.streakDrift = this.streakRate() * time;
+      this.haze = this.hazeFrame();
+      this.haze.drift = (this.hazeRate() * time) / this.haze.stretch;
+      this.haze.streak = (this.streakRate() * time) / STREAK_STRETCH;
+      this.hazeNext = null; this.hazeFade = 0;
       this.flutter = WindState.flutterRate(this.speed) * time;
       return;
     }
-    // Fine steps while the wind may still be easing (it has settled after half a minute), then the rest in one.
-    const fine = Math.min(dt, 30), n = Math.ceil(fine / 0.1);
-    for (let i = 0; i < n; i++) this.step(fine / n);
-    if (dt > fine) this.step(dt - fine);
+    const n = Math.ceil(Math.min(dt, 30) / 0.1);
+    for (let i = 0; i < n; i++) this.step(dt / n);
   }
 
   private step(dt: number) {
-    const k = 1 - Math.exp(-dt / EASE);
-    this.speed += (this.goal.speed - this.speed) * k;
-    this.gust += (this.goal.gust - this.gust) * k;
-    // The direction turns the short way round (easing the angle; a wind turned right about turns anticlockwise), and a
-    // little slower than the speed changes.
-    const now = Math.atan2(this.dirZ, this.dirX);
-    let turn = (this.goal.direction - now) % (2 * Math.PI);
-    if (turn > Math.PI) turn -= 2 * Math.PI; else if (turn <= -Math.PI) turn += 2 * Math.PI;
-    const a = now + turn * k * 0.7;
-    this.dirX = Math.cos(a); this.dirZ = Math.sin(a);
     const d = WindState.driftSpeed(this.speed) * dt;
     this.driftX += this.dirX * d; this.driftZ += this.dirZ * d;
-    this.hazeDrift += this.hazeRate() * dt;
-    this.streakDrift += this.streakRate() * dt;
     this.flutter += WindState.flutterRate(this.speed) * dt;
+    for (const f of this.hazeNext ? [this.haze, this.hazeNext] : [this.haze]) {
+      f.drift += (this.hazeRate() * dt) / f.stretch;
+      f.streak += (this.streakRate() * dt) / STREAK_STRETCH;
+    }
+    if (this.hazeNext) {
+      this.hazeFade = Math.min(1, this.hazeFade + dt / HAZE_FADE);
+      if (this.hazeFade >= 1) { this.haze = this.hazeNext; this.hazeNext = null; this.hazeFade = 0; }
+    } else {
+      const h = this.haze, ratio = WindState.hazeStretch(this.speed, this.carried) / h.stretch;
+      if (this.dirX * h.hx + this.dirZ * h.hz < HAZE_TURN || ratio > STRETCH_CHANGE || ratio < 1 / STRETCH_CHANGE) {
+        // Started part way along, so the new patches aren't the old ones' noise laid at another angle.
+        this.hazeNext = this.hazeFrame(h.drift + 37.1, h.streak + 53.3); this.hazeFade = 0;
+      }
+    }
   }
 }
 
+/** The wind's map, as GLSL uniforms (WIND_GLSL has them). */
+const WIND_UNIFORMS = /* glsl */ `
+uniform sampler2D tWindA;    // the game's wind map at its earlier tick and its later (see WindField)
+uniform sampler2D tWindB;
+uniform float uWindBlend;    // the frame's share of the way between them
+uniform vec4 uWindGrid;      // the map's corner (x, z) and 1 over its size (x, z)
+uniform float uWindOn;       // 1, or 0 to read a still wind (the shelter map's pass)
+`;
+
 /**
- * The wind in GLSL. Needs NOISE and the wind uniforms (LIGHT_UNIFORMS). Strengths are in metres per second.
- *   windGust(xz): 0..1, the gusts at a point on the ground, rolling downwind.
- *   windLean(s):  a tree's crown pushed over by the steady wind, as a share of its height: with the square of the speed at
- *                 first, levelling off towards a third (Sol's calibration: 1.3% in a breeze, 12% in a gale, 30% in a hurricane).
- *   windSway(s):  its rocking about that lean, the same measure (most of it by a gale).
+ * The wind in GLSL, with the map's uniforms. Needs uWindSpeed and uWindDir (LIGHT_UNIFORMS has them). Strengths are in metres per second.
+ *   windGround(xz): the ground air's velocity (x, z) at a point, from the game's map, between its last two ticks.
+ *   windCrown(xz):  the air at a tree's crown, in the ground's terms (see CROWN_HEIGHT and WindField.upload).
+ *   windGust(xz):   0..1, how hard it blows at a point against the wind's average: 0.5 at the average, 1 at twice it.
+ *   windLean(s):    a tree's crown pushed over by the wind, as a share of its height: with the square of the speed at
+ *                   first, levelling off towards a third (Sol's calibration: 1.3% in a breeze, 12% in a gale, 30% in a
+ *                   hurricane).
+ *   windSway(s):    its rocking about that lean, the same measure (most of it by a gale).
  */
 export const WIND_GLSL = /* glsl */ `
+${WIND_UNIFORMS}
 float windForce() { return clamp(uWindSpeed / 35.0, 0.0, 1.5); }
 vec3 windDir3() { return vec3(uWindDir.x, 0.0, uWindDir.y); }
-float windGust(vec2 xz) {
-  // Two sizes of gust rolling at different speeds, so the pattern changes as it travels rather than sliding as one sheet.
-  vec2 q = xz - uWindDrift;
-  float g = snoise(q * 0.03) * 0.65 + snoise((xz - uWindDrift * 1.35) * 0.08 + 13.7) * 0.35;
-  return clamp(0.5 + g * 0.75 * (0.4 + uWindGustiness * 1.2), 0.0, 1.0);
+vec4 windMap(vec2 xz) {
+  vec2 uv = (xz - uWindGrid.xy) * uWindGrid.zw;
+  return mix(texture2D(tWindA, uv), texture2D(tWindB, uv), uWindBlend) * uWindOn;
 }
+vec2 windGround(vec2 xz) { return windMap(xz).xy; }
+vec2 windCrown(vec2 xz) { return windMap(xz).zw; }
+// A wind's direction as a vector in the ground plane, or the wind's as a whole where it's still.
+vec3 windDirOf(vec2 w) { float l = length(w); return l > 0.01 ? vec3(w.x, 0.0, w.y) / l : windDir3(); }
+float windGust(vec2 xz) { return clamp(0.5 * length(windGround(xz)) / max(uWindSpeed, 0.5), 0.0, 1.0); }
 float windLean(float s) { return 0.36 * (1.0 - exp(-(s * s) / 676.0)); }
 float windSway(float s) { return 0.003 + 0.045 * (1.0 - exp(-(s * s) / 196.0)); }
 `;
+
 
 /**
  * The leaves the wind can lift: cards for the 'debris' kind (see DEBRIS_VERT), each with three random numbers for where it is

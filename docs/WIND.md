@@ -117,8 +117,30 @@ hedge (drag 8/s), and hedge density is a gameplay choice deferred until a mechan
   placeholder until the look PR picks the gust shapes, the lull depth and the fronts' speed.
 - **Peaks in a hurricane with full gusts reach about 95 m/s at the ground** (2.7 times the average, as in a breeze).
   Gameplay that breaks things in the wind should decide what it reads.
-- **The renderer doesn't read it yet.** The grass, trees, water and dust still use the renderer's own gusts. The next PR
-  has them read the wind map.
+
+## How the renderer draws it
+
+The game gives the renderer, every frame, the wind client's last two snapshots and how far the frame is between them:
+`renderer.setWind(wind.prev, wind.cur, wind.alpha)`. It draws exactly that and never eases it. A scene with no game wind
+(the profile's cases, a model viewer) gives `steadyWind(speed, direction)` for both.
+
+- **The map.** Each tick's snapshot is uploaded as a texture of half floats, a texel a cell: the ground air (`u`, `v`) and
+  the air at a crown's height (6 m, by the height rule, divided by the rule's open-air factor so it reads in the ground's
+  terms). Two textures, the earlier tick and the later; the shaders blend them by `alpha`. Only the new tick is uploaded
+  as the wind moves on (about 2.5 ms of the main thread a tick, 200 m at 1 m). Outside the map the edge cells carry on.
+- **Who reads what.** Grass bends by the ground air where each blade stands, which way it blows there too, so the calm
+  behind a hedge shows as grass standing up. A tree's crown leans and rocks by the air at its crown. The wheat, the water's
+  chop and the dust's waves read how hard it blows against the average (`windGust`: 0.5 at the average, 1 at twice it).
+  The renderer's own motion, which nothing in the game reads, stays its own: leaves fluttering, the flying leaves, a crown
+  still rocking after a gust.
+- **Steady is steady.** With gustiness 0 the map is the goal everywhere (but in shelter), so nothing gusts.
+- **The haze's patches** (fog and dust) are laid along the wind and drift with it. When the wind turns more than 25° from
+  them, or strengthens or slackens enough to stretch or shrink them by 30%, a new set is laid along the wind as it is and fades
+  in over 6 s while the old fades out, so a turn never swings the patches round the map.
+- **The demo** runs the wind on 10 s before showing it, so the gusts have filled the world and each hedge's calm has formed.
+  In shot mode (`tools/`) each `__draw` steps the wind to the frame's time and resolves once it's drawn; a time before
+  the last starts again from a save and replays, and a wind asked for at once (not eased) starts a new wind already
+  blowing as asked.
 
 ## Seeing it
 

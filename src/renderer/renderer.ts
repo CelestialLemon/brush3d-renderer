@@ -13,7 +13,8 @@ import { ShelterMap, type Cover } from './shelter';
 import type { PassTimer } from './timer';
 import { WeatherState, type Weather } from './weather';
 import { airLook, HEAT, heatShare } from './air';
-import { leafStorm, WindState, type Wind } from './wind';
+import { leafStorm, WindField, WindState } from './wind';
+import type { WindSnapshot } from '../wind/sim';
 
 // The renderer: the clouds' shade over the land (#8); a sun shadow map; for the water, the bed drawn without it and the
 // scene mirrored in it (both at half size, and only round the water on screen); a multisampled G-buffer (colour plus view
@@ -132,8 +133,9 @@ export class BrushRenderer {
   private look: Look | null = null;
   /** The water's level, if the scene has water: the fog measures how deep it lies from it. */
   private waterLevel: number | null = null;
-  /** The wind as drawn, easing towards what the game last asked for (see setWind). */
+  /** The wind as drawn: the game's, as last given (see setWind), and its map on the GPU. Still until it's given. */
   readonly wind = new WindState();
+  readonly windField = new WindField();
   /** The weather as drawn: the cover as the game sent it, the looks easing towards it (see setWeather). */
   readonly weather = new WeatherState();
   /**
@@ -188,9 +190,12 @@ export class BrushRenderer {
         uExposure: { value: 1 }, uSaturation: { value: 1 }, uNightShift: { value: 0 }, uShadeHue: { value: 0 }, uGrain: { value: 0.012 },
         uCamPos: { value: new THREE.Vector3() }, uCamRight: { value: new THREE.Vector3() }, uCamUp: { value: new THREE.Vector3() },
         uCamFwd: { value: new THREE.Vector3() }, uFogColor: { value: new THREE.Color() }, uFog: { value: new THREE.Vector4() },
-        uFogDrift: { value: new THREE.Vector2() }, tFogNoise: { value: fogNoiseTexture() }, uFogWind: { value: new THREE.Vector3(1, 0, 1) },
-        uDust: { value: new THREE.Vector3() },
-        uWindGustiness: this.shared.uWindGustiness, uWindDrift: this.shared.uWindDrift, uShimmer: { value: new THREE.Vector2() },
+        tFogNoise: { value: fogNoiseTexture() },
+        uDust: { value: new THREE.Vector3() }, uFogFrame: { value: new THREE.Vector4(1, 0, 1, 0) },
+        uFogNext: { value: new THREE.Vector4(1, 0, 1, 0) }, uFogFade: { value: 0 }, uFogStreak: { value: new THREE.Vector2() },
+        uWindSpeed: this.shared.uWindSpeed, uWindDir: this.shared.uWindDir, tWindA: this.shared.tWindA, tWindB: this.shared.tWindB,
+        uWindBlend: this.shared.uWindBlend, uWindGrid: this.shared.uWindGrid, uWindOn: this.shared.uWindOn,
+        uShimmer: { value: new THREE.Vector2() },
       },
     });
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.post));
@@ -201,10 +206,14 @@ export class BrushRenderer {
   }
 
   /**
-   * The wind the game wants: speed in m/s (see WIND_SCALE), the direction it blows towards, and how gusty. The drawn wind
-   * eases towards it over a second or two; 'immediate' puts it there at once (a new scene, a screenshot).
+   * The game's wind, each frame: its last two ticks' snapshots and how far the frame is between them, 0..1 (the wind
+   * client's prev, cur and alpha; see src/wind and docs/WIND.md). Drawn exactly as given. With no game wind,
+   * steadyWind gives one: setWind(w, w, 0).
    */
-  setWind(wind: Wind, immediate = false) { this.wind.set(wind, immediate); }
+  setWind(prev: WindSnapshot, cur: WindSnapshot, alpha: number) {
+    this.wind.set(prev, cur, alpha);
+    this.windField.set(prev, cur, alpha);
+  }
 
   /**
    * The weather the game wants (see Weather, and WEATHER_PRESETS for shorthands). The cloud cover is drawn exactly as given;
@@ -472,8 +481,11 @@ export class BrushRenderer {
     u.uFog.value.set(w.haze * thin, w.hazeBase, w.hazeTop, Math.max(0.5, 0.7 * (w.hazeTop - floor)));
     // The patches drift downwind and are drawn out along it, dust's faster and further (WindState); dust's streaks blow
     // by faster still, stronger as the wind rises, and the gusts sweep it in in waves.
-    u.uFogDrift.value.set(wind.hazeDrift, wind.streakDrift);
-    u.uFogWind.value.set(wind.dirX, wind.dirZ, WindState.hazeStretch(wind.speed, wind.carried));
+    const a = wind.haze, b = wind.hazeNext ?? a;
+    u.uFogFrame.value.set(a.hx, a.hz, a.stretch, a.drift);
+    u.uFogNext.value.set(b.hx, b.hz, b.stretch, b.drift);
+    u.uFogFade.value = wind.hazeNext ? wind.hazeFade : 0;
+    u.uFogStreak.value.set(a.streak, b.streak);
     u.uDust.value.set(w.dust, 0.25 + 0.5 * Math.min(wind.speed / 25, 1), DUST_GUST);
   }
 
@@ -554,12 +566,12 @@ export class BrushRenderer {
       // Every wind value and the clock set to one rest, whatever the weather, and the flutter kept across the map's own
       // view (straight down), not the camera's: what's left of the sway and the flutter (a little even in a calm) is then
       // the same every draw, so a new building can't nudge a tree's dry patch.
-      const saved = [s.uTime.value, s.uWindSpeed.value, s.uWindGustiness.value, s.uWindFlutter.value,
+      const saved = [s.uTime.value, s.uWindSpeed.value, s.uWindOn.value, s.uWindFlutter.value,
         s.uWindDir.value.clone(), s.uWindDrift.value.clone(), s.uViewBack.value.clone()] as const;
-      s.uTime.value = 0; s.uWindSpeed.value = 0; s.uWindGustiness.value = 0; s.uWindFlutter.value = 0;
+      s.uTime.value = 0; s.uWindSpeed.value = 0; s.uWindOn.value = 0; s.uWindFlutter.value = 0;
       s.uWindDir.value.set(1, 0); s.uWindDrift.value.set(0, 0); s.uViewBack.value.set(0, 1, 0);
       return () => {
-        [s.uTime.value, s.uWindSpeed.value, s.uWindGustiness.value, s.uWindFlutter.value] = saved;
+        [s.uTime.value, s.uWindSpeed.value, s.uWindOn.value, s.uWindFlutter.value] = saved;
         s.uWindDir.value.copy(saved[4]); s.uWindDrift.value.copy(saved[5]); s.uViewBack.value.copy(saved[6]);
       };
     });
@@ -595,8 +607,9 @@ export class BrushRenderer {
     w.update(time);
     s.uWindDir.value.set(w.dirX, w.dirZ);
     s.uWindSpeed.value = w.speed;
-    s.uWindGustiness.value = w.gust;
     s.uWindDrift.value.set(w.driftX, w.driftZ);
+    const f = this.windField;
+    s.tWindA.value = f.a; s.tWindB.value = f.b; s.uWindBlend.value = f.blend; s.uWindGrid.value.copy(f.grid);
     s.uWindFlutter.value = w.flutter;
     this.weather.update(time);
     this.applyLook(this.look);

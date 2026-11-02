@@ -155,9 +155,8 @@ uniform vec3 uOvercast;      // under cloud: x the share of light from the whole
                              // z how much wider shadows' edges get (see overcast.ts)
 uniform float uTime;
 uniform vec2 uWindDir;       // where the wind blows towards, a unit vector in xz
-uniform float uWindSpeed;    // m/s, eased
-uniform float uWindGustiness;
-uniform vec2 uWindDrift;     // how far the gusts have rolled downwind (metres)
+uniform float uWindSpeed;    // m/s, the wind's average (the game's, eased by the game)
+uniform vec2 uWindDrift;     // how far the leaves in the air have been carried downwind (metres)
 uniform float uWindFlutter;  // the leaves' flutter phase (radians)
 uniform vec3 uViewBack;     // the main camera's backward direction (wind moves things only across it)
 uniform sampler2D uShadowMap;

@@ -4,10 +4,10 @@ import type { CloudField } from './clouds';
 // Weather: the game says what the sky is doing; the renderer draws it (#3, #7). The game owns the weather's state, its
 // logic and its pace (a shower building is the game changing its values over time); the renderer only eases the looks
 // over a second and a half, to hide the steps between the game's updates (it ticks a few times a second, the screen
-// redraws 60), as setWind does. Anything gameplay reads is drawn exactly as given, never eased: the cloud cover, which
+// redraws 60). Anything gameplay reads is drawn exactly as given, never eased: the cloud cover, which
 // drives the cloud field and its shadows (#8: a shadow on a solar panel cuts its power). The light that follows from the
 // cover (the grey-day look) is a look, and eases (decided 2026-10-31, #7). The vocabulary follows the game's `weatherAt`
-// (Soil-n-Silo's src/game/sim/weather.ts); wind keeps its own call, setWind.
+// (Soil-n-Silo's src/game/sim/weather.ts); wind keeps its own call, setWind, and is drawn exactly as given (#36).
 
 /**
  * A haze lying on the land (a mist, a fog, a dust storm), or a layer of it higher up (low cloud). It's thickest low down and

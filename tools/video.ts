@@ -95,8 +95,8 @@ try {
       // Each move starts from its own wind (the demo's, if it sets none), not where the last one left it; then eases if asked.
       const wind = move.wind ? { speed: move.wind(t) } : i === 0 ? {} : undefined;
       const weather = move.cloud ? { cloud: move.cloud(t) } : i === 0 && !move.timeline ? {} : undefined;
-      const png = await page.evaluate((cam, time, wind, weather, timeline, ease) => {
-        (window as any).__draw(cam, { time, wind, weather, timeline, ease });
+      const png = await page.evaluate(async (cam, time, wind, weather, timeline, ease) => {
+        await (window as any).__draw(cam, { time, wind, weather, timeline, ease });
         return document.querySelector('canvas')!.toDataURL('image/png');
       }, move.at(t), 3 + t, wind, weather, move.timeline ? { time: move.timeline(t), speed: 3, spell: move.spell ?? 'shower' } : undefined,
       !!move.ease && i > 0);

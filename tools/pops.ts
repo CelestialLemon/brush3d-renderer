@@ -29,10 +29,10 @@ try {
       let patches = 0, largest = 0, worst = -1, worstPic: string | undefined;
       for (let i = 0; i < MOMENTS; i++) {
         const t = 3 + i * 0.25;
-        const r = await page.evaluate((t, step, hide, pic) => {
+        const r = await page.evaluate(async (t, step, hide, pic) => {
           const w = window as any;
-          w.__draw(undefined, { time: t, hide, grain: false }); w.__grab('a');
-          w.__draw(undefined, { time: t + step, hide, grain: false }); w.__grab('b');
+          await w.__draw(undefined, { time: t, hide, grain: false }); w.__grab('a');
+          await w.__draw(undefined, { time: t + step, hide, grain: false }); w.__grab('b');
           return w.__patches('a', 'b', pic);
         }, t, step, hide, picture !== null) as { patches: number; largest: number; picture?: string };
         patches += r.patches; largest = Math.max(largest, r.largest);

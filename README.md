@@ -40,7 +40,9 @@ over it, `cloud`, `rain`, `snow`, `heat`, `haze` (0-1), `hazeColor` (hex), `haze
 at load, and `profile` times
 the frame on whatever machine opens it.
 
-The game sets the wind with `renderer.setWind({ speed, direction, gust })`; the drawn wind eases towards it. Trees lean and
+The game owns the wind: it simulates it over the world (`src/wind`, `docs/WIND.md`) and gives the renderer each frame's
+`renderer.setWind(prev, cur, alpha)`, its last two ticks and how far between them, drawn exactly as given (a scene with no
+game wind gives `steadyWind(speed, direction)`). Each blade and crown reads the wind where it stands. Trees lean and
 rock as whole crowns, leaves flutter, gusts roll over the grass and through the wheat, the water chops, and from a gale up
 leaves show their pale undersides and blow through the air. `src/renderer/wind.ts` has the scale and the curves.
 

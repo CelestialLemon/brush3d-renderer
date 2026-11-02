@@ -6,11 +6,11 @@ import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
 import type { MaterialKind } from '../renderer/materials';
 import { cloudDriftSpeed } from '../renderer/clouds';
 import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weather, type WeatherName } from '../renderer/weather';
-import { WIND_SCALE, windName, type Wind, type WindStrength } from '../renderer/wind';
+import { steadyWind, WIND_SCALE, windName, type WindStrength } from '../renderer/wind';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
 import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, timelineWind, type SpellName } from './timeline';
 import { WindWorker } from '../wind/client';
-import type { WindGoal } from '../wind/sim';
+import { TICK as WIND_TICK, type WindGoal, type WindSave } from '../wind/sim';
 import { WindView } from './windView';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
@@ -73,19 +73,36 @@ for (const kind of ['ground', 'crop', 'grass'] as const) {
 const bakeName = (kind: keyof typeof bakes) => (bakes[kind] ? `baked ${bakes[kind]}` : 'live');
 let hour = num('hour', 12);
 const windParam = params.get('wind');
-const wind: Wind = {
+/** The wind the demo asks for (the game's goal, with the rhythm below): m/s, radians it blows towards, gustiness 0..1. */
+const wind = {
   speed: windParam === null ? WIND_SCALE.breeze : windParam in WIND_SCALE ? WIND_SCALE[windParam as WindStrength] : Number(windParam),
   direction: (num('windDir', 31) * Math.PI) / 180,
   gust: num('gust', 0.5),
 };
-renderer.setWind(wind, true);
 // The living wind (#36), standing in for the game's: simulated over 200 m around the middle, a cell a metre, in a worker,
-// on the game's clock (none while the clock is frozen). The demo's wind and gust controls set its goal, as the game would.
+// on the game's clock (none while the clock is frozen). The demo's wind and gust controls set its goal, as the game would,
+// and the renderer draws it. It's run on WARM seconds before it's shown, so the gusts have filled the world and the calm
+// behind each hedge has formed; until then the renderer is given the goal, steady.
 let rhythm = num('rhythm', 0.5);
 const windGoal = (): WindGoal => ({ speed: wind.speed, direction: wind.direction, gustiness: wind.gust, rhythm });
-const living = new WindWorker(new Worker(new URL('../wind/worker.ts', import.meta.url), { type: 'module' }),
-  { nx: 200, nz: 200, cell: 1, x0: -100, z0: -100 }, scene.wind, windGoal());
-const windView = new WindView(living, () => wind.speed);
+const WARM = 10;
+function newWind() {
+  const w = new WindWorker(new Worker(new URL('../wind/worker.ts', import.meta.url), { type: 'module' }),
+    { nx: 200, nz: 200, cell: 1, x0: -100, z0: -100 }, scene.wind, windGoal());
+  // Shot mode stops a tick short and steps it on to each frame's time from there (see windTo); the demo's still frame
+  // (?t=) is run on to its time.
+  w.advance(params.has('shot') ? WARM - WIND_TICK : WARM + (frozen ?? 0));
+  return w;
+}
+const frozen = params.has('t') ? num('t', 0) : null;
+let living = newWind();
+const warm = () => !!living.cur && living.cur.tick >= Math.round(WARM / WIND_TICK);
+/** Gives the renderer the wind for this frame. */
+function drawWind() {
+  if (warm()) renderer.setWind(living.prev!, living.cur!, living.alpha);
+  else { const s = steadyWind(wind.speed, wind.direction); renderer.setWind(s, s, 0); }
+}
+const windView = new WindView(() => living);
 let windMap = params.has('windMap') && params.get('windMap') !== '0';
 if (windMap) document.body.append(windView.el);
 // The weather: a preset, and any value given over it. Its haze is kept (thinned to nothing) so the controls can thicken it.
@@ -141,7 +158,6 @@ let playing = params.has('timeline'), speed = Number(params.get('timeline')) || 
 let spell: SpellName = (params.get('spell') ?? '') in SPELLS ? params.get('spell') as SpellName : 'shower';
 if (playing) presetName = null;
 let timelineStart: number | null = null, timelineSent = '';
-const frozen = params.has('t') ? num('t', 0) : null;
 if (params.has('still') || params.has('profile')) document.body.classList.add('still');
 
 // While profiling, the cases set the size and the camera: the window and the controls leave them alone.
@@ -203,7 +219,7 @@ function hud() {
   map.onclick = () => { windMap = !windMap; if (windMap) document.body.append(windView.el); else windView.el.remove(); hud(); };
   hudEl.append(map);
   // The clouds' speed follows the wind's: sent at once, as the game would.
-  const windSet = (f: (v: number) => void) => (v: number) => { f(v); renderer.setWind(wind); living.setGoal(windGoal()); send(sent); };
+  const windSet = (f: (v: number) => void) => (v: number) => { f(v); living.setGoal(windGoal()); send(sent); };
   hudEl.append(slider('Wind', 0, 45, 0.5, () => wind.speed, windSet((v) => { wind.speed = v; }), (v) => `${windName(v)} ${v.toFixed(1)} m/s`));
   hudEl.append(slider('towards', 0, 360, 5, () => (wind.direction * 180) / Math.PI, windSet((v) => { wind.direction = (v * Math.PI) / 180; }), (v) => `${v.toFixed(0)}°`));
   hudEl.append(slider('gusts', 0, 1, 0.05, () => wind.gust ?? 0.5, windSet((v) => { wind.gust = v; }), (v) => v.toFixed(2), true));
@@ -307,7 +323,7 @@ function playTimeline(time: number) {
   timelineEl.textContent = timelinePhase(time - timelineStart, speed, spell);
   // The wind, when the spell brings its own (the game's setWind).
   const gust = timelineWind(time - timelineStart, speed, spell);
-  if (gust !== null && gust !== wind.speed) { wind.speed = gust; renderer.setWind(wind); living.setGoal(windGoal()); for (const r of refreshers) r(); }
+  if (gust !== null && gust !== wind.speed) { wind.speed = gust; living.setGoal(windGoal()); for (const r of refreshers) r(); }
   if (key === timelineSent) return;
   timelineSent = key;
   // The game sends the whole weather: what the spell leaves out is none (a haze thinned away keeps its colour and height).
@@ -320,18 +336,35 @@ function playTimeline(time: number) {
 // Shot mode (tools/): no loop; the tools ask for frames. __shot draws one and returns it as a PNG; __draw puts the camera
 // somewhere (a fractional view turns part way), leaves some kinds out, and draws, leaving the frame on the canvas.
 if (params.has('shot')) {
+  // The living wind is stepped to each frame's time (seconds after its warm-up). A time before the last starts it again
+  // from its save a tick before time 0 (so time 0 blends the same two ticks again) and steps it on under the wind asked
+  // for now. A wind asked for at once (not eased) starts a
+  // new wind, already blowing as asked and warmed up, since the game's wind eases to a new goal over a few seconds.
+  let windAt = -WIND_TICK, windStart: Promise<WindSave> | null = null, windKey = JSON.stringify(windGoal());
+  const windTo = async (time: number, goal: WindGoal, ease: boolean) => {
+    const key = JSON.stringify(goal);
+    if (key !== windKey && !ease) { living.dispose(); living = newWind(); windStart = null; windAt = -WIND_TICK; }
+    windKey = key;
+    windStart ??= living.save();
+    const start = await windStart;
+    if (time < windAt - 1e-9) { living.restore(start); windAt = -WIND_TICK; }
+    living.setGoal(goal);
+    living.advance(time - windAt);
+    windAt = time;
+    await living.idle();
+  };
   // options.wind sets the wind, options.weather the weather (a preset's name, whole, or values over the demo's), and
   // options.timeline the scripted weather (whole) at a time (seconds, at a game speed and in a spell, the demo's by
   // default); all at once, unless ease is
-  // set: then they ease as the clock runs. options.hour sets the hour.
-  const draw = (cam?: { x: number; z: number; zoom: number; view: number },
+  // set: then they ease as the clock runs. options.hour sets the hour. Resolves once the frame is drawn.
+  const draw = async (cam?: { x: number; z: number; zoom: number; view: number },
     options: {
-      hide?: MaterialKind[]; grain?: boolean; time?: number; hour?: number; wind?: Partial<Wind>;
+      hide?: MaterialKind[]; grain?: boolean; time?: number; hour?: number; wind?: Partial<typeof wind>;
       weather?: Partial<Weather> | WeatherName; timeline?: { time: number; speed?: number; spell?: SpellName }; ease?: boolean;
     } = {}) => {
     if (cam) { view.target.set(cam.x, 0, cam.z); view.zoom = cam.zoom; view.view = cam.view; view.update(0, true); }
     if (options.hour !== undefined) hour = options.hour;
-    if (options.wind) { Object.assign(wind, options.wind); renderer.setWind(wind, !options.ease); living.setGoal(windGoal()); }
+    if (options.wind) Object.assign(wind, options.wind);
     // The clouds carried on to the frame's time (see driftAt).
     const time = options.time ?? frozen ?? 0;
     if (options.weather) {
@@ -342,10 +375,13 @@ if (params.has('shot')) {
       const t = options.timeline;
       // The spell's wind first, so the clouds' drift is sent at its speed, as the timeline does.
       const s = timelineWind(t.time, t.speed ?? speed, t.spell ?? spell);
-      if (s !== null) { wind.speed = s; renderer.setWind(wind, !options.ease); }
+      if (s !== null) wind.speed = s;
       send(whole(timelineAt(t.time, t.speed ?? speed, t.spell ?? spell)), !options.ease, time);
     }
     if (!options.weather && !options.timeline) send(sent, false, time);
+    await windTo(time, windGoal(), !!options.ease);
+    drawWind();
+    if (windMap) windView.draw(view.target.x, view.target.z, view.heading);
     const kinds: MaterialKind[] = ['ground', 'paint', 'crop', 'ink', 'water', 'foliage', 'grass', 'debris'];
     for (const k of kinds) renderer.setVisible(k, !options.hide?.includes(k));
     const grain = renderer.settings.grain;
@@ -359,7 +395,7 @@ if (params.has('shot')) {
     __draw: draw,
     __profile: (cases?: ProfileCase[]) => profile(cases),
     __profileTable: table,
-    __shot: () => { draw(); return canvas.toDataURL('image/png'); },
+    __shot: async () => { await draw(); return canvas.toDataURL('image/png'); },
   }));
 } else requestAnimationFrame(frame);
 
@@ -369,7 +405,7 @@ async function profile(cases = defaultCases(), progress?: (row: ProfileRow, i: n
   profiling = true;
   try {
     return await runProfile(renderer, (t) => { renderer.setLook(lookAt(hour)); renderer.render(t); },
-      () => { renderer.setWind(wind, true); send(weather, true, 0); }, cases, progress);
+      () => send(weather, true, 0), cases, progress);
   } finally { profiling = false; resize(); }
 }
 if (params.has('profile')) profilePanel();
@@ -416,12 +452,13 @@ function frame(now: number) {
   lastTime = time;
   playTimeline(time);
   if (frozen === null) living.advance(dt);
+  drawWind();
   if (windMap) windView.draw(view.target.x, view.target.z, view.heading);
   // The game sends the clouds' drift a few times a second (with the weather); the renderer carries them on between.
   if (Math.floor(time * TICK) !== lastTick) { lastTick = Math.floor(time * TICK); send(sent, false, time); }
   renderer.setLook(lookAt(hour));
   renderer.render(time);
   // Ready once a frame is drawn with everything loaded (the farm's shed comes after the first frames).
-  if (++frames >= 3 && isLoaded) (window as unknown as { __ready: boolean }).__ready = true;
+  if (++frames >= 3 && isLoaded && warm()) (window as unknown as { __ready: boolean }).__ready = true;
   requestAnimationFrame(frame);
 }

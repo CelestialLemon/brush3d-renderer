@@ -11,7 +11,7 @@ import type { BrushRenderer } from '../renderer/renderer';
 import type { MaterialKind } from '../renderer/materials';
 import { PassTimer } from '../renderer/timer';
 import { WEATHER_PRESETS, type Weather } from '../renderer/weather';
-import { WIND_SCALE } from '../renderer/wind';
+import { steadyWind, WIND_SCALE } from '../renderer/wind';
 
 export interface ProfileCase {
   label: string; width: number; height: number; wind: number; hide?: MaterialKind[];
@@ -76,7 +76,9 @@ export async function runProfile(
       view.update(0, true);
       restore();
       if (c.weather) renderer.setWeather(c.weather, true);
-      renderer.setWind({ speed: c.wind, direction: (31 * Math.PI) / 180, gust: 0.5 }, true);
+      // A steady wind: the gust map's cost is in sampling it, the same for any wind (its upload is a tick's, not a frame's).
+      const wind = steadyWind(c.wind, (31 * Math.PI) / 180);
+      renderer.setWind(wind, wind, 0);
       for (const k of KINDS) renderer.setVisible(k, !c.hide?.includes(k));
       const frame = (t: number) => { if (c.shelter) renderer.shelter.changed(); draw(t); };
       // Warm up: shaders, the new targets' memory, the GPU's clocks.
