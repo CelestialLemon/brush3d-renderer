@@ -113,6 +113,9 @@ export interface WindGrid { nx: number; nz: number; cell: number; x0: number; z0
 /** The wind at one tick, for queries and drawing. Arrays are cell by cell, x fastest. */
 export interface WindSnapshot extends WindGrid {
   tick: number;
+  /** The wind as a whole this tick, eased towards the game's goal: the average speed (m/s), where it blows towards (a
+   * unit vector in x and z) and how gusty. What the renderer draws as the wind's strength and heading. */
+  speed: number; dirX: number; dirZ: number; gustiness: number;
   /** The ground air's velocity (m/s, x and z), up to about 2 m. */
   u: Float32Array; v: Float32Array;
   /** The shelter memory: 1 in open air, towards 0 behind obstacles. */
@@ -228,7 +231,8 @@ export class WindSim {
     const u = new Float32Array(this.N), v = new Float32Array(this.N);
     for (let i = 0; i < this.N; i++) { u[i] = M[i] / R[i]; v[i] = V[i] / R[i]; }
     return {
-      ...this.grid, tick: this.state.tick, u, v, k: this.view(this.x.ptrK()).slice(),
+      ...this.grid, tick: this.state.tick, speed: this.state.speed, dirX: this.state.dirX, dirZ: this.state.dirZ,
+      gustiness: this.state.gustiness, u, v, k: this.view(this.x.ptrK()).slice(),
       fu: this.view(this.x.ptrFX()).slice(), fv: this.view(this.x.ptrFY()).slice(),
     };
   }

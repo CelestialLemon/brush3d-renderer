@@ -1,6 +1,6 @@
 import { FOG_NOISE_CELLS } from './fog';
 import { NOISE, OKLAB } from './glsl';
-import { STREAK_STRETCH } from './wind';
+import { STREAK_STRETCH, WIND_GLSL } from './wind';
 
 // The post pass: the heat's shimmer, lines on inked things, the fog or dust lying on the land, the distance's haze, the sky,
 // a grade, and out to sRGB.
@@ -35,24 +35,28 @@ uniform vec3 uCamPos;
 uniform vec3 uCamRight;
 uniform vec3 uCamUp;
 uniform vec3 uCamFwd;
-// The fog (#9): its colour as lit; x how thick, y its base, z its top, w how far under its top it thins (metres); how far
-// its patches (x) and dust's streaks (y) have drifted along the wind, in their own drawn-out frames (WindState); and the
-// wind's direction and how far it draws the patches out along it.
+// The fog (#9): its colour as lit; x how thick, y its base, z its top, w how far under its top it thins (metres). Its
+// patches lie in a frame laid along the wind (WindState.haze): x, y its heading, z how far they're drawn out along it, w
+// how far they've drifted; and a second frame fading in after the wind turns (uFogNext, uFogFade: how far it's in), so a
+// turn never swings them. uFogStreak: how far dust's streaks have blown along each.
 uniform sampler2D tFogNoise;
 uniform vec3 uFogColor;
 uniform vec4 uFog;
-uniform vec2 uFogDrift;
-uniform vec3 uFogWind;
+uniform vec4 uFogFrame;
+uniform vec4 uFogNext;
+uniform float uFogFade;
+uniform vec2 uFogStreak;
 // Dust (#9): x how far the haze is dust, y how strong its streaks are, z how much the gusts thicken and thin it.
 uniform vec3 uDust;
-// The wind's gusts, shared with the grass and the trees: how gusty, and how far they've rolled downwind (metres).
-uniform float uWindGustiness;
-uniform vec2 uWindDrift;
+// The wind as a whole (the gusts are in its map: see WIND_GLSL).
+uniform float uWindSpeed;
+uniform vec2 uWindDir;
 // The heat's shimmer (#9): x how far it shifts the picture (pixels), y the time (seconds).
 uniform vec2 uShimmer;
 varying vec2 vUv;
 ${NOISE}
 ${OKLAB}
+${WIND_GLSL}
 
 const float FAR = 1e4;
 float depthOf(vec4 a) { return a.z <= 0.0 ? FAR : a.z; }
@@ -78,10 +82,13 @@ float fogProfile(float y) {
 // Patches, keyed to the world and drifting with the wind, stretched along it: a thick fog covers everything, a thin one
 // breaks up, and the low parts of the layer keep it longest. Two sizes, drifting at different speeds, so the patches
 // change shape as they go rather than sliding as one sheet.
+float fogPatchIn(vec4 f, vec2 xz) {
+  vec2 q = vec2(dot(xz, f.xy) / f.z - f.w, dot(xz, vec2(-f.y, f.x)));
+  return fogNoise(q * 0.055) * 0.65 + fogNoise(q * 0.14 + vec2(f.w * 0.035, 0.0) + 11.0) * 0.35;
+}
 float fogPatch(vec2 xz, float y) {
-  vec2 w = uFogWind.xy;
-  vec2 q = vec2(dot(xz, w) / uFogWind.z - uFogDrift.x, dot(xz, vec2(-w.y, w.x)));
-  float n = fogNoise(q * 0.055) * 0.65 + fogNoise(q * 0.14 + vec2(uFogDrift.x * 0.035, 0.0) + 11.0) * 0.35;
+  float n = fogPatchIn(uFogFrame, xz);
+  if (uFogFade > 0.0) n = mix(n, fogPatchIn(uFogNext, xz), smoothstep(0.0, 1.0, uFogFade));
   float bias = (uFog.x - 0.35) * 2.5 + fogProfile(y) * 0.5 - 0.25;
   return smoothstep(-0.5, 0.5, n + bias);
 }
@@ -90,18 +97,17 @@ float fogPatch(vec2 xz, float y) {
 // strongest in a gust. It thickens the dust rather than moving where its patches start, so it shows in a storm's thick
 // dust too. Read once, at the surface: the few metres the view crosses in the layer wouldn't show, and reading it at every
 // step cost most of what dust adds.
-// The gusts: windGust's (wind.ts) sizes, speeds and strength, read from the baked noise rather than worked out here (that
-// cost half again what dust does), so the waves roll through the dust as they roll through the grass, if not crest for crest.
-float dustGust(vec2 xz) {
-  float g = fogNoise((xz - uWindDrift) * 0.03) * 0.65 + fogNoise((xz - uWindDrift * 1.35) * 0.08 + 13.7) * 0.35;
-  return clamp(0.5 + g * 0.75 * (0.4 + uWindGustiness * 1.2), 0.0, 1.0);
+// The gusts are the game's (windGust, from its map): the same that bow the grass, crest for crest.
+float fogStreakIn(vec4 f, float drift, vec2 xz) {
+  vec2 s = vec2(dot(xz, f.xy) / ${STREAK_STRETCH.toFixed(1)} - drift, dot(xz, vec2(-f.y, f.x)));
+  return fogNoise(s * 0.6 + 5.0);
 }
 float fogDust(vec2 xz) {
   if (uDust.x <= 0.0) return 1.0;
-  float gust = dustGust(xz);
-  vec2 w = uFogWind.xy;
-  vec2 s = vec2(dot(xz, w) / ${STREAK_STRETCH.toFixed(1)} - uFogDrift.y, dot(xz, vec2(-w.y, w.x)));
-  float streak = fogNoise(s * 0.6 + 5.0) * uDust.y * (0.3 + 1.4 * gust);
+  float gust = windGust(xz);
+  float n = fogStreakIn(uFogFrame, uFogStreak.x, xz);
+  if (uFogFade > 0.0) n = mix(n, fogStreakIn(uFogNext, uFogStreak.y, xz), smoothstep(0.0, 1.0, uFogFade));
+  float streak = n * uDust.y * (0.3 + 1.4 * gust);
   return max(1.0 + uDust.x * (streak + (gust - 0.5) * uDust.z), 0.1);
 }
 

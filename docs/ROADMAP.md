@@ -128,7 +128,7 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   the land, by day only ('gold', the developer's pick), with a shimmer keyed to the land that grows with the heat (3.5
   pixels at full heat, 'clear'). The dust's gusts ('strong') are a stopgap: they're hard to see in a thick storm, and the
   wind's gusts are to be rebuilt as fronts sweeping the land (#36). The demo's timeline has a dust storm blowing through.
-  Left for #36: the haze's patches (fog and dust) swing when the wind turns, the further from the map's centre the more.
+  The haze's patches no longer swing when the wind turns (#36): a new set is laid along the new wind and fades in.
 
 ### Motion and stability
 
@@ -153,10 +153,11 @@ since #2). Left, most visible first (Sol's ranking):
 
 ### Wind (first pass shipped with #2)
 
-- **Gusts (#36, next):** today's are soft round patches, slower than the air, that don't match from grass to dust.
-  #36 rebuilds them as one gust field, starting from the research in the issue. The groundwork is the living wind the
+- **Gusts (#36, in progress):** one gust field for everything, starting from the research in the issue. The groundwork is the living wind the
   game owns (`src/wind`, `docs/WIND.md`): simulated over the world, going round sheds and through hedges, with
-  `?windMap` to see it. Next, the renderer reads it, then the look.
+  `?windMap` to see it. The renderer draws it (the grass, the trees' crowns, the wheat, the water and the dust each read
+  the wind where they are, so a hedge's calm shows in the grass behind it), and the haze's patches hold still when the
+  wind turns. Next, the look: the gusts' shape, how deep the lulls go and how fast fronts cross, as candidates.
 - **Hedge density is the game's choice, when a mechanic needs it** (#36, the developer, 2026-11-01). A dense hedge (drag
   8/s, the default) gives deep calm close behind; a medium one (Hagen's measured windbreaks) is less calm at 1 H but
   calmer over 4–10 H. Nothing in the game is hurt by strong wind yet; decide when something is (crops flattened, things
@@ -165,7 +166,7 @@ since #2). Left, most visible first (Sol's ranking):
   if it does. They also ignore the ground and the trees (they fly at a few metres, round the camera).
 - **The game's half** isn't drawn yet: snapped branches, fallen trees, a field flattened by a storm. The renderer will take
   them as states (a fallen pose, how flat a field is) when the game has them.
-- **Weather (#3)** drives `setWind` along with the dynamic water (#18); the game calls `setWind` and `setWeather` side by side. Rain is #11.
+- **Weather (#3)** drives the wind's goal (`src/wind`) along with the dynamic water (#18); the game calls `setWind` and `setWeather` side by side. Rain is #11.
 
 ### Looks
 

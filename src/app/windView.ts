@@ -3,7 +3,7 @@ import type { WindWorker } from '../wind/client';
 
 // The wind from above (#36), for looking at the simulation itself: a panel in the corner showing the whole world's
 // ground wind, turned as the camera is, so up the panel is up the screen. Colour is how hard it blows, from still (deep
-// blue) through the game's average (teal) to twice it (pale yellow); arrows show which way, every 10 m. Or the shelter
+// blue) through the wind's average (teal) to twice it (pale yellow); arrows show which way, every 10 m. Or the shelter
 // memory: yellow where the free air above reaches down, blue where obstacles have cut it off. Walls are white, things
 // the wind blows through are dark green, and the camera's target is the cross.
 
@@ -25,8 +25,8 @@ export class WindView {
   private readonly info = document.createElement('div');
   private mask: HTMLCanvasElement | null = null;
 
-  /** `goalSpeed`: the game's average wind, which the colours are scaled to. */
-  constructor(private readonly wind: WindWorker, private readonly goalSpeed: () => number) {
+  /** `living`: the wind to show (the demo may start a new one). */
+  constructor(private readonly living: () => WindWorker) {
     this.el = document.createElement('div');
     this.el.id = 'wind-view';
     this.canvas.width = this.canvas.height = 360;
@@ -38,7 +38,7 @@ export class WindView {
 
   /** The obstacles, drawn once: walls white, porous things dark green, darker the denser. */
   private obstacleMask(nx: number, nz: number) {
-    const o = this.wind.obstacles;
+    const o = this.living().obstacles;
     if (this.mask || !o) return this.mask;
     this.mask = Object.assign(document.createElement('canvas'), { width: nx, height: nz });
     const ctx = this.mask.getContext('2d')!, img = ctx.createImageData(nx, nz);
@@ -52,9 +52,10 @@ export class WindView {
 
   /** Draws the wind between its last two ticks, with the camera at (x, z) looking from yaw radians. */
   draw(cx: number, cz: number, yaw: number) {
-    const a = this.wind.prev, b = this.wind.cur;
+    const wind = this.living(), a = wind.prev, b = wind.cur;
     if (!a || !b) return;
-    const t = this.wind.alpha, mean = Math.max(0.5, this.goalSpeed());
+    // The colours are scaled to the wind's average as it is (eased towards the game's goal).
+    const t = wind.alpha, mean = Math.max(0.5, a.speed + (b.speed - a.speed) * t);
     if (this.field.width !== b.nx || this.field.height !== b.nz) Object.assign(this.field, { width: b.nx, height: b.nz });
     const fctx = this.field.getContext('2d')!, img = fctx.createImageData(b.nx, b.nz);
     let sum = 0, peak = 0;
@@ -82,8 +83,8 @@ export class WindView {
     this.arrows(ctx, a, b, t, mean, scale);
     ctx.strokeStyle = '#ff5a8a'; ctx.lineWidth = 2 / scale;
     ctx.beginPath(); ctx.moveTo(cx - 4, cz); ctx.lineTo(cx + 4, cz); ctx.moveTo(cx, cz - 4); ctx.lineTo(cx, cz + 4); ctx.stroke();
-    this.info.textContent = `tick ${b.tick} · ${(b.nx * b.cell).toFixed(0)} m square, ${b.cell} m cells · step ${this.wind.stepMs.toFixed(1)} ms` +
-      ` · ground mean ${(sum / b.u.length).toFixed(2)} m/s, peak ${peak.toFixed(1)}${this.wind.safetyHits ? ` · safety hits ${this.wind.safetyHits}` : ''}`;
+    this.info.textContent = `tick ${b.tick} · ${(b.nx * b.cell).toFixed(0)} m square, ${b.cell} m cells · step ${wind.stepMs.toFixed(1)} ms` +
+      ` · ground mean ${(sum / b.u.length).toFixed(2)} m/s, peak ${peak.toFixed(1)}${wind.safetyHits ? ` · safety hits ${wind.safetyHits}` : ''}`;
   }
 
   private arrows(ctx: CanvasRenderingContext2D, a: WindSnapshot, b: WindSnapshot, t: number, mean: number, scale: number) {

@@ -49,8 +49,8 @@ try {
     });
     const rows: Record<string, unknown>[] = [];
     const measure = async (pan: (typeof PANS)[number], hide: string[], heat: string | null) => {
-      await page.evaluate((c, h) => { (window as any).__draw(c, { hide: h, grain: false }); (window as any).__grab('a'); }, cam, hide);
-      await page.evaluate((c, h) => { (window as any).__draw(c, { hide: h, grain: false }); (window as any).__grab('b'); }, moved(pan.right, pan.up), hide);
+      await page.evaluate(async (c, h) => { await (window as any).__draw(c, { hide: h, grain: false }); (window as any).__grab('a'); }, cam, hide);
+      await page.evaluate(async (c, h) => { await (window as any).__draw(c, { hide: h, grain: false }); (window as any).__grab('b'); }, moved(pan.right, pan.up), hide);
       return page.evaluate((dx, dy, h) => (window as any).__compare('a', 'b', dx, dy, h), pan.right, -pan.up, heat !== null) as Promise<{ mae: number; over8: number; soft: number; heat?: string }>;
     };
     await page.evaluate(installAnalysis);
@@ -63,7 +63,7 @@ try {
       const r = await measure(AB, [k], null);
       rows.push({ pan: AB.name, without: k, mae: r.mae, over8: r.over8, soft: r.soft });
     }
-    const shot = await page.evaluate(() => { (window as any).__draw(undefined, { grain: false }); return document.querySelector('canvas')!.toDataURL('image/png'); });
+    const shot = await page.evaluate(async () => { await (window as any).__draw(undefined, { grain: false }); return document.querySelector('canvas')!.toDataURL('image/png'); });
     await writeFile(join(out, `${slug(q)}.png`), Buffer.from(shot.split(',')[1], 'base64'));
     console.log(`\n${q || '(default)'}`);
     for (const r of rows) console.log(`  ${String(r.pan).padEnd(13)} without ${String(r.without).padEnd(8)} mean ${(r.mae as number).toFixed(3).padStart(6)}   soft ${(r.soft as number).toFixed(3).padStart(6)}   >8 ${((r.over8 as number) * 100).toFixed(2).padStart(6)}%`);

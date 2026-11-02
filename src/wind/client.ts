@@ -38,6 +38,7 @@ export class WindWorker {
   private clock = 0;
   private readonly saves: Pending[] = [];
   private disposed = false;
+  private readonly idlers: (() => void)[] = [];
   private readonly listeners: ((snap: WindSnapshot) => void)[] = [];
 
   private readonly worker: WindPort;
@@ -95,6 +96,11 @@ export class WindWorker {
   /** How far the clock is past the latest tick, 0..1, while the worker keeps up (1 while it's behind). */
   get alpha() { return this.inFlight > 0 || this.queue.some((q) => 'ticks' in q) ? 1 : Math.min(1, this.clock); }
 
+  /** Resolves once everything asked so far is done: every tick due stepped, and its snapshot in. */
+  idle(): Promise<void> {
+    return new Promise((resolve) => { this.idlers.push(resolve); this.pump(); });
+  }
+
   /** Called with every tick's snapshot, in order (and after a restore). */
   onTick(f: (snap: WindSnapshot) => void) { this.listeners.push(f); }
 
@@ -119,6 +125,7 @@ export class WindWorker {
         this.worker.postMessage({ type: 'step', ticks: n });
       }
     }
+    if (this.disposed || (this.inFlight === 0 && !this.queue.length)) for (const f of this.idlers.splice(0)) f();
   }
 
   /** Stops the worker; saves not yet made are rejected. */
@@ -129,5 +136,6 @@ export class WindWorker {
     for (const q of this.queue) if ('save' in q) q.save.reject(error);
     for (const p of this.saves) p.reject(error);
     this.queue.length = 0; this.saves.length = 0;
+    for (const f of this.idlers.splice(0)) f();
   }
 }

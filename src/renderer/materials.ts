@@ -25,9 +25,15 @@ export function createSharedUniforms() {
     uTime: { value: 0 },
     uWindDir: { value: new THREE.Vector2(1, 0) },
     uWindSpeed: { value: 0 },
-    uWindGustiness: { value: 0.5 },
     uWindDrift: { value: new THREE.Vector2() },
     uWindFlutter: { value: 0 },
+    // The game's wind map (WindField): its last two ticks, the frame's share between them, where it lies, and 0 to read a
+    // still wind.
+    tWindA: { value: null as THREE.Texture | null },
+    tWindB: { value: null as THREE.Texture | null },
+    uWindBlend: { value: 0 },
+    uWindGrid: { value: new THREE.Vector4(0, 0, 1, 1) },
+    uWindOn: { value: 1 },
     uViewBack: { value: new THREE.Vector3(0, 0, 1) },
     uViewTarget: { value: new THREE.Vector3() },
     uShadowMap: { value: null as THREE.Texture | null },
@@ -106,14 +112,16 @@ vec3 acrossView(vec3 d) {
 vec3 treeWind(vec4 tree) {
   if (tree.z <= 0.0) return vec3(0.0);
   float height = tree.z, seed = hash12(tree.xy * 1.7);
-  // A gust, sampled at the tree's foot, blows it a little harder.
-  float u = uWindSpeed * (1.0 + 0.36 * uWindGustiness * (windGust(tree.xy) * 2.0 - 1.0));
+  // The wind at its crown, read over its foot (the whole tree moves as one).
+  vec2 crown = windCrown(tree.xy);
+  float u = length(crown);
+  vec3 dir = windDirOf(crown);
   // Big trees rock slowly, shrubs quickly, each a little differently.
   float w = 6.2831853 * clamp(0.6 * pow(5.0 / height, 0.75), 0.35, 1.8) * (0.85 + 0.3 * seed);
   float sway = windSway(u);
   float along = windLean(u) + sway * sin(uTime * w + seed * 6.2831853);
   float across = sway * 0.2 * sin(uTime * w * 1.27 + seed * 17.0);
-  vec3 d = (windDir3() * along + vec3(-uWindDir.y, 0.0, uWindDir.x) * across) * height;
+  vec3 d = (dir * along + vec3(-dir.z, 0.0, dir.x) * across) * height;
   // The top dips a little as the tree leans over.
   d.y -= dot(d, d) / (1.4 * height);
   return d * tree.w;
@@ -255,15 +263,17 @@ void main() {
     wp.xz += axis * sign(aBlade.z) * max(halfWidth, 0.6 / pxPerMetre) - dir * aBlade.z * stretch;
   }
 #endif
-  // Wind: each blade bends downwind, more towards the tip, further in a gust and with the square of the speed, and rocks
-  // about that; the tip dips as it bends. Across the view only, so blades never swap which is in front.
+  // Wind: each blade bends with the wind where it stands (the game's map: further in a gust, less in a hedge's lee), more
+  // towards the tip and with the square of the speed, and rocks about that; the tip dips as it bends. Across the view only,
+  // so blades never swap which is in front.
   vRestPos = wp.xyz;
-  float h = aBlade.x * aBlade.x, s = uWindSpeed;
-  float gust = windGust(wp.xz);
-  float bend = (0.02 + 0.0035 * s + 2.4e-4 * s * s) * mix(1.0, 0.3 + 1.4 * gust, 0.4 + 0.6 * uWindGustiness);
+  vec2 here = windGround(wp.xz);
+  float h = aBlade.x * aBlade.x, s = length(here);
+  vec3 dir = windDirOf(here);
+  float bend = 0.02 + 0.0035 * s + 2.4e-4 * s * s;
   float rock = sin(uWindFlutter * 0.8 * (0.85 + 0.3 * aBlade.y) + aBlade.y * 6.283 + wp.x * 0.7) * (0.012 + 0.0025 * s);
   float d = min(bend + rock, 0.6) * h;
-  wp.xyz += acrossView(windDir3() * d - vec3(0.0, d * d * 1.2, 0.0));
+  wp.xyz += acrossView(dir * d - vec3(0.0, d * d * 1.2, 0.0));
   vWorldPos = wp.xyz;
   vNormal = normalize(mat3(modelMatrix) * normal);
   vColor = color;
