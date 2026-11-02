@@ -185,8 +185,9 @@ The game gives the renderer, every frame, the wind client's last two snapshots a
   glint, break up the reflection a little and darken it a little, the patch travelling with the gust while its ripples
   stay nearly put. None in a dead calm, and they fade out from 6 to 10 m/s, when the whole surface is chop. The water lies
   low among banks and trees, sheltered more in some places than others, so a gust is read against how hard the wind
-  usually blows just there (`windGustHere`): the renderer keeps each cell's usual ground air, its average over the last
-  20 s, as a third texture (`WindField.usual`). A paw shows where it blows a quarter harder than usual, its edge broken
+  usually blows just there (`windGustHere`): the renderer keeps each cell's usual ground air as a third texture
+  (`WindField.usual`), a running average that forgets over about 20 s (from a restart, a plain mean of what has come so
+  far, so it settles in seconds). A paw shows where it blows a quarter harder than usual, its edge broken
   up by a ragged noise carried with the air, so it reads as scalloped patches a few metres across rather than the whole
   stream dimming at once. The look is the developer's pick, "glitter" (#44, 2026-11-03): dense, fine glints that wink
   quickly, as the many tiny new facets catch the sun, and a mild darkening (up to about a sixth) so the patch reads as
