@@ -707,9 +707,11 @@ void main() {
   // the wind usually blows just there: a paw where it's blowing a quarter harder than usual.
   // The wind's cells are a metre or more and a gust spans many, so its edge is broken up by a ragged noise carried with
   // the air: scalloped patches a few metres across, and small ones running ahead, not the whole stream dimming at once.
+  // Only round a gust: in the usual wind the noise alone would make paws.
   vec2 bq = (p.xz - uWindDrift * 0.8) * 0.4;
   float ragged = snoise(bq) * 0.6 + snoise(bq * 2.3 + 5.0) * 0.4;
-  float paw = smoothstep(1.15, 1.3, windGustHere(p.xz) + ragged * 0.35)
+  float gustHere = windGustHere(p.xz);
+  float paw = smoothstep(1.15, 1.3, gustHere + ragged * 0.35 * smoothstep(1.0, 1.15, gustHere))
     * smoothstep(0.5, 2.0, uWindSpeed) * (1.0 - smoothstep(6.0, 10.0, uWindSpeed));
   vec2 pq = p.xz * 7.0 - uWindDir * uTime * 0.15;
   nudge += vec2(snoise(pq), snoise(pq + 11.0)) * 0.002 * paw;
@@ -772,13 +774,14 @@ void main() {
     spark * vis * (1.0 - gCloud) * (0.2 + depthy * 0.4) * (1.0 - paw * 0.28));
   // The paws: a little darker and cooler, as a roughened patch mirrors less of the bright sky, and glinting in fine points
   // that wink quickly, as many more tiny facets catch the sun. Only as bright as the sun is direct (uCloudStrength): none
-  // under full cover or before dawn, faint by the moon.
+  // under full cover or before dawn, faint by the moon. (gCloud is the cloud's shade already scaled by uCloudStrength, so
+  // this is the direct light times the cloud's gap.)
   col = mix(col, col * vec3(0.5, 0.58, 0.68), paw * 0.35);
   vec2 gq = p.xz * 6.0 - uWindDir * uTime * 0.15;
   vec2 gc = floor(gq), gf = fract(gq) - 0.5 - (hash22(gc) - 0.5) * 0.6;
   float gh = hash12(gc + 3.1);
   float glit = (1.0 - smoothstep(0.1, 0.2, length(gf))) * step(0.4, gh) * max(0.0, sin(uTime * (5.0 + gh * 6.0) + gh * 50.0));
-  col = mix(col, exposeHere(mix(vec3(1.0), sunTint(), 0.5)), glit * paw * vis * (1.0 - gCloud) * uCloudStrength);
+  col = mix(col, exposeHere(mix(vec3(1.0), sunTint(), 0.5)), glit * paw * vis * max(uCloudStrength - gCloud, 0.0));
   // Whitecaps on the chop's crests in a storm.
   float caps = smoothstep(0.55, 0.9, chop) * smoothstep(0.45, 1.0, windForce()) * smoothstep(0.4, 0.9, windGust(p.xz) + 0.2);
   col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.6) * skyTint()), caps * 0.45);
