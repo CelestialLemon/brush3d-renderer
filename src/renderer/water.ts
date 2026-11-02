@@ -29,6 +29,14 @@ export interface WaterMap {
 export const DIVE = 1.5, MAX_DIVE = 4;
 /** The sheet is drawn over cells this many cells (Chebyshev) or fewer from water. */
 export const REACH = 1;
+/** The sheet isn't drawn where it has dived further than this under the water it continues (its mud below minus this). */
+export const HIDDEN_DIVE = 0.15;
+/**
+ * The furthest under the wet surface the sheet is still drawn (with some margin): its height and mud fall together
+ * between a vertex at the surface and one dived, or as water drains away, and the muddiest water (1) stays drawn the
+ * deepest, at worst about a metre down (0.98 m, found by sweeping the mud, the dives and the ease).
+ */
+export const SHOWN_SINK = 1.25;
 /** How long a changed map takes to ease in by default, seconds. */
 export const WATER_EASE = 0.6;
 
@@ -86,7 +94,7 @@ export function layWater(map: WaterMap): Laid {
   for (let i = 0; i < n; i++) {
     if (Number.isNaN(level[i])) continue;
     data[i * 4] = level[i];
-    data[i * 4 + 1] = map.flowX?.[i] ?? 0; data[i * 4 + 2] = map.flowZ?.[i] ?? 0; data[i * 4 + 3] = map.mud?.[i] ?? 0;
+    data[i * 4 + 1] = map.flowX?.[i] ?? 0; data[i * 4 + 2] = map.flowZ?.[i] ?? 0; data[i * 4 + 3] = THREE.MathUtils.clamp(map.mud?.[i] ?? 0, 0, 1);
     dist[i] = 0; queue.push(i); wet.push(level[i]);
   }
   /** The surface each cell continues, before its dive. */
@@ -146,6 +154,8 @@ export class WaterField {
   wetLow = 0; wetHigh = 0;
   /** Whether there's any water to draw. */
   any = false;
+  /** The lowest the sheet is drawn anywhere (sinking below a shore, or draining away), as it was and as last sent. */
+  get shownLow() { return this.wetLow - SHOWN_SINK; }
   /** The lowest wet surface as last sent (the valley's floor, for the haze), or null with none. */
   floor: number | null = null;
   private nx = 0; private nz = 0; private cell = 1; private x0 = 0; private z0 = 0;
@@ -159,6 +169,13 @@ export class WaterField {
     if (this.ease <= 0) return 1;
     const t = THREE.MathUtils.clamp((time - this.start) / this.ease, 0, 1);
     return t * t * (3 - 2 * t);
+  }
+
+  /** Retires water that has drained away entirely once its ease is done; true if it has just gone. */
+  settle(time: number) {
+    if (!this.any || !this.to || this.to.mid !== null || this.blend(time) < 1) return false;
+    this.any = false;
+    return true;
   }
 
   /**

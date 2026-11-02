@@ -665,7 +665,7 @@ export class BrushRenderer {
    * vMirrorShift), in screen uv.
    */
   private mirrorShift() {
-    const f = this.water, dh = 2 * Math.max(f.wetHigh - f.mirror, f.mirror - f.wetLow, 0);
+    const f = this.water, dh = 2 * Math.max(f.wetHigh - f.mirror, f.mirror - f.shownLow, 0);
     const cam = this.view.camera, m = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).elements;
     // The y column: where a step up the world moves on screen.
     return new THREE.Vector2(m[4] * dh * 0.5, m[5] * dh * 0.5);
@@ -766,6 +766,7 @@ export class BrushRenderer {
     s.uWindFlutter.value = w.flutter;
     this.weather.update(time);
     s.uWaterBlend.value = this.water.blend(time);
+    if (this.water.settle(time) && this.waterMesh) this.waterMesh.visible = false;
     s.uMirrorY.value = this.water.mirror;
     this.applyLook(this.look);
     const grounded: THREE.Object3D[] = [];

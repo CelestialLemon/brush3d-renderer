@@ -7,7 +7,7 @@
 //    until the ridge is overtopped), never off the land.
 // 3. Easing: halfway through, the sheet is halfway between the two maps; a map sent mid-ease starts from what's drawn.
 // Exits with 1 if anything is off.
-import { DIVE, MAX_DIVE, REACH, WaterField, layWater, type WaterMap } from '../src/renderer/water.ts';
+import { DIVE, HIDDEN_DIVE, MAX_DIVE, REACH, WaterField, layWater, type WaterMap } from '../src/renderer/water.ts';
 import { DemoWater } from '../src/app/water.ts';
 import type { Stream } from '../src/scenes/kit.ts';
 
@@ -105,15 +105,18 @@ const inBounds = (f: WaterField) => {
   for (const t of [0, 0.01, 0.02, 0.05, 0.1, 0.3, 0.6, 0.9, 0.97, 1]) {
     for (let i = 0; i < A.length; i += 4) {
       const y = A[i] + (B[i] - A[i]) * t, m = A[i + 3] + (B[i + 3] - A[i + 3]) * t;
-      if (m >= -0.15 && (y < f.low - 1e-4 || y > f.high + 1e-4)) ok = false;
+      if (m >= -HIDDEN_DIVE && (y < f.shownLow - 1e-4 || y > f.high + 1e-4)) ok = false;
     }
   }
   return ok;
 };
 const allDry = { ...map, level: new Float32Array(nx * nz).fill(NaN) };
-field.set(b, 20, 0);
+const muddy = { ...b, mud: new Float32Array(nx * nz).fill(1) };
+field.set(muddy, 20, 0);
 field.set(allDry, 21, 1);
 check('drained away, it sinks out of sight within its bounds', inBounds(field) && field.any);
+check('still there while it drains', !field.settle(21.5) && field.any);
+check('and gone once it has', field.settle(22) && !field.any);
 field.set(allDry, 23, 0);
 field.set(a, 24, 1);
 check('coming back, it rises into sight within its bounds', inBounds(field) && field.any);

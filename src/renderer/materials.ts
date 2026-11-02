@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CLOUD_LIGHT, GBUFFER_OUT, LIGHT_UNIFORMS, MIRROR_SKY, NOISE, OKLAB, PAINT, SHADOW } from './glsl';
 import { WIND_GLSL } from './wind';
-import { WATER_MAP_GLSL } from './water';
+import { HIDDEN_DIVE, WATER_MAP_GLSL } from './water';
 
 // The scene's materials. Each has a main variant (writes colour and the G-buffer) and a depth variant for the sun's
 // shadow map, built from the same vertex code so wind and billboarding cast the shadows they should.
@@ -710,7 +710,7 @@ const f = (x: number) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
 const WATER_SHEET_GLSL = /* glsl */ `
 uniform vec4 uLandSquare;
 bool sheetHidden(vec3 p, float mud) {
-  if (mud < -0.15) return true;
+  if (mud < -${HIDDEN_DIVE}) return true;
   if (uLandSquare.z <= 0.0) return false;
   vec2 d = p.xz - uLandSquare.xy;
   float c = cos(uLandSquare.w), s = sin(uLandSquare.w);
