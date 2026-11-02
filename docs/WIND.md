@@ -186,7 +186,9 @@ The game gives the renderer, every frame, the wind client's last two snapshots a
   None in a dead calm, and they fade out from 6 to 10 m/s, when the whole surface is chop. The water lies low among banks
   and trees, sheltered more in some places than others, so a gust is read against how hard the wind usually blows just
   there (`windGustHere`): the renderer keeps each cell's usual ground air, its average over the last 20 s, as a third
-  texture (`WindField.usual`). A paw shows where it blows a third harder than usual. Three looks are offered while the
+  texture (`WindField.usual`). A paw shows where it blows a quarter harder than usual, its edge broken up by a ragged noise carried with the air, so
+  it reads as scalloped patches a few metres across rather than the whole stream dimming at once. A paw darkens the water
+  by up to half, cooler, and dulls the river's own glints. Three looks are offered while the
   developer picks: the demo's Paws buttons, or `?paws=a|b|c`. A is dark (matte, darker patches), B is glitter (fine
   winking glints), C is both and bigger.
 - **Fresh dust** (`src/renderer/dust.ts`). In a dust storm, and only then, the gusts lift dust off bare, dry ground in

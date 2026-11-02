@@ -718,8 +718,12 @@ void main() {
   // do on a pond. Gone in a dead calm, and from about 8 m/s, when the whole surface is chop. (Their nudge, with the chop's
   // in a light wind, stays well inside WATER_REACH.)
   // Water lies low among banks and trees, sheltered more in some places than others, so a gust is read against how hard
-  // the wind usually blows just there: a paw where it's blowing a third harder than usual (a fifth, reaching further).
-  float paw = smoothstep(1.2 - 0.1 * uPaws.w, 1.4 - 0.1 * uPaws.w, windGustHere(p.xz))
+  // the wind usually blows just there: a paw where it's blowing a quarter harder than usual (a sixth, reaching further).
+  // The wind's cells are a metre or more and a gust spans many, so its edge is broken up by a ragged noise carried with
+  // the air: scalloped patches a few metres across, and small ones running ahead, not the whole stream dimming at once.
+  vec2 bq = (p.xz - uWindDrift * 0.8) * 0.4;
+  float ragged = snoise(bq) * 0.6 + snoise(bq * 2.3 + 5.0) * 0.4;
+  float paw = smoothstep(1.15 - 0.1 * uPaws.w, 1.3 - 0.1 * uPaws.w, windGustHere(p.xz) + ragged * 0.35)
     * smoothstep(0.5, 2.0, uWindSpeed) * (1.0 - smoothstep(6.0, 10.0, uWindSpeed));
   vec2 pq = p.xz * 7.0 - uWindDir * uTime * 0.15;
   nudge += vec2(snoise(pq), snoise(pq + 11.0)) * 0.004 * uPaws.z * paw;
@@ -777,14 +781,17 @@ void main() {
   float crest = smoothstep(-0.15, 0.35, ripple);
   float spark = (1.0 - smoothstep(0.5, 1.0, length(f / vec2(0.15, 0.3)))) * step(0.5, h) * wink * crest;
   // No glints under a cloud.
-  col = mix(col, exposeHere(mix(vec3(1.0), sunTint(), 0.5)), spark * vis * (1.0 - gCloud) * (0.2 + depthy * 0.4));
-  // The paws: darker, and glinting in fine points that wink quickly.
-  col *= 1.0 - paw * uPaws.x * 0.3;
+  // (A dark paw is matte: the river's own glints go out in it.)
+  col = mix(col, exposeHere(mix(vec3(1.0), sunTint(), 0.5)),
+    spark * vis * (1.0 - gCloud) * (0.2 + depthy * 0.4) * (1.0 - paw * uPaws.x * 0.8));
+  // The paws: darker and cooler, as a roughened patch mirrors less of the bright sky, and glinting in fine points that
+  // wink quickly.
+  col = mix(col, col * vec3(0.5, 0.58, 0.68), paw * uPaws.x);
   vec2 gq = p.xz * 6.0 - uWindDir * uTime * 0.15;
   vec2 gc = floor(gq), gf = fract(gq) - 0.5 - (hash22(gc) - 0.5) * 0.6;
   float gh = hash12(gc + 3.1);
-  float glit = (1.0 - smoothstep(0.08, 0.16, length(gf))) * step(0.55, gh) * max(0.0, sin(uTime * (5.0 + gh * 6.0) + gh * 50.0));
-  col = mix(col, exposeHere(mix(vec3(1.0), sunTint(), 0.5)), glit * paw * uPaws.y * vis * (1.0 - gCloud) * 0.6);
+  float glit = (1.0 - smoothstep(0.1, 0.2, length(gf))) * step(0.4, gh) * max(0.0, sin(uTime * (5.0 + gh * 6.0) + gh * 50.0));
+  col = mix(col, exposeHere(mix(vec3(1.0), sunTint(), 0.5)), glit * paw * uPaws.y * vis * (1.0 - gCloud));
   // Whitecaps on the chop's crests in a storm.
   float caps = smoothstep(0.55, 0.9, chop) * smoothstep(0.45, 1.0, windForce()) * smoothstep(0.4, 0.9, windGust(p.xz) + 0.2);
   col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.6) * skyTint()), caps * 0.45);
