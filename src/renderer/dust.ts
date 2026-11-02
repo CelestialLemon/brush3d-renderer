@@ -136,9 +136,11 @@ export class DustField {
   /** The source laid on the field's grid (nearest cell; outside the source, nothing lifts). */
   private layLift() {
     const { nx, nz, cell, x0, z0 } = this;
-    this.lift.fill(0); this.ground.fill(0);
-    // A wind with no map behind it (steadyWind's few huge cells) lifts none.
+    this.lift.fill(0);
+    // A wind with no map behind it (steadyWind's few huge cells) lifts none. With no map the ground is left as it was,
+    // so the dust already up drifts and fades where it is rather than dropping to 0 m.
     const src = cell <= 4 ? this.source : null;
+    if (src) this.ground.fill(0);
     if (src) for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
       const x = x0 + (i + 0.5) * cell, z = z0 + (j + 0.5) * cell;
       const si = Math.floor((x - src.x0) / src.cell), sj = Math.floor((z - src.z0) / src.cell);
