@@ -166,6 +166,9 @@ export class WindState {
     return { hx: this.dirX, hz: this.dirZ, stretch: WindState.hazeStretch(this.speed, this.carried), drift, streak };
   }
 
+  /** Lays the motion afresh at the next update, as if the wind had always blown as it does then (a new wind, at once). */
+  restart() { this.time = null; }
+
   /**
    * Advances to a time in seconds. The first time, and a jump back (a tool seeking), re-anchor the motion to that time. A
    * long frame (a stall, a tab in the background) is taken in steps, so the motion carries on from where it was.

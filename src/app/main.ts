@@ -343,7 +343,7 @@ if (params.has('shot')) {
   let windAt = -WIND_TICK, windStart: Promise<WindSave> | null = null, windKey = JSON.stringify(windGoal());
   const windTo = async (time: number, goal: WindGoal, ease: boolean) => {
     const key = JSON.stringify(goal);
-    if (key !== windKey && !ease) { living.dispose(); living = newWind(); windStart = null; windAt = -WIND_TICK; }
+    if (key !== windKey && !ease) { living.dispose(); living = newWind(); windStart = null; windAt = -WIND_TICK; renderer.wind.restart(); }
     windKey = key;
     windStart ??= living.save();
     const start = await windStart;
