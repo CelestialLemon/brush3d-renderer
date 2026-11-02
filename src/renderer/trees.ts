@@ -28,24 +28,17 @@ export interface TreeFeel { hz: number; damping: number; drag: number }
  */
 export const TREE_BEND: Record<TreeKind, number> = { cypress: 1, broadleaf: 0.55, fruit: 0.5, round: 0.5, bush: 0.35 };
 
-/** The candidates for the developer to pick from (`?trees=`): loose rocks longer and slower, stiff settles quickly. */
-export const TREE_FEELS = {
-  loose: {
-    cypress: { hz: 0.42, damping: 0.05, drag: 0.004 },
-    broadleaf: { hz: 0.32, damping: 0.08, drag: 0.006 },
-    fruit: { hz: 0.5, damping: 0.08, drag: 0.006 },
-    round: { hz: 0.6, damping: 0.07, drag: 0.006 },
-    bush: { hz: 1.1, damping: 0.12, drag: 0.008 },
-  },
-  stiff: {
-    cypress: { hz: 0.6, damping: 0.12, drag: 0.008 },
-    broadleaf: { hz: 0.45, damping: 0.18, drag: 0.012 },
-    fruit: { hz: 0.7, damping: 0.18, drag: 0.012 },
-    round: { hz: 0.8, damping: 0.16, drag: 0.012 },
-    bush: { hz: 1.5, damping: 0.25, drag: 0.015 },
-  },
-} satisfies Record<string, Record<TreeKind, TreeFeel>>;
-export type TreeFeelName = keyof typeof TREE_FEELS;
+/**
+ * Each kind's spring: the developer's pick, 'stiff' (2026-11-02, #40), over a looser one that swung further and rocked
+ * longer. Trees settle within a few swings.
+ */
+export const TREE_FEEL: Record<TreeKind, TreeFeel> = {
+  cypress: { hz: 0.6, damping: 0.12, drag: 0.008 },
+  broadleaf: { hz: 0.45, damping: 0.18, drag: 0.012 },
+  fruit: { hz: 0.7, damping: 0.18, drag: 0.012 },
+  round: { hz: 0.8, damping: 0.16, drag: 0.012 },
+  bush: { hz: 1.5, damping: 0.25, drag: 0.015 },
+};
 
 /**
  * How far the wind pushes a tree's top over, as a share of its height, for the wind at its crown (m/s, in the ground's
@@ -75,7 +68,6 @@ function wobble(t: number, seed: number) {
 
 /** Every tree's spring, and a texture of their tops' displacement (x, z, metres) for the shaders, one texel a tree. */
 export class TreeSprings {
-  feel: TreeFeelName = 'loose';
   texture = TreeSprings.makeTexture(1);
   private trees: TreeSpec[] = [];
   private readonly ids = new Map<string, number>();
@@ -142,13 +134,13 @@ export class TreeSprings {
     if (!n || !wind) return;
     const dt = this.time === null ? -1 : time - this.time;
     this.time = time;
-    const s = this.state, goal = [0, 0], feels = TREE_FEELS[this.feel];
+    const s = this.state, goal = [0, 0];
     const lay = (i: number) => { this.target(i, time, wind, gust, goal); s.set([goal[0], goal[1], 0, 0], i * 4); };
     if (dt < 0 || dt > 1) for (let i = 0; i < n; i++) lay(i);
     else {
       for (let i = this.placed; i < n; i++) lay(i);
       for (let i = 0; i < this.placed && dt > 0; i++) {
-        const t = this.trees[i], f = feels[t.kind];
+        const t = this.trees[i], f = TREE_FEEL[t.kind];
         const w = 2 * Math.PI * f.hz / Math.sqrt(t.scale);
         const steps = Math.ceil(dt / Math.min(STEP, STEP_TURN / w)), h = dt / steps;
         for (let k = 1; k <= steps; k++) {
