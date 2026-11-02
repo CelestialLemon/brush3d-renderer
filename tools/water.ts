@@ -82,11 +82,23 @@ const mid = (field.a.image.data as Float32Array)[(2 * nx + 4) * 4] * 0.5 + (fiel
 check('halfway, halfway between', near(mid, 2), `${mid}`);
 field.set(b, 11, 2);
 check('a map sent mid-ease starts from what\'s drawn', near((field.a.image.data as Float32Array)[(2 * nx + 4) * 4], 2));
-const idx = field.geometry!.index!;
-const cells = new Set(Array.from(idx.array as Uint32Array));
-check(`triangles only round the water (within ${REACH} cell)`, !cells.has(2 * nx + 0) && cells.has(2 * nx + 3) && cells.has(2 * nx + 5));
+const idx = field.geometry!.index!, drawn = field.geometry!.drawRange.count;
+// Vertex of cell (i, j): inside the ring of edge vertices.
+const vertex = (i: number, j: number) => (j + 1) * (nx + 2) + i + 1;
+const cells = new Set(Array.from((idx.array as Uint32Array).subarray(0, drawn)));
+check(`triangles only round the water (within ${REACH} cell)`, !cells.has(vertex(0, 2)) && cells.has(vertex(3, 2)) && cells.has(vertex(5, 2)));
 check('framed round it', field.geometry!.boundingBox!.max.y === 3 && field.wetLow === 1);
-field.set(null, 12);
+field.set(a, 11.5, 2);
+check('one index for every map on a grid', field.geometry!.index === idx);
+const flooded = { ...map, level: new Float32Array(nx * nz).fill(1) };
+field.set(flooded, 12, 0);
+const box = field.geometry!.boundingBox!;
+check('water reaches the grid\'s edge', box.min.x === map.x0 && box.max.x === map.x0 + nx * map.cell
+  && box.min.z === map.z0 && box.max.z === map.z0 + nz * map.cell, `${box.min.x} ${box.max.x}`);
+const before = field.a;
+field.set({ nx: 3, nz: 2, cell: 1, x0: 0, z0: 0, level: new Float32Array(6).fill(1) }, 13);
+check('a new grid, new textures at its size', field.a !== before && field.a.image.width === 3 && field.a.image.height === 2);
+field.set(null, 14);
 check('taken away', !field.any && field.grid.w === 0 && field.floor === null);
 
 if (failed) process.exit(1);

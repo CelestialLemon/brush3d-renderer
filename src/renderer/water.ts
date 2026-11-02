@@ -32,7 +32,11 @@ export const REACH = 1;
 /** How long a changed map takes to ease in by default, seconds. */
 export const WATER_EASE = 0.6;
 
-/** The GLSL that reads the water map: its surface anywhere (bilinear between cells), for the reflection's clip. */
+/**
+ * The GLSL that reads the water map: its surface anywhere, for the reflection's clip. Between four cells' centres it's
+ * the sheet's own two triangles (split from the +x cell to the +z one, as WaterField.index lays them), so the clip is
+ * exactly where the drawn water is, however much the levels differ.
+ */
 export const WATER_MAP_GLSL = /* glsl */ `
 uniform sampler2D tWaterA;     // the water as it was (level, flow x, flow z, mud per cell)
 uniform sampler2D tWaterB;     // the water as last sent
@@ -52,7 +56,7 @@ float waterTop(vec2 xz) {
   vec2 i = floor(g), f = g - i;
   ivec2 c = ivec2(i);
   float a = waterCell(c).x, b = waterCell(c + ivec2(1, 0)).x, d = waterCell(c + ivec2(0, 1)).x, e = waterCell(c + ivec2(1, 1)).x;
-  return mix(mix(a, b, f.x), mix(d, e, f.x), f.y);
+  return f.x + f.y < 1.0 ? a + (b - a) * f.x + (d - a) * f.y : e + (d - e) * (1.0 - f.x) + (b - e) * (1.0 - f.y);
 }
 `;
 
@@ -123,11 +127,14 @@ export function layWater(map: WaterMap): Laid {
  * triangles only round the water) and the textures the shaders read. The renderer owns one.
  */
 export class WaterField {
-  /** The sheet: a vertex per cell, at the cell's centre; its height comes from the textures. Null until a map is sent. */
+  /**
+   * The sheet: a vertex per cell, at the cell's centre, and a ring round them on the grid's edge (repeating the edge
+   * cells), so water reaches the edge; its height comes from the textures. Null until a map is sent.
+   */
   geometry: THREE.BufferGeometry | null = null;
   /** The water as it was, and as last sent (RGBA float per cell), for the shaders. */
-  readonly a = new THREE.DataTexture(new Float32Array(4), 1, 1, THREE.RGBAFormat, THREE.FloatType);
-  readonly b = new THREE.DataTexture(new Float32Array(4), 1, 1, THREE.RGBAFormat, THREE.FloatType);
+  a = cellTexture(1, 1);
+  b = cellTexture(1, 1);
   /** x0, z0, 1 / cell, 1 with a map (0 without). */
   readonly grid = new THREE.Vector4(0, 0, 1, 0);
   /** The surface the reflection is drawn about: the middle of the water as last sent. */
@@ -193,42 +200,56 @@ export class WaterField {
   }
 
   private upload(t: THREE.DataTexture, data: Float32Array) {
-    if (t.image.width !== this.nx || t.image.height !== this.nz) {
-      t.image = { data, width: this.nx, height: this.nz };
-    } else t.image.data = data;
+    t.image.data = data;
     t.needsUpdate = true;
   }
 
-  /** The sheet's vertices: one per cell, at its centre, carrying the cell it reads. */
+  /**
+   * The sheet's vertices: one per cell, at its centre, and the ring on the grid's edge, each carrying the cell it reads.
+   * Its index has room for every square; each map fills what it needs. The textures are remade at the grid's size (the
+   * GPU's storage for a texture can't change size).
+   */
   private build() {
     this.geometry?.dispose();
-    const { nx, nz, cell, x0, z0 } = this, n = nx * nz;
-    const pos = new Float32Array(n * 3), uv = new Float32Array(n * 2);
-    for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-      const k = j * nx + i;
-      pos[k * 3] = x0 + (i + 0.5) * cell; pos[k * 3 + 2] = z0 + (j + 0.5) * cell;
-      uv[k * 2] = i; uv[k * 2 + 1] = j;
+    this.a.dispose(); this.b.dispose();
+    const { nx, nz, cell, x0, z0 } = this, vx = nx + 2, vz = nz + 2;
+    this.a = cellTexture(nx, nz); this.b = cellTexture(nx, nz);
+    // Vertex i: the edge at 0 and nx + 1, else the centre of cell i - 1.
+    const at = (i: number, n: number) => (i === 0 ? 0 : i === n + 1 ? n : i - 0.5);
+    const pos = new Float32Array(vx * vz * 3), uv = new Float32Array(vx * vz * 2);
+    for (let j = 0; j < vz; j++) for (let i = 0; i < vx; i++) {
+      const k = j * vx + i;
+      pos[k * 3] = x0 + at(i, nx) * cell; pos[k * 3 + 2] = z0 + at(j, nz) * cell;
+      uv[k * 2] = Math.min(Math.max(i - 1, 0), nx - 1); uv[k * 2 + 1] = Math.min(Math.max(j - 1, 0), nz - 1);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    g.setIndex(new THREE.BufferAttribute(new Uint32Array(0), 1));
+    g.setIndex(new THREE.BufferAttribute(new Uint32Array((vx - 1) * (vz - 1) * 6), 1).setUsage(THREE.DynamicDrawUsage));
+    g.boundingBox = new THREE.Box3();
     this.geometry = g;
   }
 
   /** The sheet's triangles: the squares between four cells where one of them is within REACH of water, then or now. */
   private index() {
-    const g = this.geometry!, { nx, nz } = this, from = this.from!.dist, to = this.to!.dist;
-    const near = (k: number) => Math.min(from[k], to[k]) <= REACH;
-    const idx: number[] = [];
-    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-    for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) {
-      const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1;
-      if (!(near(a) || near(b) || near(c) || near(d))) continue;
-      idx.push(a, c, b, b, c, d);
+    const g = this.geometry!, { nx, nz } = this, from = this.from!.dist, to = this.to!.dist, vx = nx + 2;
+    // Whether vertex (i, j)'s cell is near water.
+    const near = (i: number, j: number) => {
+      const k = Math.min(Math.max(j - 1, 0), nz - 1) * nx + Math.min(Math.max(i - 1, 0), nx - 1);
+      return Math.min(from[k], to[k]) <= REACH;
+    };
+    const index = g.index!, idx = index.array as Uint32Array;
+    let count = 0, x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (let j = 0; j < nz + 1; j++) for (let i = 0; i < nx + 1; i++) {
+      if (!(near(i, j) || near(i + 1, j) || near(i, j + 1) || near(i + 1, j + 1))) continue;
+      const a = j * vx + i, b = a + 1, c = a + vx, d = c + 1;
+      idx[count++] = a; idx[count++] = c; idx[count++] = b; idx[count++] = b; idx[count++] = c; idx[count++] = d;
       x0 = Math.min(x0, i); x1 = Math.max(x1, i + 1); z0 = Math.min(z0, j); z1 = Math.max(z1, j + 1);
     }
-    g.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1));
+    index.clearUpdateRanges();
+    index.addUpdateRange(0, count);
+    index.needsUpdate = true;
+    g.setDrawRange(0, count);
     // Where it can be: what the renderer frames the water's passes by.
     const wet = [this.from!, this.to!].filter((l) => l.mid !== null);
     this.wetLow = Math.min(...wet.map((l) => l.low), Infinity);
@@ -236,12 +257,19 @@ export class WaterField {
     if (!wet.length) this.wetLow = this.wetHigh = 0;
     this.low = this.wetLow - MAX_DIVE;
     this.high = this.wetHigh;
-    const box = g.boundingBox ?? (g.boundingBox = new THREE.Box3());
-    if (idx.length) {
-      box.min.set(this.x0 + (x0 + 0.5) * this.cell, this.low, this.z0 + (z0 + 0.5) * this.cell);
-      box.max.set(this.x0 + (x1 + 0.5) * this.cell, this.high, this.z0 + (z1 + 0.5) * this.cell);
-    } else box.makeEmpty();
+    const box = g.boundingBox!, pos = g.attributes.position.array;
+    if (count) {
+      box.min.set(pos[(z0 * vx + x0) * 3], this.low, pos[(z0 * vx + x0) * 3 + 2]);
+      box.max.set(pos[(z1 * vx + x1) * 3], this.high, pos[(z1 * vx + x1) * 3 + 2]);
+    } else {
+      box.makeEmpty();
+      this.any = false;
+    }
     g.boundingSphere = null;
-    if (!idx.length) this.any = false;
   }
+}
+
+/** A float texture of the water's cells (RGBA per cell), read texel by texel. */
+function cellTexture(nx: number, nz: number) {
+  return new THREE.DataTexture(new Float32Array(nx * nz * 4), nx, nz, THREE.RGBAFormat, THREE.FloatType);
 }

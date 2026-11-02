@@ -47,8 +47,9 @@ renderer.setWater(null);         // no water
 dry cell the surface, flow and mud of the highest water it's reached from, flat for one cell and then diving 1.5 m a
 cell (at most 4 m). Where the sheet dives, its mud channel holds how far down it is, negative, and the shader doesn't
 draw it there: under the land it's hidden anyway, and at the land's edge it would show beneath it. `WaterField` keeps
-the map as it was and as last sent, as two float textures the shaders blend; the sheet is a vertex per cell, its height
-read from them, and its triangles are rebuilt on each map to cover only the cells within one of water.
+the map as it was and as last sent, as two float textures the shaders blend; the sheet is a vertex per cell (and a ring
+round the grid's edge, so water reaches it), its height read from them, and its triangles are rewritten on each map to
+cover only the cells within one of water (into one buffer per grid, with room for them all).
 
 - **The flow** carries the ripples and glints by a flow map: two copies of the pattern, each carried along for four
   seconds and then put back, crossfaded so neither's jump shows, each place on its own beat so no pulse sweeps the
@@ -57,8 +58,8 @@ read from them, and its triangles are rebuilt on each map to cover only the cell
 - **Reflections at any height.** The reflection is drawn once, mirrored about one surface (the median of the water).
   The camera is orthographic, so water standing higher or lower mirrors exactly the same picture moved up or down the
   screen by twice the difference: each pixel reads it shifted by its own amount. What's under the water isn't
-  reflected, judged by the water just where it is (a fence standing in a flood isn't mirrored below the flood's
-  surface), not by one plane. The only error left is at the screen's edge, as before.
+  reflected, judged by the water just where it is, read off the sheet's own triangles (a fence standing in a flood
+  isn't mirrored below the flood's surface), not by one plane. The only error left is at the screen's edge, as before.
 - **The haze** in hollows measures from the lowest water, as it measured from the stream.
 
 ## The demo

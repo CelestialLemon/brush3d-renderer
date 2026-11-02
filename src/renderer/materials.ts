@@ -702,6 +702,22 @@ const f = (x: number) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
  *   is deep and dark, broken along the flow by ripples.
  * Ripples drift with the flow (the game's water map, #18); the reflection and the bed stay put.
  */
+/**
+ * Where the water's sheet isn't drawn: where it dives under the land (its mud is how far down, negative there: see
+ * layWater), and off the edge of the land, where nothing would hide it reaching past the last wet cell. The painted water
+ * and its silhouette (PREPASS_FRAG) both test it, so the silhouette never covers what the painting leaves out.
+ */
+const WATER_SHEET_GLSL = /* glsl */ `
+uniform vec4 uLandSquare;
+bool sheetHidden(vec3 p, float mud) {
+  if (mud < -0.15) return true;
+  if (uLandSquare.z <= 0.0) return false;
+  vec2 d = p.xz - uLandSquare.xy;
+  float c = cos(uLandSquare.w), s = sin(uLandSquare.w);
+  return max(abs(c * d.x - s * d.y), abs(s * d.x + c * d.y)) > uLandSquare.z;
+}
+`;
+
 const WATER_FRAG = /* glsl */ `
 ${FRAG_HEAD}
 ${MIRROR_SKY}
@@ -714,7 +730,7 @@ uniform vec3 uSkyBottom;
 varying vec2 vFlow;
 varying float vMud;
 varying vec2 vMirrorShift;
-uniform vec4 uLandSquare;
+${WATER_SHEET_GLSL}
 // The flow carries the ripples and the glints along (a flow map: two copies, each carried for a while and then put back,
 // crossfaded so neither's jump shows, each place on its own beat so no pulse runs over the whole river). However the flow
 // turns and changes speed across the water, the pattern is never dragged out of shape.
@@ -730,15 +746,8 @@ float sparkle(vec2 q, vec2 dir) {
   return (1.0 - smoothstep(0.5, 1.0, length(f / vec2(0.15, 0.3)))) * step(0.5, h) * wink;
 }
 void main() {
-  // Not where the sheet dives under the land (its mud is how far down, negative there: see layWater).
-  if (vMud < -0.15) discard;
+  if (sheetHidden(vWorldPos, vMud)) discard;
   float mud = max(vMud, 0.0);
-  // No water off the edge of the land, where nothing would hide the sheet reaching past the last wet cell.
-  if (uLandSquare.z > 0.0) {
-    vec2 d = vWorldPos.xz - uLandSquare.xy;
-    float c = cos(uLandSquare.w), s = sin(uLandSquare.w);
-    if (max(abs(c * d.x - s * d.y), abs(s * d.x + c * d.y)) > uLandSquare.z) discard;
-  }
   cloudAt(vWorldPos);
   vec3 n = vec3(0.0, 1.0, 0.0);
   vec3 p = vWorldPos;
@@ -858,11 +867,20 @@ void main() {
 const PREPASS_FRAG = /* glsl */ `
 layout(location = 0) out vec4 gColor;
 layout(location = 1) out vec4 gAux;
-#ifdef MIRROR_CLIP
-${WATER_MAP_GLSL}
+#if defined(MIRROR_CLIP) || defined(WATER_SHEET)
 varying vec3 vWorldPos;
 #endif
+#ifdef MIRROR_CLIP
+${WATER_MAP_GLSL}
+#endif
+#ifdef WATER_SHEET
+${WATER_SHEET_GLSL}
+varying float vMud;
+#endif
 void main() {
+#ifdef WATER_SHEET
+  if (sheetHidden(vWorldPos, vMud)) discard;
+#endif
 #ifdef MIRROR_CLIP
   // As writeGBuffer does in the reflection: what's under the water isn't reflected.
   if (vWorldPos.y < waterTop(vWorldPos.xz) - 0.01) discard;
@@ -899,7 +917,7 @@ const FRAG: Record<MaterialKind, string> = {
 const WATER_LINEAR = new THREE.Color(0x2c6e74);
 const DEFINES: Partial<Record<MaterialKind, Record<string, number | string>>> = {
   paint: { TREES: 1 }, ground: { TREES: 1 }, crop: { CROP: 1 },
-  water: { WATER_COLOR: `vec3(${WATER_LINEAR.r.toFixed(6)}, ${WATER_LINEAR.g.toFixed(6)}, ${WATER_LINEAR.b.toFixed(6)})` },
+  water: { WATER_SHEET: 1, WATER_COLOR: `vec3(${WATER_LINEAR.r.toFixed(6)}, ${WATER_LINEAR.g.toFixed(6)}, ${WATER_LINEAR.b.toFixed(6)})` },
 };
 const DABS = (kind: MaterialKind) => kind === 'foliage' || kind === 'debris';
 const sideOf = (kind: MaterialKind) => (kind === 'grass' || DABS(kind) || kind === 'ink' ? THREE.DoubleSide : THREE.FrontSide);
