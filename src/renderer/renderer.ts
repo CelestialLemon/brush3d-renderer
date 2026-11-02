@@ -5,7 +5,7 @@ import { CLOUD_SHAPE, type CloudShape } from './clouds';
 import type { Look } from './look';
 import { CLOUD_DEPTH, CLOUD_NIGHT, gapCover, OVERCAST, overcastLook, skyShare, UNDER_CLOUD_FADE } from './overcast';
 import {
-  createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type PawLook, type SharedUniforms,
+  createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
 } from './materials';
 import { fogNoiseTexture, litFog } from './fog';
 import { POST_FRAG, POST_VERT } from './post';
@@ -245,9 +245,6 @@ export class BrushRenderer {
    * game's updates; 'immediate' puts them there at once (a level loading, a screenshot).
    */
   setWeather(weather: Weather, immediate = false) { this.weather.set(weather, immediate); }
-
-  /** Cat's paws' look on the water (#36, while the developer picks). */
-  setPaws(look: PawLook) { this.shared.uPaws.value.set(look.dark, look.glint, look.rough, look.reach); }
 
   /** The shared material of a kind (one per renderer, so meshes of a kind batch their state). */
   material(kind: MaterialKind) {

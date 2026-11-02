@@ -17,7 +17,8 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
      from above, roofs and crowns (a crown keeps off 60%), drawn only when cover changes, `?shelter` to see it; a
      barn-red shed (the developer's pick of three) modelled by `tools/blender/shed.py`, the first model made in Blender);
   6. #36 wind: gusts and lulls as fronts sweeping the land, one gust field for the grass, trees, water and dust (with
-     depth, a rolling head), and for the game to query. It grew out of #9: dust's gusts didn't read;
+     depth, a rolling head), and for the game to query. It grew out of #9: dust's gusts didn't read (done 2026-11-03,
+     #41 to #44: see Wind);
   7. #18 dynamic water: a state the game drives;
   8. #11 rain and wet ground;
   9. #12 storms and lightning;
@@ -153,7 +154,7 @@ since #2). Left, most visible first (Sol's ranking):
 
 ### Wind (first pass shipped with #2)
 
-- **Gusts (#36, in progress):** one gust field for everything, starting from the research in the issue. The groundwork is the living wind the
+- **Gusts (#36, done 2026-11-03):** one gust field for everything, starting from the research in the issue. The groundwork is the living wind the
   game owns (`src/wind`, `docs/WIND.md`): simulated over the world, going round sheds and through hedges, with
   `?windMap` to see it. The renderer draws it (the grass, the trees' crowns, the wheat, the water and the dust each read
   the wind where they are, so a hedge's calm shows in the grass behind it), and the haze's patches hold still when the
@@ -162,7 +163,8 @@ since #2). Left, most visible first (Sol's ranking):
   (strength, length, build-up, the odd sudden slap, one in six a quiet one), swelling and easing over gusty and quiet
   minutes; the look is the developer's pick, "gentler" (#41, 2026-11-02): shallow lulls, slow fronts, rare slaps. Dust is
   lifted by the gusts off bare, dry ground, only in a dust storm (#42), the look "billows" (#43): heavy puffs up to 7 m,
-  each gust's front a rolling wall, clearing in 5 s. Next, cat's paws on the water.
+  each gust's front a rolling wall, clearing in 5 s. In a light wind a gust passing over the water leaves a cat's paw,
+  a patch of fine glitter, the look "glitter" (#44).
 - **Hedge density is the game's choice, when a mechanic needs it** (#36, the developer, 2026-11-01). A dense hedge (drag
   8/s, the default) gives deep calm close behind; a medium one (Hagen's measured windbreaks) is less calm at 1 H but
   calmer over 4–10 H. Nothing in the game is hurt by strong wind yet; decide when something is (crops flattened, things
