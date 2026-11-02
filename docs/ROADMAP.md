@@ -160,8 +160,9 @@ since #2). Left, most visible first (Sol's ranking):
   wind turns. Trees have weight: each is a spring that leans into a gust, overshoots and rocks to a stop, each kind its
   own, and crowns bend with their trunks (a cypress like a whip). The gusts come as a seeded sequence, each gust its own
   (strength, length, build-up, the odd sudden slap, one in six a quiet one), swelling and easing over gusty and quiet
-  minutes; the look is the developer's pick, "gentler" (#41, 2026-11-02): shallow lulls, slow fronts, rare slaps. Next,
-  dust lifted by gusts, then cat's paws on the water.
+  minutes; the look is the developer's pick, "gentler" (#41, 2026-11-02): shallow lulls, slow fronts, rare slaps. Dust is
+  lifted by the gusts off bare, dry ground, only in a dust storm (#42), the look "billows" (#43): heavy puffs up to 7 m,
+  each gust's front a rolling wall, clearing in 5 s. Next, cat's paws on the water.
 - **Hedge density is the game's choice, when a mechanic needs it** (#36, the developer, 2026-11-01). A dense hedge (drag
   8/s, the default) gives deep calm close behind; a medium one (Hagen's measured windbreaks) is less calm at 1 H but
   calmer over 4–10 H. Nothing in the game is hurt by strong wind yet; decide when something is (crops flattened, things
