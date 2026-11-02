@@ -35,8 +35,9 @@ const LINGER = 5;
 const CARRY = 0.6;
 /** How high it starts, how fast it rises, and the most it rises (metres over the ground). */
 const START = 0.5, RISE = 0.5, TOP = 4;
-/** On a new wind, how many ticks to run it with the wind as it is, so the dust is already up rather than starting clean. */
-const WARM = 80;
+/** On a new wind, how long to run it with the wind as it is, so the dust is already up rather than starting clean:
+ * WARM steps of WARM_DT seconds (8 s, in long steps so it costs only some 20 to 45 ms of the main thread, once). */
+const WARM = 20, WARM_DT = 0.4;
 
 /**
  * The fresh dust over the world: the game's map of where it lifts, the field on the CPU, and its last two ticks as
@@ -96,17 +97,18 @@ export class DustField {
   /** The game's wind this frame, between its last two ticks: steps the dust a tick for each new tick of the wind. */
   set(prev: WindSnapshot, cur: WindSnapshot, alpha: number) {
     this.blend = prev.tick === cur.tick ? 1 : alpha;
-    if (cur === this.snapB && prev === this.snapA) return;
+    if (cur === this.snapB && prev === this.snapA && !this.fresh) return;
     if (this.nx !== cur.nx || this.nz !== cur.nz || this.cell !== cur.cell || this.x0 !== cur.x0 || this.z0 !== cur.z0) this.lay(cur);
     if (this.fresh || cur.tick < this.tick || cur.tick > this.tick + 10) {
       // A new wind, a jump back or a long way on: the dust as the wind as it is would have it.
       this.d.fill(0); this.m.fill(0); this.any = false;
-      for (let i = 0; i < WARM; i++) this.step(cur);
+      for (let i = 0; i < WARM; i++) this.step(cur, WARM_DT);
       this.fresh = false;
       this.upload(this.a); this.upload(this.b);
     } else {
-      // A tick or a few on: the earlier one's dust is the later texture's, if it was the last uploaded.
-      if (prev.tick > this.tick) this.step(prev);
+      // A tick or a few on: the earlier one's dust is the later texture's, if it was the last uploaded. Ticks missed
+      // between frames (a stall) are stepped with the nearest wind the renderer has: a gust wholly inside one is lost.
+      while (this.tick < prev.tick) this.step(prev);
       if (prev === this.snapB) this.swap(); else this.upload(this.a);
       while (this.tick < cur.tick) this.step(cur);
       this.upload(this.b);
@@ -147,17 +149,19 @@ export class DustField {
     for (let k = 0; k < this.ground.length; k++) {
       this.groundHalf[k] = half(this.ground[k]); this.emptyHalf[k] = half(this.ground[k] + START);
     }
+    // The textures hold the ground too: a clear one must be sent afresh with it.
+    this.blank.clear();
   }
 
   /**
    * A tick of the wind on the dust: carried along the ground air (traced back from each cell and read between the four
    * cells there), faded as it mixes into the air, risen, and lifted afresh where the ground air is over the threshold.
    */
-  private step(s: WindSnapshot) {
+  private step(s: WindSnapshot, dt = 0.1) {
     this.tick++;
     // No storm and no dust up: nothing to carry or lift (most of the time, so it costs next to nothing).
     if (this.storm <= 0 && !this.any) return;
-    const { nx, nz } = this, h = this.cell, dt = 0.1, fade = Math.exp(-dt / LINGER), k = (CARRY * dt) / h;
+    const { nx, nz } = this, h = this.cell, fade = Math.exp(-dt / LINGER), k = (CARRY * dt) / h;
     const d = this.d, m = this.m, d2 = this.d2, m2 = this.m2, lift = this.lift, su = s.u, sv = s.v;
     const threshold = Math.max(DUST_THRESHOLD, GUST_LIFT * s.speed), lifting = this.storm * LIFT * dt;
     const rise = RISE * dt, xMax = nx - 1, zMax = nz - 1;
