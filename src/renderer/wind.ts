@@ -68,6 +68,7 @@ export class WindField {
   private mean = new Float32Array(0);
   private meanTick = -1;
   private meanGrid = '';
+  private meanSnap: WindSnapshot | null = null;
 
   private static texture(format: THREE.PixelFormat = THREE.RGFormat) {
     const t = new THREE.DataTexture(new Uint16Array(format === THREE.RGFormat ? 2 : 1), 1, 1, format, THREE.HalfFloatType);
@@ -110,6 +111,8 @@ export class WindField {
    * at the same tick (a new wind, or steadyWind's, which are all tick 0).
    */
   private updateUsual(s: WindSnapshot) {
+    if (s === this.meanSnap) return;
+    this.meanSnap = s;
     const n = s.nx * s.nz, t = this.usual, grid = `${s.nx} ${s.nz} ${s.cell} ${s.x0} ${s.z0}`;
     let mean = this.mean;
     if (grid !== this.meanGrid || s.tick <= this.meanTick || s.tick > this.meanTick + 50) {
