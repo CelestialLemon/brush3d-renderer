@@ -89,6 +89,8 @@ export class DustField {
   /** The ground air's speed per cell at the last step, for how fast it's picking up (the head); unset after a restart. */
   private speed = new Float32Array(0);
   private speedSet = false;
+  /** The wind tick those speeds were read at, so a pick-up is over the time between the winds read, not a step's. */
+  private speedTick = 0;
   private nx = 0; private nz = 0; private cell = 1; private x0 = 0; private z0 = 0;
   /** The last tick stepped, and the snapshots the textures hold (by identity, as the wind map). */
   private tick = -1;
@@ -190,6 +192,8 @@ export class DustField {
     const d = this.d, m = this.m, d2 = this.d2, m2 = this.m2, lift = this.lift, su = s.u, sv = s.v, sp = this.speed;
     const threshold = Math.max(DUST_THRESHOLD, GUST_LIFT * s.speed), lifting = this.storm * L.lift * dt;
     const heading = this.speedSet ? this.storm * L.head * HEAD_LIFT : 0, headUp = HEAD_UP * L.top;
+    // Over the time since the speeds were kept: a few ticks if stepping on from an older wind after a stall.
+    const span = Math.max(dt, (s.tick - this.speedTick) * 0.1);
     const rise = L.rise * dt, top = L.top, xMax = nx - 1, zMax = nz - 1;
     let any = false;
     for (let j = 0, c = 0; j < nz; j++) for (let i = 0; i < nx; i++, c++) {
@@ -216,7 +220,7 @@ export class DustField {
         const w = Math.sqrt(u * u + v * v), over = w - threshold;
         if (over > 0) { const l = (lifting * l0 * over) / (1 + over / 6); dd += l; mm += l * START; }
         // The head: where a gust's front is arriving (the wind picking up fast, near or over the threshold), more, higher.
-        const rate = (w - sp[c]) / dt - HEAD_RATE;
+        const rate = (w - sp[c]) / span - HEAD_RATE;
         if (heading > 0 && rate > 0 && over > -2) { const l = heading * l0 * Math.min(rate, 10) * dt; dd += l; mm += l * headUp; }
         sp[c] = w;
       }
@@ -225,7 +229,7 @@ export class DustField {
     }
     this.d = d2; this.m = m2; this.d2 = d; this.m2 = m;
     this.any = any;
-    this.speedSet = lifting > 0;
+    this.speedSet = lifting > 0; this.speedTick = s.tick;
   }
 
   private upload(t: THREE.DataTexture) {
