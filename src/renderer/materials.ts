@@ -34,6 +34,8 @@ export function createSharedUniforms() {
     uWindBlend: { value: 0 },
     uWindGrid: { value: new THREE.Vector4(0, 0, 1, 1) },
     uWindOn: { value: 1 },
+    // Every tree's top, pushed over by the wind on its spring (TreeSprings): x and z in metres, one texel a tree.
+    tTreePose: { value: null as THREE.Texture | null },
     uViewBack: { value: new THREE.Vector3(0, 0, 1) },
     uViewTarget: { value: new THREE.Vector3() },
     uShadowMap: { value: null as THREE.Texture | null },
@@ -105,25 +107,18 @@ vec3 acrossView(vec3 d) {
   vec3 b = uMirror > 0.5 ? uViewBack * vec3(1.0, -1.0, 1.0) : uViewBack;
   return d - b * dot(d, b);
 }
-// How a point of a tree moves in the wind (tree: its foot's x and z, its height, and how much of its crown's movement this
-// point takes; a height of 0 is no tree): the whole crown moves as one piece, leaning downwind and rocking about the lean,
-// and the trunk bends into it from the foot. The crown only moves, never turns or bends: any turn or bend changes which of
-// its overlapping dabs is in front, and the swatches pop, where a shift leaves their order alone.
-vec3 treeWind(vec4 tree) {
+// How a point of a tree moves in the wind (tree: its foot's x and z, its height, and how much of its top's movement this
+// point takes; a height of 0 is no tree; id: the tree's texel in tTreePose). The top is where the tree's spring has it
+// (TreeSprings); the rest bends with it from the foot, by the share built into each point (growTree). The movement is drawn
+// across the view only (drawnShift), so a bending crown's strokes never swap which is in front.
+uniform sampler2D tTreePose;
+vec3 treeWind(vec4 tree, float id) {
   if (tree.z <= 0.0) return vec3(0.0);
-  float height = tree.z, seed = hash12(tree.xy * 1.7);
-  // The wind at its crown, read over its foot (the whole tree moves as one).
-  vec2 crown = windCrown(tree.xy);
-  float u = length(crown);
-  vec3 dir = windDirOf(crown);
-  // Big trees rock slowly, shrubs quickly, each a little differently.
-  float w = 6.2831853 * clamp(0.6 * pow(5.0 / height, 0.75), 0.35, 1.8) * (0.85 + 0.3 * seed);
-  float sway = windSway(u);
-  float along = windLean(u) + sway * sin(uTime * w + seed * 6.2831853);
-  float across = sway * 0.2 * sin(uTime * w * 1.27 + seed * 17.0);
-  vec3 d = (dir * along + vec3(-dir.z, 0.0, dir.x) * across) * height;
+  int i = int(id + 0.5);
+  vec2 top = texelFetch(tTreePose, ivec2(i % 256, i / 256), 0).xy * uWindOn;
+  vec3 d = vec3(top.x, 0.0, top.y);
   // The top dips a little as the tree leans over.
-  d.y -= dot(d, d) / (1.4 * height);
+  d.y -= dot(d, d) / (1.4 * tree.z);
   return d * tree.w;
 }
 // A tree's movement as drawn. It's real 3D where it's lit (vWorldPos) and in the sun's shadow pass, so it shades and casts
@@ -149,6 +144,7 @@ ${HEAD}
 varying vec2 vUv;
 #ifdef TREES
 attribute vec4 aTree;
+attribute float aTreeId;
 #endif
 #ifdef CROP
 varying float vGust;
@@ -164,7 +160,7 @@ void main() {
 #endif
   vWorldPos = wp.xyz;
 #ifdef TREES
-  vec3 tree = treeWind(aTree);
+  vec3 tree = treeWind(aTree, aTreeId);
   vWorldPos += tree;
   wp.xyz += drawnShift(tree);
 #endif
@@ -187,6 +183,7 @@ const FOLIAGE_VERT = /* glsl */ `
 ${HEAD}
 attribute vec4 aCard;
 attribute vec4 aTree;
+attribute float aTreeId;
 uniform vec2 uScreen;
 varying vec4 vCard;
 varying vec3 vDabNormal;
@@ -209,7 +206,7 @@ void main() {
   float ph = uWindFlutter * (0.8 + 0.4 * fract(seed * 7.13)) + seed * 40.0;
   vec3 flutter = (windDir3() * sin(ph) + vec3(-uWindDir.y, 0.0, uWindDir.x) * 0.5 * sin(ph * 1.31 + seed * 9.0)
     + vec3(0.0, 0.5 * cos(ph * 0.87 + seed * 21.0), 0.0)) * amp;
-  vec3 tree = treeWind(aTree);
+  vec3 tree = treeWind(aTree, aTreeId);
   wc.xyz += acrossView(flutter);
   // In a gale and up, leaves on the windward side turn over in the gusts and show their pale undersides. Slowly, a few at a
   // time, in waves that travel with the gusts, so no dab blinks.

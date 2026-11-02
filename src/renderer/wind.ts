@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { atHeight, type WindSnapshot } from '../wind/sim';
+import type { WindSnapshot } from '../wind/sim';
 
 // Wind: the game owns it (src/wind, #36) and hands the renderer each tick's snapshot of the living wind over the world; the
 // renderer draws exactly that, never easing or altering it. Every material reads the same map: grass and wheat the ground
@@ -30,7 +30,7 @@ export const STREAK_STRETCH = 6;
  */
 export const CROWN_HEIGHT = 6;
 /** How much stronger the open wind is at CROWN_HEIGHT than at the ground (the wind's height rule, sim.ts's atHeight). */
-const CROWN_PROFILE = 1 + 0.5 * Math.min(1, (CROWN_HEIGHT - 0.75) / 7.25) + 0.01 * Math.max(0, CROWN_HEIGHT - 8);
+export const CROWN_PROFILE = 1 + 0.5 * Math.min(1, (CROWN_HEIGHT - 0.75) / 7.25) + 0.01 * Math.max(0, CROWN_HEIGHT - 8);
 
 /**
  * A wind with no simulation behind it: the same everywhere, `speed` m/s towards `direction` (radians from +x towards +z),
@@ -45,8 +45,8 @@ export function steadyWind(speed: number, direction: number): WindSnapshot {
 }
 
 /**
- * The wind's map on the GPU: the last two ticks' snapshots as two textures, each texel a cell's ground air (x, z) and the
- * air at the crowns (x, z), which the shaders blend between as the frame falls between the ticks. A new tick is uploaded
+ * The wind's map on the GPU: the last two ticks' snapshots as two textures, each texel a cell's ground air (x, z), which
+ * the shaders blend between as the frame falls between the ticks. A new tick is uploaded
  * once (into the older texture), so a frame costs nothing unless the wind has moved on.
  */
 export class WindField {
@@ -61,7 +61,7 @@ export class WindField {
   private snapB: WindSnapshot | null = null;
 
   private static texture() {
-    const t = new THREE.DataTexture(new Uint16Array(4), 1, 1, THREE.RGBAFormat, THREE.HalfFloatType);
+    const t = new THREE.DataTexture(new Uint16Array(2), 1, 1, THREE.RGFormat, THREE.HalfFloatType);
     t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearFilter;
     t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
     t.needsUpdate = true;
@@ -85,15 +85,13 @@ export class WindField {
     const n = s.nx * s.nz;
     let data = t.image.data as Uint16Array;
     if (t.image.width !== s.nx || t.image.height !== s.nz) {
-      data = new Uint16Array(n * 4);
+      data = new Uint16Array(n * 2);
       t.image = { data, width: s.nx, height: s.nz };
       t.dispose();
     }
     const half = THREE.DataUtils.toHalfFloat;
     for (let k = 0; k < n; k++) {
-      const [ax, az] = atHeight(s, k, CROWN_HEIGHT);
-      data[k * 4] = half(s.u[k]); data[k * 4 + 1] = half(s.v[k]);
-      data[k * 4 + 2] = half(ax / CROWN_PROFILE); data[k * 4 + 3] = half(az / CROWN_PROFILE);
+      data[k * 2] = half(s.u[k]); data[k * 2 + 1] = half(s.v[k]);
     }
     t.needsUpdate = true;
   }
@@ -223,28 +221,19 @@ uniform float uWindOn;       // 1, or 0 to read a still wind (the shelter map's 
 /**
  * The wind in GLSL, with the map's uniforms. Needs uWindSpeed and uWindDir (LIGHT_UNIFORMS has them). Strengths are in metres per second.
  *   windGround(xz): the ground air's velocity (x, z) at a point, from the game's map, between its last two ticks.
- *   windCrown(xz):  the air at a tree's crown, in the ground's terms (see CROWN_HEIGHT and WindField.upload).
  *   windGust(xz):   0..1, how hard it blows at a point against the wind's average: 0.5 at the average, 1 at twice it.
- *   windLean(s):    a tree's crown pushed over by the wind, as a share of its height: with the square of the speed at
- *                   first, levelling off towards a third (Sol's calibration: 1.3% in a breeze, 12% in a gale, 30% in a
- *                   hurricane).
- *   windSway(s):    its rocking about that lean, the same measure (most of it by a gale).
  */
 export const WIND_GLSL = /* glsl */ `
 ${WIND_UNIFORMS}
 float windForce() { return clamp(uWindSpeed / 35.0, 0.0, 1.5); }
 vec3 windDir3() { return vec3(uWindDir.x, 0.0, uWindDir.y); }
-vec4 windMap(vec2 xz) {
+vec2 windGround(vec2 xz) {
   vec2 uv = (xz - uWindGrid.xy) * uWindGrid.zw;
-  return mix(texture2D(tWindA, uv), texture2D(tWindB, uv), uWindBlend) * uWindOn;
+  return mix(texture2D(tWindA, uv).xy, texture2D(tWindB, uv).xy, uWindBlend) * uWindOn;
 }
-vec2 windGround(vec2 xz) { return windMap(xz).xy; }
-vec2 windCrown(vec2 xz) { return windMap(xz).zw; }
 // A wind's direction as a vector in the ground plane, or the wind's as a whole where it's still.
 vec3 windDirOf(vec2 w) { float l = length(w); return l > 0.01 ? vec3(w.x, 0.0, w.y) / l : windDir3(); }
 float windGust(vec2 xz) { return clamp(0.5 * length(windGround(xz)) / max(uWindSpeed, 0.5), 0.0, 1.0); }
-float windLean(float s) { return 0.36 * (1.0 - exp(-(s * s) / 676.0)); }
-float windSway(float s) { return 0.003 + 0.045 * (1.0 - exp(-(s * s) / 196.0)); }
 `;
 
 
