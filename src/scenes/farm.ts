@@ -123,6 +123,18 @@ const WATER_Y = (() => {
 
 const pathDistance = (x: number, z: number) => Math.min(...PATHS.map((p) => p.distance(x, z)));
 
+/**
+ * How bare the ground is at a point, 0..1: the tracks' wheel ruts (not the grass strip up the middle) and the earth worn
+ * bare under the shed's porch. The demo's stand-in for the game's map of where dust lifts (#36).
+ */
+function bare(x: number, z: number) {
+  const dp = pathDistance(x, z);
+  const track = (1 - smooth(PATH_HALF - 0.25, PATH_HALF + 0.15, dp)) * smooth(0.12, 0.3, dp);
+  const [lx, lz] = shedLocal(x, z);
+  const porch = (1 - smooth(1.7, 2.5, Math.abs(lx))) * smooth(1.2, 1.6, lz) * (1 - smooth(3.4, 4.6, lz));
+  return Math.max(track, 0.8 * porch);
+}
+
 function height(x: number, z: number) {
   const [u, v] = M(x, z);
   const ds = streamDistance(x, z);
@@ -142,6 +154,9 @@ export interface Farm {
   wind: Obstacle[];
   /** Settles once the models are loaded and in the scene. */
   ready: Promise<void>;
+  /** The land's height at a point, and how bare it is (0..1): where a gust can lift dust (#36). */
+  height: (x: number, z: number) => number;
+  bare: (x: number, z: number) => number;
 }
 
 export function buildFarm(r: BrushRenderer): Farm {
@@ -157,7 +172,7 @@ export function buildFarm(r: BrushRenderer): Farm {
   goods(r);
   stones(r);
   grass(r);
-  return { center: new THREE.Vector3(0, 0, 0), radius: HALF * Math.SQRT2, waterLevel: WATER_Y, wind: windObstacles(), ready: shed(r) };
+  return { center: new THREE.Vector3(0, 0, 0), radius: HALF * Math.SQRT2, waterLevel: WATER_Y, wind: windObstacles(), ready: shed(r), height, bare };
 }
 
 /**

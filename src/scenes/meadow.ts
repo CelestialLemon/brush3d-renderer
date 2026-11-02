@@ -68,6 +68,9 @@ export interface Meadow {
   center: THREE.Vector3; radius: number; waterLevel: number;
   /** What the wind meets (#36): the trees. */
   wind: Obstacle[];
+  /** The land's height at a point, and how bare it is (0..1): where a gust can lift dust (#36). None here: grass and wheat. */
+  height: (x: number, z: number) => number;
+  bare: (x: number, z: number) => number;
 }
 
 export function buildMeadow(r: BrushRenderer): Meadow {
@@ -79,7 +82,7 @@ export function buildMeadow(r: BrushRenderer): Meadow {
   solarPanel(r);
   stones(r);
   reeds(r);
-  return { center: new THREE.Vector3(0, 0, 0), radius: 34, waterLevel: WATER_Y, wind: TREES.map(treeWind) };
+  return { center: new THREE.Vector3(0, 0, 0), radius: 34, waterLevel: WATER_Y, wind: TREES.map(treeWind), height, bare: () => 0 };
 }
 
 function terrain(r: BrushRenderer) {

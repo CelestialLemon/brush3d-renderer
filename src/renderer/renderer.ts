@@ -14,6 +14,7 @@ import type { PassTimer } from './timer';
 import { WeatherState, type Weather } from './weather';
 import { airLook, HEAT, heatShare } from './air';
 import { leafStorm, WindField, WindState } from './wind';
+import { DustField, type DustSource } from './dust';
 import { TreeSprings, type TreeSpec } from './trees';
 import type { WindSnapshot } from '../wind/sim';
 
@@ -25,6 +26,8 @@ import type { WindSnapshot } from '../wind/sim';
 // How much the gusts thicken and thin dust ('strong', the developer's pick of two, #9). A stopgap: the gusts are faint in
 // a thick storm, and the wind's gusts are to be rebuilt as fronts sweeping the land, dust with them.
 const DUST_GUST = 1.6;
+/** Fresh dust's colour (sRGB, as the haze's): the tracks' pale earth, a little lighter in the air. */
+const FRESH_DUST = new THREE.Color(0xc8a77a);
 
 export interface RendererOptions {
   /** Shadow-map size in texels. */
@@ -140,6 +143,8 @@ export class BrushRenderer {
   /** Every tree's spring (the renderer's own motion: no game logic reads it). */
   readonly trees = new TreeSprings();
   private windNow: [WindSnapshot, WindSnapshot, number] | null = null;
+  /** Fresh dust, lifted by the gusts where the game's map says (see setDustSource; the renderer's own motion). */
+  readonly dust = new DustField();
   /** The weather as drawn: the cover as the game sent it, the looks easing towards it (see setWeather). */
   readonly weather = new WeatherState();
   /**
@@ -200,6 +205,8 @@ export class BrushRenderer {
         uWindSpeed: this.shared.uWindSpeed, uWindDir: this.shared.uWindDir, tWindA: this.shared.tWindA, tWindB: this.shared.tWindB,
         uWindBlend: this.shared.uWindBlend, uWindGrid: this.shared.uWindGrid, uWindOn: this.shared.uWindOn,
         uShimmer: { value: new THREE.Vector2() },
+        tDustA: { value: this.dust.a }, tDustB: { value: this.dust.b }, uDustBlend: { value: 0 },
+        uDustGrid: { value: this.dust.grid }, uDustOn: { value: 0 }, uDustColor: { value: new THREE.Color() },
       },
     });
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.post));
@@ -217,8 +224,20 @@ export class BrushRenderer {
   setWind(prev: WindSnapshot, cur: WindSnapshot, alpha: number) {
     this.wind.set(prev, cur, alpha);
     this.windField.set(prev, cur, alpha);
+    // Dust lifts only in a dust storm (a dust haze), a minor one too: half its full strength at a thin haze, none once the
+    // haze has thinned away (it keeps its kind as it goes).
+    const w = this.weather;
+    this.dust.storm = w.dust * THREE.MathUtils.smoothstep(w.haze, 0, 0.1) * Math.min(1, 0.5 + w.haze / 0.5);
+    this.dust.set(prev, cur, alpha);
     this.windNow = [prev, cur, alpha];
   }
+
+  /**
+   * Where dust can lift (#36): the game's map of bare, dry ground (DustSource), sent again when the ground dries or wets.
+   * In a dust storm (the weather's dust haze), a gust lifts dust there, which the wind carries off and which lingers a
+   * few seconds. Null: none.
+   */
+  setDustSource(source: DustSource | null) { this.dust.setSource(source); }
 
   /**
    * The weather the game wants (see Weather, and WEATHER_PRESETS for shorthands). The cloud cover is drawn exactly as given;
@@ -499,6 +518,10 @@ export class BrushRenderer {
     u.uFogFade.value = wind.hazeNext ? wind.hazeFade : 0;
     u.uFogStreak.value.set(a.streak, b.streak);
     u.uDust.value.set(w.dust, 0.25 + 0.5 * Math.min(wind.speed / 25, 1), DUST_GUST);
+    // Fresh dust: the earth's colour, or a dusty air's where there is one, lit as the fog is.
+    const f = this.dust;
+    u.tDustA.value = f.a; u.tDustB.value = f.b; u.uDustBlend.value = f.blend; u.uDustOn.value = f.any ? 1 : 0;
+    litFog(u.uDustColor.value, FRESH_DUST.clone().lerp(w.hazeColor, w.dust), s.uSunColor.value, s.uSkyColor.value);
   }
 
   private updateSunCamera() {
