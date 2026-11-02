@@ -42,7 +42,7 @@ wind.restore(save);                                      // carries on from it, 
   `direction` is where the wind blows towards, radians from +x towards +z. `gustiness` runs from 0 (truly steady) to
   1. `rhythm` runs from 0 (rare, strong gusts) to 1 (frequent, mild ones), with the same average either way; it starts
   in the middle (the developer's call). It sets the usual time between gusts, the same at any speed: 24, 19 and 13 s
-  apart at 0, 0.5 and 1 in look A (B 18, 14, 10; C 15, 12, 8), each gap 0.4 to 1.6 of that. Speeds above `MAX_SPEED` (60 m/s) are taken as 60.
+  apart at 0, 0.5 and 1, each gap 0.4 to 1.6 of that. Speeds above `MAX_SPEED` (60 m/s) are taken as 60.
 - **Obstacles** are shapes in world metres: a circle, a strip (from a to b, so wide) or a turned box. Each is either
   `solid: true` with a height (the wind goes round it; one lower than 2 m is blown over and slows the air instead) or
   has a `drag` per second (`DRAG.hedge` 8, `DRAG.crown` 4.4, `DRAG.railFence` 0.4). The scenes list theirs as
@@ -101,19 +101,21 @@ peaks ask for one, and is otherwise the same to the bit.
 
 ### The gusts (#36, Sol's research and the developer's choices)
 
+The look is the developer's pick of three (2026-11-02), "gentler", for the game's serene vibe: shallow lulls, slow
+fronts, rare slaps. (The others had deeper lulls, or quicker fronts and more slaps; #41 has them side by side.)
+
 The world along the wind is cut into *intervals*, each holding one gust and the lull around it. An interval is
-usually T = (108 − 48·rhythm) / (6·fronts) seconds long (fronts: how fast the gusts travel against the wind, 0.75, 1
-or 1.2 by look), its edges each moved up to 0.3 of that either way, so gaps run 0.4 to 1.6 of T. On the ground it's
-fronts × speed × T metres long (at least 2 m/s worth), since the gusts travel with the wind. Each interval's gust,
+usually T = (108 − 48·rhythm) / 4.5 seconds long, its edges each moved up to 0.3 of that either way, so gaps run 0.4 to 1.6 of T. On the ground it's
+0.75 × speed × T metres long (at least 2 m/s worth; the fronts travel at 0.75 of the wind), since the gusts travel with the wind. Each interval's gust,
 from a hash of the seed and its number:
 
 - **Strength**: a peak between 0.55 and 1 of the way from the average to the ceiling H = 1.95 − 0.4·rhythm; one
   interval in six is a quiet one, its gust barely there, so the gusts don't come like clockwork.
-- **Lull**: down to the floor B (0.38, 0.16 or 0.28 by look, + 0.15·rhythm), now and then shallower.
+- **Lull**: down to the floor B = 0.38 + 0.15·rhythm, now and then shallower.
 - **Length**: what balances the peak against the lull over the interval, so a long interval holds a long push and a
   long lull, both at full strength. Balanced over every interval, the recipe's mean is exactly 1 whatever the draw
   (Sol's finding: balancing only on average let one stretch of gusts run several per cent off another).
-- **Build-up**: 1 to 2 s, or, for one gust in 25 (one in 10 in look C), a 0.3 s slap. Dying away: 1 to 2.5 s.
+- **Build-up**: 1 to 2 s, or, for one gust in 25, a 0.3 s slap. Dying away: 1 to 2.5 s.
 - **Tilt**: some hit hardest at first and ease off, some build through, some hold.
 
 Along each front the strength varies (0.65 to 1) and the front bends a few metres, as before.
@@ -126,20 +128,20 @@ slapped in under half a second). The ground air takes its own time to pick a gus
 build reads as 2–3 s on the ground, and a 0.3 s slap is hardly quicker than an ordinary gust there; above about 15 m/s
 the slaps stand out (Sol's round 2).
 
-## Calibration (Sol's rounds 4–6, and the gusts' provisional fit, checked by `npm run test:wind`)
+## Calibration (Sol's rounds 4–6, and the gusts' fit, checked by `npm run test:wind`)
 
 | What | Value |
 |---|---|
-| Open-air average, 6 m/s (each look, gustiness 0.5–1, rhythm 0–1, at the fit's knots and between) | within 0.35% of the goal over an hour, with a seed the fit never saw |
-| … at 2, 17 and 35 m/s (provisional: fitted at 6 only) | 4–6% over, 1.5% under, 2% under |
+| Open-air average (gustiness 0.5–1, rhythm 0–1, 2 to 60 m/s, at the fit's knots and between) | within 0.2% of the goal over half an hour, with a seed the fit never saw |
 | Steady (gustiness 0) | the goal exactly, everywhere |
 | Shelter behind a single dense hedge, 2.5 m, steady 6 m/s | 0.34, 0.41, 0.61, 0.89 of the open wind at 1, 4, 10, 25 H |
 | A tick, 200 m at 1 m, on the developer's machine | about 12 ms in a breeze, 50 ms in a hurricane with full gusts |
 
-The ground's friction (`friction(rhythm, gustiness, look)` in `sim.ts`) is an offline fit of the recipe that keeps the
-average on the goal; a new recipe needs a new fit. The gusts' fit is provisional: at 6 m/s only, for comparing the looks.
-In seconds rather than metres, a gust is a different shape to the engine at each speed, so one fit doesn't hold at
-every speed (Sol's round 2: up to 6% over at 2 m/s, 3.5% under at 35). The look picked gets a table over speed as well.
+The ground's friction (`friction(speed, rhythm, gustiness)` in `sim.ts`) is an offline fit of the recipe that keeps
+the average on the goal: at 2, 3.5, 6, 10, 17 and 35 m/s, rhythm 0, 0.5 and 1 and gustiness 0.5, 0.75 and 1, each knot
+over half an hour of open field, between them by the speed's logarithm, and holding the 35 m/s fit beyond. It depends
+on speed because the gusts are timed in seconds, not metres: a gust is a different shape to the engine at each speed.
+A new recipe needs a new fit.
 
 Reading the shelter numbers: real windbreaks measured in the field (Hagen) are about 0.54 at 1 H, 0.26 at 4 H and 0.95
 at 25 H for a medium-dense hedge. Ours is calmer right behind the hedge and comes back a little sooner. That's the dense

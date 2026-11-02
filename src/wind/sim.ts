@@ -76,41 +76,62 @@ const NEW_PACE = Math.log(1.2);
 const NEW_RHYTHM = 0.1;
 
 /**
- * The looks on offer for the gusts (#36, for the developer to pick; the others go before the PR merges):
- * a, gentler lulls and slower fronts; b, deeper lulls; c, quicker fronts and more slaps. `floor`: how far the wind drops
- * in a lull at full gustiness (at rhythm 0; frequent gusts lull less), `fronts`: how fast the gusts travel against the
- * wind, `slaps`: the share of gusts that hit in 0.3 s rather than building over 1 to 2.
+ * The gusts' look (#36, the developer's pick of three, 2026-11-02: "gentler", for the game's serene vibe). How far the
+ * wind drops in a lull at full gustiness (at rhythm 0; frequent gusts lull less), how fast the gusts travel against the
+ * wind, and the share of gusts that hit in 0.3 s rather than building over 1 to 2.
  */
-export type GustLook = 'a' | 'b' | 'c';
-export const GUST_LOOKS: Record<GustLook, { floor: number; fronts: number; slaps: number; friction: number[][] }> = {
-  a: { floor: 0.38, fronts: 0.75, slaps: 0.04, friction: [
-    [0.2826543522560237, 0.29292140852973053, 0.3077221489458789],
-    [0.28134208165687724, 0.2895692213917927, 0.30110288457881],
-    [0.2795879895069732, 0.2856796467204057, 0.2944705510537602]] },
-  b: { floor: 0.16, fronts: 1, slaps: 0.04, friction: [
-    [0.28511881965722197, 0.2986468109498092, 0.3201132928331316],
-    [0.2827068245140076, 0.2934450279373085, 0.3087300101904354],
-    [0.2812791708806471, 0.28971804292557857, 0.30151682574198096]] },
-  c: { floor: 0.28, fronts: 1.2, slaps: 0.1, friction: [
-    [0.28328771438822403, 0.29406219286981167, 0.3106088653837158],
-    [0.2815461694376518, 0.29047650838132205, 0.3029591142750228],
-    [0.2798680085700209, 0.2864315522671254, 0.2954319522803181]] },
-};
+const LULL_FLOOR = 0.38, FRONTS = 0.75, SLAPS = 0.04;
+
+/** The speeds (m/s) the ground's friction is fitted at, and the fit: by speed, rhythm (0, 0.5, 1) and gustiness (0.5,
+ * 0.75, 1). Exported so a refit can try values (docs/WIND.md). */
+const FRICTION_SPEEDS = [2, 3.5, 6, 10, 17, 35];
+export const FRICTION: number[][][] = [
+  [ // 2 m/s
+    [0.295531, 0.321568, 0.357920],
+    [0.290366, 0.309429, 0.336961],
+    [0.285378, 0.298375, 0.316862]],
+  [ // 3.5 m/s
+    [0.287728, 0.303744, 0.327705],
+    [0.285008, 0.297715, 0.316182],
+    [0.282365, 0.291780, 0.304926]],
+  [ // 6 m/s
+    [0.282654, 0.292921, 0.307722],
+    [0.281342, 0.289569, 0.301103],
+    [0.279588, 0.285680, 0.294471]],
+  [ // 10 m/s
+    [0.279771, 0.286565, 0.296133],
+    [0.279119, 0.284482, 0.291899],
+    [0.277801, 0.281591, 0.287209]],
+  [ // 17 m/s
+    [0.278217, 0.282521, 0.289513],
+    [0.277787, 0.281531, 0.286325],
+    [0.276794, 0.279268, 0.282521]],
+  [ // 35 m/s
+    [0.277368, 0.280453, 0.285672],
+    [0.276986, 0.279300, 0.282935],
+    [0.276184, 0.277867, 0.279857]]];
 
 /**
- * The ground's friction (per second) that keeps the average wind at the game's speed, for the recipe's rhythm and
- * gustiness: Sol's offline calibration of the recipe, never measured from the running field. A new recipe needs a new
- * calibration. Provisional: fitted at 6 m/s only (within 0.5% there, at the knots and between them; up to 6% off at
- * 2 m/s and 3.5% at 35), for comparing the looks. The look picked gets a table over speed too.
+ * The ground's friction (per second) that keeps the average wind at the game's speed, for the wind's speed and the
+ * recipe's rhythm and gustiness: an offline calibration of the recipe, never measured from the running field (a new
+ * recipe needs a new one). Between the speeds fitted it goes by the speed's logarithm; beyond them it holds the
+ * nearest. Gustiness 0 is steady at any friction; 0.275 is the engine's own.
  */
-export function friction(rhythm: number, gustiness: number, look: GustLook = 'a'): number {
-  const T = GUST_LOOKS[look].friction, G = [0, 0.5, 0.75, 1];
+export function friction(speed: number, rhythm: number, gustiness: number): number {
+  const G = [0, 0.5, 0.75, 1], g = Math.min(1, Math.max(0, gustiness));
   const at = (row: number[]) => {
-    const i = gustiness <= 0.5 ? 0 : gustiness <= 0.75 ? 1 : 2, v = [0.275, ...row];
-    return v[i] + (v[i + 1] - v[i]) * (gustiness - G[i]) / (G[i + 1] - G[i]);
+    const i = g <= 0.5 ? 0 : g <= 0.75 ? 1 : 2, v = [0.275, ...row];
+    return v[i] + (v[i + 1] - v[i]) * (g - G[i]) / (G[i + 1] - G[i]);
   };
   const q = Math.min(1, Math.max(0, rhythm)) * 2, i = Math.min(1, Math.floor(q));
-  return at(T[i]) + (at(T[i + 1]) - at(T[i])) * (q - i);
+  const table = (T: number[][]) => at(T[i]) + (at(T[i + 1]) - at(T[i])) * (q - i);
+  const S = FRICTION_SPEEDS, last = S.length - 1;
+  if (speed <= S[0]) return table(FRICTION[0]);
+  if (speed >= S[last]) return table(FRICTION[last]);
+  let j = 0;
+  while (speed > S[j + 1]) j++;
+  const f = Math.log(speed / S[j]) / Math.log(S[j + 1] / S[j]);
+  return table(FRICTION[j]) + (table(FRICTION[j + 1]) - table(FRICTION[j])) * f;
 }
 
 /** A seeded random number in [0, 1) for k, one stream per salt (the same hash as sim.c's). */
@@ -152,8 +173,8 @@ interface Gusts { hx: number; hz: number; o: number; speed: number; rhythm: numb
 /** The wind's own state besides the air: what it's easing towards and where its gusts are. Plain data, for saves. */
 export interface WindState {
   tick: number;
-  /** The gusts' seed, and their look (#36, while the developer picks). */
-  seed: number; look: GustLook;
+  /** The gusts' seed. */
+  seed: number;
   goal: Required<WindGoal>;
   speed: number; dirX: number; dirZ: number; gustiness: number; rhythm: number;
   /** The gusts, and those fading in after a turn (with how far they've faded in, 0..1). */
@@ -182,9 +203,8 @@ export interface WindSnapshot extends WindGrid {
 /** A save: the wind's state and its air (about 960 KB over 200 m at 1 m). */
 export interface WindSave { version: 2; state: WindState; air: Float32Array }
 
-/** How the wind is set up besides its goal: the seed its gusts come from (the same seed, the same gusts), and (while
- * the developer picks, #36) their look. */
-export interface WindOptions { seed?: number; look?: GustLook }
+/** How the wind is set up besides its goal: the seed its gusts come from (the same seed, the same gusts). */
+export interface WindOptions { seed?: number }
 
 const smooth = (x: number) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
 const f32 = Math.fround;
@@ -230,7 +250,7 @@ export class WindSim {
     this.x.prepare();
     const g = fullGoal(goal), dirX = Math.cos(g.direction), dirZ = Math.sin(g.direction);
     this.state = {
-      tick: 0, seed: (options.seed ?? 1) >>> 0, look: options.look ?? 'a',
+      tick: 0, seed: (options.seed ?? 1) >>> 0,
       goal: g, speed: g.speed, dirX, dirZ, gustiness: g.gustiness, rhythm: g.rhythm,
       gusts: { hx: dirX, hz: dirZ, o: 0, speed: Math.max(2, g.speed), rhythm: g.rhythm, k: 0, p: 0 }, next: null, fade: 0, sets: 1,
     };
@@ -281,8 +301,8 @@ export class WindSim {
 
   /** A set's usual interval between gusts in seconds (T) and metres (L), its lull floor and peak ceiling. */
   private shape(g: Gusts) {
-    const look = GUST_LOOKS[this.state.look], T = (108 - 48 * g.rhythm) / (6 * look.fronts);
-    return { T, L: look.fronts * g.speed * T, B: look.floor + 0.15 * g.rhythm, H: 1.95 - 0.4 * g.rhythm };
+    const T = (108 - 48 * g.rhythm) / (6 * FRONTS);
+    return { T, L: FRONTS * g.speed * T, B: LULL_FLOOR + 0.15 * g.rhythm, H: 1.95 - 0.4 * g.rhythm };
   }
 
   /** Moves a set's gusts on by a tick: TICK / T intervals past the centre, the whole intervals kept apart. */
@@ -297,10 +317,10 @@ export class WindSim {
     const s = this.state, swell = spellAt(s.tick * TICK, s.seed);
     [s.gusts, s.next ?? s.gusts].forEach((g, slot) => {
       const { T, L, B, H } = this.shape(g);
-      this.x.setGusts(slot, g.hx, g.hz, g.o, L, T, B, H, GUST_LOOKS[s.look].slaps, g.k, g.p);
+      this.x.setGusts(slot, g.hx, g.hz, g.o, L, T, B, H, SLAPS, g.k, g.p);
     });
     this.x.setSeed(s.seed);
-    this.x.setFriction(friction(s.rhythm, s.gustiness, s.look));
+    this.x.setFriction(friction(s.speed, s.rhythm, s.gustiness));
     this.x.setPace(pace(s.speed));
     this.x.force(s.speed, s.dirX, s.dirZ, s.gustiness, swell, 0.7 + 0.3 * swell, s.next ? smooth(s.fade) : 0);
   }

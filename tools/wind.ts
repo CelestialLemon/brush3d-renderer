@@ -6,7 +6,7 @@
 // 2. Save and restore: a restored wind carries on bit for bit as the one it was saved from.
 // 3. Steady: gustiness 0 in open air settles to the goal everywhere, and stays there.
 // 4. The average: in open air the ground wind averages to the game's speed (Sol's calibration of the gusts, #36), for the
-//    rhythm's ends and middle at 6 m/s and each look of the gusts, and at a light wind, a strong one and a hurricane.
+//    rhythm's ends and middle at 6 m/s, and at a light wind, a strong one and a hurricane.
 // 5. Shelter: behind a single dense hedge, 2.5 m tall, across a steady 6 m/s wind, the wind is cut and comes back over
 //    about 25 hedge heights (docs/WIND.md has the curve and why).
 // 6. The game's side (client.ts), with stand-ins for the worker, a quick one and a slow one: the same calls give the
@@ -16,7 +16,7 @@
 // 8. Speed: a tick of the farm at 1 m, in a breeze and in a hurricane, the cost the game pays in its worker (reported,
 //    and failed only if far too slow, or if the air hit its safety bounds).
 // Exits with 1 if any of them is off by more than its tolerance.
-import { DRAG, TICK, WindSim, windAt, type GustLook, type Obstacle, type WindGoal, type WindGrid, type WindSnapshot } from '../src/wind/sim.ts';
+import { DRAG, TICK, WindSim, windAt, type Obstacle, type WindGoal, type WindGrid, type WindSnapshot } from '../src/wind/sim.ts';
 import { WindWorker, type WindPort } from '../src/wind/client.ts';
 import { windHost, type WindReply } from '../src/wind/host.ts';
 
@@ -74,9 +74,9 @@ console.log('Replay and saves (the farm, gusty, with a turn)');
  * time, after a warm-up. Gusts are a random sequence, so a short stretch can be well off the average; five minutes take
  * in a couple of gusty and quiet spells (Sol's calibration ran an hour a setting: docs/WIND.md).
  */
-function openMean(goal: WindGoal, look: GustLook = 'a', warm = 60, seconds = 300) {
+function openMean(goal: WindGoal, warm = 60, seconds = 300) {
   const grid = { nx: 120, nz: 40, cell: 1, x0: -60, z0: -20 };
-  const sim = new WindSim(grid, [], { ...goal, direction: 0 }, { look });
+  const sim = new WindSim(grid, [], { ...goal, direction: 0 });
   run(sim, warm);
   let sum = 0, n = 0, low = Infinity, high = 0;
   for (let t = 0; t < Math.round(seconds / TICK); t++) {
@@ -93,27 +93,24 @@ function openMean(goal: WindGoal, look: GustLook = 'a', warm = 60, seconds = 300
 // 3. Steady.
 console.log('Steady and the average (open air)');
 {
-  const m = openMean({ speed: 6, direction: 0.55, gustiness: 0 }, 'a', 30, 5);
+  const m = openMean({ speed: 6, direction: 0.55, gustiness: 0 }, 30, 5);
   check('gustiness 0 is steady at the goal', m.high - m.low < 0.02 && Math.abs(m.mean - 6) < 0.05,
     `${m.low.toFixed(3)} to ${m.high.toFixed(3)} m/s, mean ${m.mean.toFixed(3)} (goal 6)`);
 }
 
-// 4. The average: within 2% at 6 m/s (where it's calibrated, within 0.5% over an hour), 6% at the light and strong winds
-// (the provisional calibration is 6 m/s only: up to 6% off at 2 m/s, 3.5% at 35, until the look picked is fitted over
-// speed too).
-for (const [goal, tolerance, look] of [
-  [{ speed: 6, direction: 0.55, gustiness: 0.5, rhythm: 0.5 }, 0.02],
-  [{ speed: 6, direction: 0.55, gustiness: 1, rhythm: 0 }, 0.02],
-  [{ speed: 6, direction: 0.55, gustiness: 1, rhythm: 1 }, 0.02],
-  [{ speed: 6, direction: 0.55, gustiness: 1, rhythm: 0.5 }, 0.02, 'b'],
-  [{ speed: 6, direction: 0.55, gustiness: 1, rhythm: 0.5 }, 0.02, 'c'],
-  [{ speed: 2, direction: 2, gustiness: 0.5, rhythm: 0.5 }, 0.06],
-  [{ speed: 14, direction: -1, gustiness: 0.5, rhythm: 0.5 }, 0.06],
-  [{ speed: 35, direction: 0.8, gustiness: 1, rhythm: 0.5 }, 0.06],
-] as [WindGoal, number, GustLook?][]) {
-  const m = openMean(goal, look), off = m.mean / goal.speed - 1;
-  check(`the average at ${goal.speed} m/s, gusts ${goal.gustiness}, rhythm ${goal.rhythm}${look ? `, look ${look}` : ''}`, Math.abs(off) <= tolerance,
-    `${m.mean.toFixed(3)} m/s (${(100 * off).toFixed(1)}%, at most ${100 * tolerance}%), from ${m.low.toFixed(1)} to ${m.high.toFixed(1)}`);
+// 4. The average: within 2% over these five minutes (the calibration holds it within 0.2% over half an hour: docs/WIND.md),
+// at the rhythm's ends and middle, and from a light wind to a hurricane.
+for (const goal of [
+  { speed: 6, direction: 0.55, gustiness: 0.5, rhythm: 0.5 },
+  { speed: 6, direction: 0.55, gustiness: 1, rhythm: 0 },
+  { speed: 6, direction: 0.55, gustiness: 1, rhythm: 1 },
+  { speed: 2, direction: 2, gustiness: 0.5, rhythm: 0.5 },
+  { speed: 14, direction: -1, gustiness: 0.5, rhythm: 0.5 },
+  { speed: 35, direction: 0.8, gustiness: 1, rhythm: 0.5 },
+] as WindGoal[]) {
+  const m = openMean(goal), off = m.mean / goal.speed - 1;
+  check(`the average at ${goal.speed} m/s, gusts ${goal.gustiness}, rhythm ${goal.rhythm}`, Math.abs(off) <= 0.02,
+    `${m.mean.toFixed(3)} m/s (${(100 * off).toFixed(1)}%, at most 2%), from ${m.low.toFixed(1)} to ${m.high.toFixed(1)}`);
 }
 
 // 5. Shelter behind a hedge: Sol's single hedge (round 6), the ground wind at hedge heights H downwind, over the goal.
