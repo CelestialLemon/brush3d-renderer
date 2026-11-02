@@ -181,6 +181,20 @@ The game gives the renderer, every frame, the wind client's last two snapshots a
   of before is gone. The small quick swirls the wind's 1 m grid can't carry are added as shoves into each spring, as strong
   as the game's gustiness: at gustiness 0 a tree leans and holds still. The springs are the developer's pick, 'stiff' (#40):
   trees settle within a few swings. About 0.5 ms of the main thread a frame for the farm's 174 trees.
+- **Fresh dust** (`src/renderer/dust.ts`). In a dust storm, and only then, the gusts lift dust off bare, dry ground in
+  puffs. The rule is the developer's (2026-11-02): never on an ordinary dry, windy day, and a minor storm can come in a gale.
+  The storm is the weather's dust haze: half strength at a thin haze, full from a haze of 0.25, none once it has thinned
+  away. The game gives the renderer its map of where dust can lift, `renderer.setDustSource({ nx, nz, cell, x0, z0, lift,
+  ground })`: a grid of how readily each cell gives up dust (0 grass, crops, water, wet soil; 1 bare, dry earth) and the
+  ground's height. Send a new map when the ground wets or dries. The demo's map is the farm's tracks and the shed's porch,
+  less as rain or snow wets them.
+  The ground air lifts dust where it's over 5.5 m/s and over 1.1 times the day's average, so it's the gusts that lift it,
+  a bigger puff in a stronger gust. The dust is carried downwind at 0.6 times the ground air's speed, rises from 0.5 m to
+  at most 4 m, and fades to a third over 5 s. It's the renderer's own motion, which no game logic reads, stepped a tick
+  of the game's wind at a time: it holds still while the game is paused. The post pass draws it as a layer
+  of depth, read along each pixel's view. Its cost: none while there's no storm and no dust left up. In a storm, up to
+  about 1.2 ms of the main thread per wind tick (10 a second), 200 m at 1 m, on a Ryzen 5 1600, and about 0.2 ms of the
+  GPU a frame at 1080p.
 - **Steady is steady.** With gustiness 0 the map is the goal everywhere (but in shelter), so nothing gusts.
 - **The haze's patches** (fog and dust) are laid along the wind and drift with it. When the wind turns more than 25° from
   them, or strengthens or slackens enough to stretch or shrink them by 30%, a new set is laid along the wind as it is and fades

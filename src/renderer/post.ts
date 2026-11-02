@@ -51,6 +51,15 @@ uniform vec3 uDust;
 // The wind as a whole (the gusts are in its map: see WIND_GLSL).
 uniform float uWindSpeed;
 uniform vec2 uWindDir;
+// Fresh dust (#36, dust.ts): its field at the wind's last two ticks (the optical depth, the ground's height, the dust's
+// top), the frame's share of the way between them, where it lies (its corner, 1 over its size), whether there's any, and
+// its colour as lit.
+uniform sampler2D tDustA;
+uniform sampler2D tDustB;
+uniform float uDustBlend;
+uniform vec4 uDustGrid;
+uniform float uDustOn;
+uniform vec3 uDustColor;
 // The heat's shimmer (#9): x how far it shifts the picture (pixels), y the time (seconds).
 uniform vec2 uShimmer;
 varying vec2 vUv;
@@ -126,6 +135,30 @@ float fogAt(vec3 p) {
   return FOG_MAX * (1.0 - exp(-sum * dy / uFog.w * uFog.x * FOG_DENSITY * fogDust(p.xz)));
 }
 
+// Fresh dust: how much of a surface it hides. Summed along the view's path up out of the dust from the surface, in a few
+// steps, each reading the field where the path is then: a puff is a column over the ground, thick up to its top and
+// thinning over the top half metre, so it veils what's behind and below it and has depth as the view looks through it.
+const float DUST_REACH = 4.5;
+const float DUST_MAX = 0.8;
+vec3 dustField(vec2 xz) {
+  vec2 uv = (xz - uDustGrid.xy) * uDustGrid.zw;
+  if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec3(0.0);
+  return mix(texture2D(tDustA, uv).xyz, texture2D(tDustB, uv).xyz, uDustBlend);
+}
+float freshDust(vec3 p) {
+  if (uDustOn <= 0.0) return 0.0;
+  vec3 back = -uCamFwd;
+  const int STEPS = 5;
+  float dy = DUST_REACH / float(STEPS), sum = 0.0;
+  for (int i = 0; i < STEPS; i++) {
+    float y = p.y + (float(i) + 0.5) * dy;
+    vec3 f = dustField((p + back * ((y - p.y) / back.y)).xz);
+    float depth = max(f.z - f.y, 0.1);
+    sum += f.x / depth * clamp((f.z - y) / 0.5 + 0.5, 0.0, 1.0) * step(f.y - 0.3, y);
+  }
+  return DUST_MAX * (1.0 - exp(-sum * dy / back.y));
+}
+
 // Laid over a colour: a veil of its colour, with a trace of the paint's own colour given back over it at the veil's
 // lightness. The developer's pick (#9, 'tint'): the fog drains colour, as fog does, but the land under it isn't flat
 // grey. A plain veil drained it all; giving back more (0.3, 0.6) read less like fog.
@@ -191,6 +224,9 @@ void main() {
     fog = fogAt(worldAt(uv, d));
     c = fogOver(c, fog);
   }
+
+  // Fresh dust, lifted by the gusts: over the fog, a veil of the earth's colour.
+  if (!sky && uDustOn > 0.0) c = mix(c, uDustColor, freshDust(worldAt(uv, d)));
 
   // Haze: the hour's air over everything, thickening with distance past the camera's target.
   if (!sky) {

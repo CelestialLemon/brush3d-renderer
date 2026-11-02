@@ -145,11 +145,29 @@ function driftAt(time: number): CloudDrift {
   Object.assign(drift, v, { at: time });
   return { x: drift.x, z: drift.z, vx: drift.vx, vz: drift.vz };
 }
+/**
+ * Where dust can lift (#36): the game's map, which the demo makes from the scene's bare ground (the tracks, the porch),
+ * none where it's wet. Sent again when the rain or snow changes.
+ */
+const DUST_GRID = { nx: 200, nz: 200, cell: 1, x0: -100, z0: -100 };
+const bare = new Float32Array(DUST_GRID.nx * DUST_GRID.nz), groundY = new Float32Array(bare.length);
+for (let j = 0; j < DUST_GRID.nz; j++) for (let i = 0; i < DUST_GRID.nx; i++) {
+  const x = DUST_GRID.x0 + i + 0.5, z = DUST_GRID.z0 + j + 0.5;
+  bare[j * DUST_GRID.nx + i] = scene.bare(x, z); groundY[j * DUST_GRID.nx + i] = scene.height(x, z);
+}
+let dustWet = -1;
+function dustSource(wet: number) {
+  if (Math.abs(wet - dustWet) < 0.02) return;
+  dustWet = wet;
+  const dry = Math.max(0, 1 - 2 * wet);
+  renderer.setDustSource({ ...DUST_GRID, lift: bare.map((b) => b * dry), ground: groundY });
+}
 /** The weather last sent, which each tick sends again with the clouds' drift. */
 let sent: Weather = weather;
 /** Sends the weather as the game does, the clouds' drift and seed with it. */
 function send(w: Weather, immediate = false, time = lastTime) {
   sent = { ...w };
+  dustSource(Math.max(w.rain ?? 0, w.snow ?? 0));
   renderer.setWeather({ ...w, drift: driftAt(time), cloudSeed }, immediate);
 }
 let lastTime = 0;
@@ -345,7 +363,7 @@ if (params.has('shot')) {
   let windAt = -WIND_TICK, windStart: Promise<WindSave> | null = null, windKey = JSON.stringify(windGoal());
   const windTo = async (time: number, goal: WindGoal, ease: boolean) => {
     const key = JSON.stringify(goal);
-    if (key !== windKey && !ease) { living.dispose(); living = newWind(); windStart = null; windAt = -WIND_TICK; renderer.wind.restart(); renderer.trees.restart(); }
+    if (key !== windKey && !ease) { living.dispose(); living = newWind(); windStart = null; windAt = -WIND_TICK; renderer.wind.restart(); renderer.trees.restart(); renderer.dust.restart(); }
     windKey = key;
     windStart ??= living.save();
     const start = await windStart;
