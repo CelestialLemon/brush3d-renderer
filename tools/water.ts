@@ -98,6 +98,25 @@ check('water reaches the grid\'s edge', box.min.x === map.x0 && box.max.x === ma
 const before = field.a;
 field.set({ nx: 3, nz: 2, cell: 1, x0: 0, z0: 0, level: new Float32Array(6).fill(1) }, 13);
 check('a new grid, new textures at its size', field.a !== before && field.a.image.width === 3 && field.a.image.height === 2);
+// Draining away entirely, and coming back: whatever's drawn on the way (not sunk past the discard) stays in its bounds.
+const inBounds = (f: WaterField) => {
+  const A = f.a.image.data as Float32Array, B = f.b.image.data as Float32Array;
+  let ok = true;
+  for (const t of [0, 0.01, 0.02, 0.05, 0.1, 0.3, 0.6, 0.9, 0.97, 1]) {
+    for (let i = 0; i < A.length; i += 4) {
+      const y = A[i] + (B[i] - A[i]) * t, m = A[i + 3] + (B[i + 3] - A[i + 3]) * t;
+      if (m >= -0.15 && (y < f.low - 1e-4 || y > f.high + 1e-4)) ok = false;
+    }
+  }
+  return ok;
+};
+const allDry = { ...map, level: new Float32Array(nx * nz).fill(NaN) };
+field.set(b, 20, 0);
+field.set(allDry, 21, 1);
+check('drained away, it sinks out of sight within its bounds', inBounds(field) && field.any);
+field.set(allDry, 23, 0);
+field.set(a, 24, 1);
+check('coming back, it rises into sight within its bounds', inBounds(field) && field.any);
 field.set(null, 14);
 check('taken away', !field.any && field.grid.w === 0 && field.floor === null);
 

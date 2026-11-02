@@ -52,7 +52,8 @@ float waterTop(vec2 xz) {
   if (uWaterGrid.w < 0.5) return -1.0e6;
   vec2 g = (xz - uWaterGrid.xy) * uWaterGrid.z - 0.5;
   ivec2 n = textureSize(tWaterA, 0);
-  if (g.x < -1.0 || g.y < -1.0 || g.x > float(n.x) || g.y > float(n.y)) return -1.0e6;
+  // Off the sheet (which reaches the grid's edge, half a cell past the edge cells' centres).
+  if (g.x < -0.5 || g.y < -0.5 || g.x > float(n.x) - 0.5 || g.y > float(n.y) - 0.5) return -1.0e6;
   vec2 i = floor(g), f = g - i;
   ivec2 c = ivec2(i);
   float a = waterCell(c).x, b = waterCell(c + ivec2(1, 0)).x, d = waterCell(c + ivec2(0, 1)).x, e = waterCell(c + ivec2(1, 1)).x;
@@ -182,16 +183,22 @@ export class WaterField {
       for (let i = 0; i < data.length; i++) data[i] = from.data[i] + (to.data[i] - from.data[i]) * b;
       const dist = new Uint8Array(from.dist.length);
       for (let i = 0; i < dist.length; i++) dist[i] = b < 1 ? Math.min(from.dist[i], to.dist[i]) : to.dist[i];
-      const wet = [from, to].filter((l) => l.mid !== null);
+      const wet = (b < 1 ? [from, to] : [to]).filter((l) => l.mid !== null);
       this.from = {
         data, dist, low: Math.min(...wet.map((l) => l.low)), high: Math.max(...wet.map((l) => l.high)),
         mid: wet.length ? (to.mid ?? from.mid) : null,
       };
     }
-    this.to = laid;
+    // Water drained away, or coming where there was none, eases to (or from) itself sunk under the land, as a drying
+    // shore does: never to the depths a map with no water at all lies at.
+    if (ease > 0 && laid.mid === null && this.from.mid !== null) this.to = { ...laid, data: sunk(this.from.data) };
+    else {
+      if (ease > 0 && laid.mid !== null && this.from.mid === null) this.from = { ...this.from, data: sunk(laid.data) };
+      this.to = laid;
+    }
     this.start = time; this.ease = ease;
     this.upload(this.a, this.from.data);
-    this.upload(this.b, laid.data);
+    this.upload(this.b, this.to.data);
     this.grid.set(this.x0, this.z0, 1 / this.cell, 1);
     this.mirror = laid.mid ?? this.from.mid ?? 0;
     this.floor = laid.mid === null ? null : laid.low;
@@ -272,4 +279,11 @@ export class WaterField {
 /** A float texture of the water's cells (RGBA per cell), read texel by texel. */
 function cellTexture(nx: number, nz: number) {
   return new THREE.DataTexture(new Float32Array(nx * nz * 4), nx, nz, THREE.RGBAFormat, THREE.FloatType);
+}
+
+/** The water laid out, sunk as far as the sheet ever dives, where it isn't drawn. */
+function sunk(data: Float32Array) {
+  const out = data.slice();
+  for (let i = 0; i < out.length; i += 4) { out[i] -= MAX_DIVE; out[i + 3] = -MAX_DIVE; }
+  return out;
 }
