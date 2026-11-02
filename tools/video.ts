@@ -1,6 +1,7 @@
 // Records the camera moving as a video, to judge motion by eye: crawl, shimmer and popping show only in moving pictures.
 //   node tools/video.ts [out-dir] [move ...]      moves: pan, pan-wide, pan-up, turn, zoom, wind (default: all but the
 //   wind strengths), wind-calm, wind-breeze, wind-gale, wind-storm, wind-hurricane, wind-ramp (calm to hurricane and back),
+//   gusts (twenty seconds held still and wider, to see the gusts come and go; QUERY="gusts=b&wind=gale"),
 //   weather-ramp (clear to overcast and back, sent in steps as the game sends it), weather-snap (the same, the cover
 //   jumping clear, overcast, clear: what the ease has to hide), clouds (the clouds drifting, the camera still),
 //   clouds-views (the same in each view in turn), clouds-ramp (the cover rising, zoomed out), mirror-stream and
@@ -48,6 +49,8 @@ const MOVES: Record<string, Move> = {
   wind: { seconds: 5, at: () => STILL },
   // The camera still, at each strength of wind; and the wind rising from calm to a hurricane and dying down again.
   ...Object.fromEntries(Object.entries(STRENGTHS).map(([k, v]) => [`wind-${k}`, { seconds: 5, at: () => STILL, wind: () => v, extra: true }])),
+  // Twenty seconds of the gusts going by, held still and wider: long enough to see them come and go (#36).
+  gusts: { seconds: 20, at: () => ({ x: -4, z: 4, zoom: 26, view: 0 }), extra: true },
   'wind-ramp': { seconds: 16, at: () => STILL, wind: (t) => 35 * Math.sin(Math.min(1, t / 14) * Math.PI), ease: true, extra: true },
   // The cover rising from clear to overcast over 6 s, held, and clearing again, at the game's ticks.
   'weather-ramp': { seconds: 16, at: () => STILL, cloud: (t) => Math.sin(Math.min(1, tick(t) / 14) * Math.PI) ** 0.5, ease: true, extra: true },

@@ -7,7 +7,9 @@ renderer draws only what it's given: the same snapshots. There's no three.js in 
 ## In plain words
 
 Think of the open sky as a conveyor belt of gusts: a pattern of stronger and weaker wind laid along the wind's
-direction and carried with it (the *recipe*). Under it lies a sheet of air a couple of metres deep, a cell a metre
+direction and carried with it (the *recipe*). No two gusts are alike: each has its own strength, length, build-up and
+dying away, the gaps between them vary, and the whole swells and eases over gusty and quiet minutes. It's a random
+sequence fixed by a seed, so the same seed gives the same gusts. Under it lies a sheet of air a couple of metres deep, a cell a metre
 square. The sky reaches down into that sheet and drags it along, hardest in a gust. After that the sheet's air lives
 its own life. It flows round a shed, is slowed and thinned through a hedge or an orchard row, and is held back by the
 ground. Where two gusts meet it piles up and spills sideways.
@@ -26,7 +28,8 @@ memory says the air is sheltered, it keeps more of the calm.
 ```ts
 import { WindWorker } from './wind/client';
 const wind = new WindWorker(new Worker(new URL('./wind/worker.ts', import.meta.url), { type: 'module' }),
-  { nx: 200, nz: 200, cell: 1, x0: -100, z0: -100 }, obstacles, { speed: 6, direction: 0.5, gustiness: 0.5, rhythm: 0.5 });
+  { nx: 200, nz: 200, cell: 1, x0: -100, z0: -100 }, obstacles, { speed: 6, direction: 0.5, gustiness: 0.5, rhythm: 0.5 },
+  { seed: 1 });                                         // which gusts: the same seed, the same gusts
 wind.setGoal({ speed, direction, gustiness, rhythm });  // what the game wants; it eases there over a few seconds
 wind.advance(gameSeconds);                               // each frame, by game time (none while paused)
 wind.at(x, z, height);                                   // m/s along x and z, between the last two ticks
@@ -38,7 +41,8 @@ wind.restore(save);                                      // carries on from it, 
 - **Goal.** `speed` is the average at ground level, m/s; gusts go above it and lulls below, and they average out to it.
   `direction` is where the wind blows towards, radians from +x towards +z. `gustiness` runs from 0 (truly steady) to
   1. `rhythm` runs from 0 (rare, strong gusts) to 1 (frequent, mild ones), with the same average either way; it starts
-  in the middle (the developer's call). Speeds above `MAX_SPEED` (60 m/s) are taken as 60.
+  in the middle (the developer's call). It sets the usual time between gusts, the same at any speed: 24, 19 and 13 s
+  apart at 0, 0.5 and 1 in look A (B 18, 14, 10; C 15, 12, 8), each gap 0.4 to 1.6 of that. Speeds above `MAX_SPEED` (60 m/s) are taken as 60.
 - **Obstacles** are shapes in world metres: a circle, a strip (from a to b, so wide) or a turned box. Each is either
   `solid: true` with a height (the wind goes round it; one lower than 2 m is blown over and slows the air instead) or
   has a `drag` per second (`DRAG.hedge` 8, `DRAG.crown` 4.4, `DRAG.railFence` 0.4). The scenes list theirs as
@@ -51,7 +55,9 @@ wind.restore(save);                                      // carries on from it, 
 - **Snapshots** hold the grid, the tick, the ground air's velocity (`u`, `v`), the shelter memory (`k`) and the free air
   at ground scale (`fu`, `fv`), cell by cell with x fastest. `windAt(snap, x, z, height)` reads one in the game's own
   code, with no worker, for example in a test.
-- **Saves.** `WindSim.save()` holds the eased state, the gusts' travel and the air (about 960 KB over 200 m at 1 m).
+- **Saves.** `WindSim.save()` holds the eased state, the seed, where each set of gusts is in its sequence, and the air
+  (about 960 KB over 200 m at 1 m). The gusty and quiet spells run on the wind's own clock (its tick), so they need
+  nothing more.
   `restore` carries on bit for bit as if it had never stopped. Through the worker: `WindWorker.save()` and `restore()`
   (a restore drops the ticks not yet stepped).
 - **Determinism.** The same obstacles, goals and ticks give the same wind, bit for bit. The engine (`sim.c`, WebAssembly,
@@ -70,9 +76,11 @@ Per tick:
 
 1. **Ease** speed, gustiness and rhythm towards the goal, 1 − e^(−0.1/1.5) of the gap a tick, and turn the direction the
    short way at 0.7 times that rate.
-2. **Recipe.** The gusts are a pattern laid along a heading that travels with the wind. A turn of more than 25° from
-   the gusts' heading lays a new set along the new heading. That set fades in over 6 s while the old one fades out, so
-   nothing swings round the map.
+2. **Recipe.** The gusts are a seeded sequence laid along a heading that travels with the wind (below). A turn of more
+   than 25° from the gusts' heading, or a wind asked to blow 20% faster or slower than the set was laid for, or its
+   rhythm moved by more than 0.1, lays a new set for the wind asked for. That set fades in over 6 s while the old one
+   fades out, so nothing swings round the map or stretches. The new set carries on the same sequence from where the old
+   one is at the world's centre.
 3. **Engine.** The air is an isothermal compressible sheet (pressure speed 7 m/s; pile-ups relax back over 0.5 s),
    moved with limited second-order fluxes (Rusanov, MC limiter, two-stage Runge–Kutta) in at least 5 substeps. The
    sky's reach is K = 0.15 + 2·e, where e is how hard the recipe gusts at that cell, times the shelter memory k. It pulls
@@ -91,19 +99,47 @@ gusts takes up to 65 substeps (128 at most; air faster than that allows would be
 below 6 m/s the physics is as calibrated; a breeze with strong gusts may take a sixth or seventh substep where its
 peaks ask for one, and is otherwise the same to the bit.
 
-## Calibration (Sol's rounds 4–6, checked by `npm run test:wind`)
+### The gusts (#36, Sol's research and the developer's choices)
+
+The world along the wind is cut into *intervals*, each holding one gust and the lull around it. An interval is
+usually T = (108 − 48·rhythm) / (6·fronts) seconds long (fronts: how fast the gusts travel against the wind, 0.75, 1
+or 1.2 by look), its edges each moved up to 0.3 of that either way, so gaps run 0.4 to 1.6 of T. On the ground it's
+fronts × speed × T metres long (at least 2 m/s worth), since the gusts travel with the wind. Each interval's gust,
+from a hash of the seed and its number:
+
+- **Strength**: a peak between 0.55 and 1 of the way from the average to the ceiling H = 1.95 − 0.4·rhythm; one
+  interval in six is a quiet one, its gust barely there, so the gusts don't come like clockwork.
+- **Lull**: down to the floor B (0.38, 0.16 or 0.28 by look, + 0.15·rhythm), now and then shallower.
+- **Length**: what balances the peak against the lull over the interval, so a long interval holds a long push and a
+  long lull, both at full strength. Balanced over every interval, the recipe's mean is exactly 1 whatever the draw
+  (Sol's finding: balancing only on average let one stretch of gusts run several per cent off another).
+- **Build-up**: 1 to 2 s, or, for one gust in 25 (one in 10 in look C), a 0.3 s slap. Dying away: 1 to 2.5 s.
+- **Tilt**: some hit hardest at first and ease off, some build through, some hold.
+
+Along each front the strength varies (0.65 to 1) and the front bends a few metres, as before.
+
+**Spells**: on the wind's clock, blocks of 120 to 240 s (seeded), each a gusty half and a quiet half. The gusts' strength
+goes from 0.4 (quiet) to 1 (gusty), and the average from 0.97 to 1.03 of the goal, balanced over each block.
+
+Gusts are measured in seconds, not metres, so a storm's gusts build as slowly as a breeze's (in metres, every storm gust
+slapped in under half a second). The ground air takes its own time to pick a gust up, though: in a breeze a 1–2 s
+build reads as 2–3 s on the ground, and a 0.3 s slap is hardly quicker than an ordinary gust there; above about 15 m/s
+the slaps stand out (Sol's round 2).
+
+## Calibration (Sol's rounds 4–6, and the gusts' provisional fit, checked by `npm run test:wind`)
 
 | What | Value |
 |---|---|
-| Open-air average, 6 m/s (gustiness 0.5–1, rhythm 0, 0.5, 1) | within 1% of the goal over whole repeats of the gusts |
-| … at 2, 14 and 35 m/s | within 1% |
-| Gust contrast (spread of the ground's speed against the recipe's) | 1.08–1.11 |
+| Open-air average, 6 m/s (each look, gustiness 0.5–1, rhythm 0–1, at the fit's knots and between) | within 0.35% of the goal over an hour, with a seed the fit never saw |
+| … at 2, 17 and 35 m/s (provisional: fitted at 6 only) | 4–6% over, 1.5% under, 2% under |
 | Steady (gustiness 0) | the goal exactly, everywhere |
 | Shelter behind a single dense hedge, 2.5 m, steady 6 m/s | 0.34, 0.41, 0.61, 0.89 of the open wind at 1, 4, 10, 25 H |
-| A tick, 200 m at 1 m, on the developer's machine | about 12 ms in a breeze, 60 ms in a hurricane with full gusts |
+| A tick, 200 m at 1 m, on the developer's machine | about 12 ms in a breeze, 50 ms in a hurricane with full gusts |
 
-The ground's friction (`friction(rhythm, gustiness)` in `sim.ts`) is Sol's offline fit of the recipe that keeps the
-average on the goal. A new recipe needs a new fit, and the look PR's gust shapes will need one.
+The ground's friction (`friction(rhythm, gustiness, look)` in `sim.ts`) is an offline fit of the recipe that keeps the
+average on the goal; a new recipe needs a new fit. The gusts' fit is provisional: at 6 m/s only, for comparing the looks.
+In seconds rather than metres, a gust is a different shape to the engine at each speed, so one fit doesn't hold at
+every speed (Sol's round 2: up to 6% over at 2 m/s, 3.5% under at 35). The look picked gets a table over speed as well.
 
 Reading the shelter numbers: real windbreaks measured in the field (Hagen) are about 0.54 at 1 H, 0.26 at 4 H and 0.95
 at 25 H for a medium-dense hedge. Ours is calmer right behind the hedge and comes back a little sooner. That's the dense
@@ -113,9 +149,10 @@ hedge (drag 8/s), and hedge density is a gameplay choice deferred until a mechan
 
 - **The height rule is approximate.** Sol proposed an optional carried "height" memory if crowns and rotors need more.
 - **The shelter memory doesn't recover in dead calm** (it grows back per metre travelled). Sol's restart test was fine.
-- **The recipe's pattern scale changes with the rhythm** (rare gusts are 108 m apart, frequent ones 36 m). It's a
-  placeholder until the look PR picks the gust shapes, the lull depth and the fronts' speed.
-- **Peaks in a hurricane with full gusts reach about 95 m/s at the ground** (2.7 times the average, as in a breeze).
+- **Slaps in a breeze.** The ground air smooths a 0.3 s slap to about 2 s below about 10 m/s. Making it sudden there
+  would mean letting the sky reach down faster as a gust arrives, which touches the average and the shelter.
+- **Peaks at full gusts reach about twice the average at the ground** (2.3 times with rare gusts, 1.7 with frequent
+  ones; about 65 m/s in a 35 m/s hurricane, 104 in a 60 m/s storm).
   Gameplay that breaks things in the wind should decide what it reads.
 
 ## How the renderer draws it

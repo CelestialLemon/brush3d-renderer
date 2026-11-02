@@ -1,10 +1,10 @@
-import { WindSim, type WindGoal, type WindGrid, type Obstacle, type WindSave, type WindSnapshot } from './sim.ts';
+import { WindSim, type WindGoal, type WindGrid, type Obstacle, type WindOptions, type WindSave, type WindSnapshot } from './sim.ts';
 
 // What the wind's worker does with each message (#36), apart from the worker itself so it can be run without one (the
 // checks in tools/wind.ts do). Messages are taken in order: the same messages give the same wind.
 
 export type WindRequest =
-  | { type: 'init'; grid: WindGrid; obstacles: Obstacle[]; goal: WindGoal }
+  | { type: 'init'; grid: WindGrid; obstacles: Obstacle[]; goal: WindGoal; options?: WindOptions }
   | { type: 'goal'; goal: WindGoal }
   | { type: 'step'; ticks: number }
   | { type: 'save' }
@@ -26,7 +26,7 @@ export function windHost(post: (reply: WindReply, transfer: Transferable[]) => v
   };
   return (m: WindRequest) => {
     if (m.type === 'init') {
-      sim = new WindSim(m.grid, m.obstacles, m.goal);
+      sim = new WindSim(m.grid, m.obstacles, m.goal, m.options);
       const o = sim.obstacles();
       post({ type: 'obstacles', ...o }, [o.solid.buffer, o.drag.buffer]);
       send(0);

@@ -1,4 +1,4 @@
-import { TICK, windBetween, type Obstacle, type WindGoal, type WindGrid, type WindSave, type WindSnapshot } from './sim.ts';
+import { TICK, windBetween, type Obstacle, type WindGoal, type WindGrid, type WindOptions, type WindSave, type WindSnapshot } from './sim.ts';
 import type { WindReply, WindRequest } from './host.ts';
 
 // The game's side of the wind worker (#36): it keeps the game's clock for the wind, asks the worker for a tick every
@@ -43,11 +43,11 @@ export class WindWorker {
 
   private readonly worker: WindPort;
 
-  /** `worker` runs worker.ts (made by the caller, as its bundler wants). */
-  constructor(worker: WindPort, grid: WindGrid, obstacles: Obstacle[], goal: WindGoal) {
+  /** `worker` runs worker.ts (made by the caller, as its bundler wants); `options` (the gusts' seed) as WindSim takes. */
+  constructor(worker: WindPort, grid: WindGrid, obstacles: Obstacle[], goal: WindGoal, options: WindOptions = {}) {
     this.worker = worker;
     worker.onmessage = (e) => this.receive(e.data);
-    worker.postMessage({ type: 'init', grid, obstacles, goal });
+    worker.postMessage({ type: 'init', grid, obstacles, goal, options });
   }
 
   private receive(m: WindReply) {
