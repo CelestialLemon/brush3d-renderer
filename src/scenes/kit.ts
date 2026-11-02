@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { MeshBuilder, noise2, srgb, type Paint } from './builder';
 import { DRAG, type Obstacle } from '../wind/sim';
+import { TREE_BEND, type TreeKind, type TreeSpec } from '../renderer/trees';
 
 // The pieces scenes are built from: the palette, trees, stones, grass, reeds, and lines on the map (streams, paths, fences).
 // Every piece stands on a Ground, so any scene's land can carry them.
@@ -45,7 +46,7 @@ export function addDab(b: MeshBuilder, p: THREE.Vector3, n: THREE.Vector3, c: TH
   b.quad(i0, i0 + 1, i0 + 2, i0 + 3);
 }
 
-export type TreeKind = 'broadleaf' | 'fruit' | 'cypress' | 'round' | 'bush';
+export type { TreeKind };
 
 export interface Tree {
   kind: TreeKind; x: number; z: number; seed: number;
@@ -201,13 +202,19 @@ export function growTree(wood: MeshBuilder, leaves: MeshBuilder, ground: Ground,
       addDab(leaves, p, dir, fc, (0.1 + rand() * 0.04) * Math.min(1.2, dabScale), rand(), [0.2, 1, -1, 0.5]);
     }
   }
-  // In the wind the crown moves as one piece (see treeWind), and the wood bends into it from the foot: by the square of the
-  // height up to where the crown starts (most of its strokes above), and the limbs in the crown moving with it.
+  // In the wind the tree bends from its foot, its top furthest (see TreeSprings): the wood by the square of the height up to
+  // where the crown starts (most of its strokes above), the crown riding on it, and bending with it as far as its kind's
+  // TREE_BEND says (a cypress all the way, a whip; an orchard bush hardly, a ball on a stub).
   const ys = leaves.heightsSince(leaves0).sort((a, b) => a - b);
   const height = Math.max(ys[ys.length - 1], ...wood.heightsSince(wood0)) - y0;
-  const crown = Math.max(ys[Math.floor(ys.length * 0.1)] - y0, height * 0.2);
-  wood.markTree(wood0, t.x, t.z, height, (y) => Math.min(Math.max(y - y0, 0) / crown, 1) ** 2);
-  leaves.markTree(leaves0, t.x, t.z, height);
+  const crown = Math.max(ys[Math.floor(ys.length * 0.1)] - y0, height * 0.2), bend = TREE_BEND[t.kind];
+  const share = (y: number) => {
+    const h = Math.max(y - y0, 0);
+    return Math.min(h / crown, 1) ** 2 * (1 - bend) + Math.min(h / height, 1) ** 2 * bend;
+  };
+  const spec: TreeSpec = { x: t.x, z: t.z, height, kind: t.kind, scale: s };
+  wood.markTree(wood0, spec, share);
+  leaves.markTree(leaves0, spec, share);
 }
 
 /** A stone: a lumpy, flattened ball, sunk partway into the ground, mossy on top when it's dry. */

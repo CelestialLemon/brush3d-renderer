@@ -157,7 +157,8 @@ since #2). Left, most visible first (Sol's ranking):
   game owns (`src/wind`, `docs/WIND.md`): simulated over the world, going round sheds and through hedges, with
   `?windMap` to see it. The renderer draws it (the grass, the trees' crowns, the wheat, the water and the dust each read
   the wind where they are, so a hedge's calm shows in the grass behind it), and the haze's patches hold still when the
-  wind turns. Next, the look: the gusts' shape, how deep the lulls go and how fast fronts cross, as candidates.
+  wind turns. Trees have weight: each is a spring that leans into a gust, overshoots and rocks to a stop, each kind its
+  own, and crowns bend with their trunks (a cypress like a whip). Next, the look: the gusts' shape, how deep the lulls go and how fast fronts cross, as candidates.
 - **Hedge density is the game's choice, when a mechanic needs it** (#36, the developer, 2026-11-01). A dense hedge (drag
   8/s, the default) gives deep calm close behind; a medium one (Hagen's measured windbreaks) is less calm at 1 H but
   calmer over 4–10 H. Nothing in the game is hurt by strong wind yet; decide when something is (crops flattened, things

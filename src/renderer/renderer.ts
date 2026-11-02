@@ -14,6 +14,7 @@ import type { PassTimer } from './timer';
 import { WeatherState, type Weather } from './weather';
 import { airLook, HEAT, heatShare } from './air';
 import { leafStorm, WindField, WindState } from './wind';
+import { TreeSprings, type TreeSpec } from './trees';
 import type { WindSnapshot } from '../wind/sim';
 
 // The renderer: the clouds' shade over the land (#8); a sun shadow map; for the water, the bed drawn without it and the
@@ -136,6 +137,9 @@ export class BrushRenderer {
   /** The wind as drawn: the game's, as last given (see setWind), and its map on the GPU. Still until it's given. */
   readonly wind = new WindState();
   readonly windField = new WindField();
+  /** Every tree's spring (the renderer's own motion: no game logic reads it). */
+  readonly trees = new TreeSprings();
+  private windNow: [WindSnapshot, WindSnapshot, number] | null = null;
   /** The weather as drawn: the cover as the game sent it, the looks easing towards it (see setWeather). */
   readonly weather = new WeatherState();
   /**
@@ -213,6 +217,7 @@ export class BrushRenderer {
   setWind(prev: WindSnapshot, cur: WindSnapshot, alpha: number) {
     this.wind.set(prev, cur, alpha);
     this.windField.set(prev, cur, alpha);
+    this.windNow = [prev, cur, alpha];
   }
 
   /**
@@ -237,6 +242,13 @@ export class BrushRenderer {
 
   /** Adds a mesh of a kind. By default it casts a shadow and is mirrored in the water (water itself is neither). */
   add(geometry: THREE.BufferGeometry, kind: MaterialKind, options: MeshOptions = {}) {
+    // Its trees join the springs, numbered across every mesh (the same tree's wood and leaves, the same spring).
+    const trees = geometry.userData.trees as TreeSpec[] | undefined, ids = geometry.getAttribute('aTreeId');
+    if (trees?.length && ids) {
+      const map = this.trees.add(trees), a = ids.array as Float32Array;
+      for (let i = 0; i < a.length; i++) a[i] = map[a[i]];
+      geometry.userData.trees = undefined;
+    }
     const mesh = new THREE.Mesh(geometry, this.material(kind));
     mesh.frustumCulled = false;
     mesh.userData.kind = kind;
@@ -610,6 +622,8 @@ export class BrushRenderer {
     s.uWindDrift.value.set(w.driftX, w.driftZ);
     const f = this.windField;
     s.tWindA.value = f.a; s.tWindB.value = f.b; s.uWindBlend.value = f.blend; s.uWindGrid.value.copy(f.grid);
+    this.trees.update(time, this.windNow, w.gust);
+    s.tTreePose.value = this.trees.texture;
     s.uWindFlutter.value = w.flutter;
     this.weather.update(time);
     this.applyLook(this.look);

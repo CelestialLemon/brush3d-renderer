@@ -42,8 +42,8 @@ the frame on whatever machine opens it.
 
 The game owns the wind: it simulates it over the world (`src/wind`, `docs/WIND.md`) and gives the renderer each frame's
 `renderer.setWind(prev, cur, alpha)`, its last two ticks and how far between them, drawn exactly as given (a scene with no
-game wind gives `steadyWind(speed, direction)`). Each blade and crown reads the wind where it stands. Trees lean and
-rock as whole crowns, leaves flutter, gusts roll over the grass and through the wheat, the water chops, and from a gale up
+game wind gives `steadyWind(speed, direction)`). Each blade and crown reads the wind where it stands. Trees lean into
+the gusts and rock to a stop on their own springs, each kind its own, bending from the foot; leaves flutter, gusts roll over the grass and through the wheat, the water chops, and from a gale up
 leaves show their pale undersides and blow through the air. `src/renderer/wind.ts` has the scale and the curves.
 
 The game sets the weather with `renderer.setWeather({ cloud, rain, snow, heat, haze: { amount, color, top, base, kind } })`,

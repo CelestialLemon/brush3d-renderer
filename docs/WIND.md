@@ -124,15 +124,24 @@ The game gives the renderer, every frame, the wind client's last two snapshots a
 `renderer.setWind(wind.prev, wind.cur, wind.alpha)`. It draws exactly that and never eases it. A scene with no game wind
 (the profile's cases, a model viewer) gives `steadyWind(speed, direction)` for both.
 
-- **The map.** Each tick's snapshot is uploaded as a texture of half floats, a texel a cell: the ground air (`u`, `v`) and
-  the air at a crown's height (6 m, by the height rule, divided by the rule's open-air factor so it reads in the ground's
-  terms). Two textures, the earlier tick and the later; the shaders blend them by `alpha`. Only the new tick is uploaded
-  as the wind moves on (about 2.5 ms of the main thread a tick, 200 m at 1 m). Outside the map the edge cells carry on.
+- **The map.** Each tick's snapshot is uploaded as a texture of half floats, a texel a cell: the ground air (`u`, `v`).
+  Two textures, the earlier tick and the later; the shaders blend them by `alpha`. Only the new tick is uploaded
+  as the wind moves on (about 0.6 ms of the main thread a tick, 200 m at 1 m). Outside the map the edge cells carry on.
 - **Who reads what.** Grass bends by the ground air where each blade stands, which way it blows there too, so the calm
-  behind a hedge shows as grass standing up. A tree's crown leans and rocks by the air at its crown. The wheat, the water's
+  behind a hedge shows as grass standing up. Trees are read on the main thread (below). The wheat, the water's
   chop and the dust's waves read how hard it blows against the average (`windGust`: 0.5 at the average, 1 at twice it).
-  The renderer's own motion, which nothing in the game reads, stays its own: leaves fluttering, the flying leaves, a crown
-  still rocking after a gust.
+  The renderer's own motion, which nothing in the game reads, stays its own: leaves fluttering, the flying leaves, and how a
+  tree answers the wind.
+- **Trees have weight** (`src/renderer/trees.ts`). Each tree is a mass on a spring, pushed by the game's wind at its crown
+  (6 m up, by the height rule, in the ground's terms so the calibrated lean holds: 1.3% of its height in a breeze, 12% in
+  a gale, 30% in a hurricane). It leans into a gust with a lag, overshoots a little and rocks to a stop after the gust
+  passes. Each kind has its own spring (how often it rocks, how fast the rocking dies, more so as the wind rises through
+  its leaves); a bigger tree of a kind rocks more slowly. The whole tree bends from its foot, the top furthest, its crown
+  with it as far as its kind's `TREE_BEND` says: a cypress all the way, like a whip; an orchard bush hardly. Bending is
+  drawn across the view only, so a crown's strokes never swap over (`tools/pops.ts`: none in a gale). The steady rocking
+  of before is gone. The small quick swirls the wind's 1 m grid can't carry are added as shoves into each spring, as strong
+  as the game's gustiness: at gustiness 0 a tree leans and holds still. Two feels to pick from, `?trees=loose|stiff` and
+  the demo's *Trees* button. About 0.5 ms of the main thread a frame for the farm's 174 trees.
 - **Steady is steady.** With gustiness 0 the map is the goal everywhere (but in shelter), so nothing gusts.
 - **The haze's patches** (fog and dust) are laid along the wind and drift with it. When the wind turns more than 25° from
   them, or strengthens or slackens enough to stretch or shrink them by 30%, a new set is laid along the wind as it is and fades
