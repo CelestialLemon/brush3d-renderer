@@ -10,7 +10,6 @@ import { steadyWind, WIND_SCALE, windName, type WindStrength } from '../renderer
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
 import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, timelineWind, type SpellName } from './timeline';
 import { WindWorker } from '../wind/client';
-import { PAW_LOOKS, type PawLookName } from '../renderer/materials';
 import { TICK as WIND_TICK, type WindGoal, type WindSave } from '../wind/sim';
 import { WindView } from './windView';
 
@@ -20,7 +19,6 @@ import { WindView } from './windView';
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   rhythm (how the gusts come: 0 rare and strong, 1 frequent and mild)  windMap (the living wind from above, #36)
 //   windSeed (which gusts: a whole number)
-//   paws=a|b|c (cat's paws on the water, while the developer picks, #36: a dark, b glitter, c both and bigger)
 //   weather (clear|scattered|overcast|soft-rain|storm|fog|dust|heat-wave|snow|blizzard), then each value over it:
 //     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop, hazeBase (metres)
 //     hazeKind=fog|dust
@@ -157,9 +155,6 @@ for (let j = 0; j < DUST_GRID.nz; j++) for (let i = 0; i < DUST_GRID.nx; i++) {
   const x = DUST_GRID.x0 + i + 0.5, z = DUST_GRID.z0 + j + 0.5;
   bare[j * DUST_GRID.nx + i] = scene.bare(x, z); groundY[j * DUST_GRID.nx + i] = scene.height(x, z);
 }
-// Cat's paws' look, while the developer picks (#36).
-let pawLook: PawLookName = Object.hasOwn(PAW_LOOKS, params.get('paws') ?? '') ? params.get('paws') as PawLookName : 'a';
-renderer.setPaws(PAW_LOOKS[pawLook]);
 let dustWet = -1;
 function dustSource(wet: number) {
   if (Math.abs(wet - dustWet) < 0.02) return;
@@ -250,17 +245,6 @@ function hud() {
   hudEl.append(slider('gusts', 0, 1, 0.05, () => wind.gust ?? 0.5, windSet((v) => { wind.gust = v; }), (v) => v.toFixed(2), true));
   hudEl.append(slider('rhythm', 0, 1, 0.05, () => rhythm, windSet((v) => { rhythm = v; }),
     (v) => `${v < 0.35 ? 'rare, strong' : v > 0.65 ? 'frequent, mild' : 'between'} ${v.toFixed(2)}`));
-  // Cat's paws' looks, while the developer picks (#36).
-  const pawLooks: Record<PawLookName, string> = {
-    a: 'Dark: matte, darker patches that break up the reflection', b: 'Glitter: patches of fine winking glints',
-    c: 'Both, and bigger: dark and glinting, reaching further',
-  };
-  for (const l of Object.keys(pawLooks) as PawLookName[]) {
-    const b = document.createElement('button');
-    b.textContent = `Paws ${l.toUpperCase()}`; b.className = pawLook === l ? 'on' : ''; b.title = pawLooks[l];
-    b.onclick = () => { pawLook = l; renderer.setPaws(PAW_LOOKS[l]); hud(); };
-    hudEl.append(b);
-  }
   // The zoom by its doubling, so each step of the slider zooms as much as the last.
   hudEl.append(slider('Zoom', Math.log2(MIN_ZOOM), Math.log2(MAX_ZOOM), 0.01, () => Math.log2(view.zoom), (v) => { view.zoom = 2 ** v; },
     (v) => `${(2 ** v).toFixed(0)} px/m`, true));

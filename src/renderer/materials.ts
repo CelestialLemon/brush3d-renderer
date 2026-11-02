@@ -27,7 +27,6 @@ export function createSharedUniforms() {
     uWindSpeed: { value: 0 },
     uWindDrift: { value: new THREE.Vector2() },
     uWindFlutter: { value: 0 },
-    uPaws: { value: new THREE.Vector4(1, 0, 1, 0) },
     // The game's wind map (WindField): its last two ticks, the frame's share between them, where it lies, and 0 to read a
     // still wind.
     tWindA: { value: null as THREE.Texture | null },
@@ -656,20 +655,6 @@ void main() {
  */
 /** How far the ripples shake the clouds in the water (MIRROR_SKY), metres for a unit of their screen nudge: a metre or two. */
 const MIRROR_WOBBLE = 400;
-/**
- * Cat's paws' look, while the developer picks (#36): how much a paw darkens the water (0..1), how much it glints, how
- * much it breaks up the reflection, and how far it reaches (1: the patches start at a weaker gust, so they're bigger).
- */
-export interface PawLook { dark: number; glint: number; rough: number; reach: number }
-export const PAW_LOOKS = {
-  /** Dark: matte, darker patches that break up the reflection; the classic look. */
-  a: { dark: 1, glint: 0, rough: 1, reach: 0 },
-  /** Glitter: patches of fine winking glints, a little darker. */
-  b: { dark: 0.35, glint: 1, rough: 0.5, reach: 0 },
-  /** Both, and bigger: dark and glinting, the patches reaching further. */
-  c: { dark: 1, glint: 0.8, rough: 1, reach: 1 },
-} satisfies Record<string, PawLook>;
-export type PawLookName = keyof typeof PAW_LOOKS;
 export const WATER_REACH = { ripple: 0.0035, chop: 0.006, chopMax: 1.5, reflectNudge: 1.6, blurPx: 3 };
 const f = (x: number) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
 
@@ -714,19 +699,20 @@ void main() {
   ripple = mix(ripple, chop, clamp(chopAmt * 0.8, 0.0, 0.8)) + chop * chopAmt * 0.25;
   nudge += vec2(snoise(cq * 4.0), snoise(cq * 4.0 + 7.0)) * ${f(WATER_REACH.chop)} * chopAmt;
   // Cat's paws (#36): where a gust passes over the water in a light wind, a patch of it roughens: fine ripples that
-  // break up the reflection, darken it and glint. The patch travels with the gust; the ripples stay nearly put, as they
-  // do on a pond. Gone in a dead calm, and from about 8 m/s, when the whole surface is chop. (Their nudge, with the chop's
+  // break up the reflection a little, darken it a little and glint. The look is the developer's pick, "glitter": the
+  // glints carry it, and the mild darkening lets the patch read as one. The patch travels with the gust; the ripples stay
+  // nearly put, as they do on a pond. Gone in a dead calm, and from about 8 m/s, when the whole surface is chop. (Their nudge, with the chop's
   // in a light wind, stays well inside WATER_REACH.)
   // Water lies low among banks and trees, sheltered more in some places than others, so a gust is read against how hard
-  // the wind usually blows just there: a paw where it's blowing a quarter harder than usual (a sixth, reaching further).
+  // the wind usually blows just there: a paw where it's blowing a quarter harder than usual.
   // The wind's cells are a metre or more and a gust spans many, so its edge is broken up by a ragged noise carried with
   // the air: scalloped patches a few metres across, and small ones running ahead, not the whole stream dimming at once.
   vec2 bq = (p.xz - uWindDrift * 0.8) * 0.4;
   float ragged = snoise(bq) * 0.6 + snoise(bq * 2.3 + 5.0) * 0.4;
-  float paw = smoothstep(1.15 - 0.1 * uPaws.w, 1.3 - 0.1 * uPaws.w, windGustHere(p.xz) + ragged * 0.35)
+  float paw = smoothstep(1.15, 1.3, windGustHere(p.xz) + ragged * 0.35)
     * smoothstep(0.5, 2.0, uWindSpeed) * (1.0 - smoothstep(6.0, 10.0, uWindSpeed));
   vec2 pq = p.xz * 7.0 - uWindDir * uTime * 0.15;
-  nudge += vec2(snoise(pq), snoise(pq + 11.0)) * 0.004 * uPaws.z * paw;
+  nudge += vec2(snoise(pq), snoise(pq + 11.0)) * 0.002 * paw;
 
   // Under the water.
   vec2 uvBed = uv + nudge;
@@ -781,17 +767,18 @@ void main() {
   float crest = smoothstep(-0.15, 0.35, ripple);
   float spark = (1.0 - smoothstep(0.5, 1.0, length(f / vec2(0.15, 0.3)))) * step(0.5, h) * wink * crest;
   // No glints under a cloud.
-  // (A dark paw is matte: the river's own glints go out in it.)
+  // (The river's own glints dim a little in a paw, as it darkens.)
   col = mix(col, exposeHere(mix(vec3(1.0), sunTint(), 0.5)),
-    spark * vis * (1.0 - gCloud) * (0.2 + depthy * 0.4) * (1.0 - paw * uPaws.x * 0.8));
-  // The paws: darker and cooler, as a roughened patch mirrors less of the bright sky, and glinting in fine points that
-  // wink quickly.
-  col = mix(col, col * vec3(0.5, 0.58, 0.68), paw * uPaws.x);
+    spark * vis * (1.0 - gCloud) * (0.2 + depthy * 0.4) * (1.0 - paw * 0.28));
+  // The paws: a little darker and cooler, as a roughened patch mirrors less of the bright sky, and glinting in fine points
+  // that wink quickly, as many more tiny facets catch the sun. Only as bright as the sun is direct (uCloudStrength): none
+  // under full cover or before dawn, faint by the moon.
+  col = mix(col, col * vec3(0.5, 0.58, 0.68), paw * 0.35);
   vec2 gq = p.xz * 6.0 - uWindDir * uTime * 0.15;
   vec2 gc = floor(gq), gf = fract(gq) - 0.5 - (hash22(gc) - 0.5) * 0.6;
   float gh = hash12(gc + 3.1);
   float glit = (1.0 - smoothstep(0.1, 0.2, length(gf))) * step(0.4, gh) * max(0.0, sin(uTime * (5.0 + gh * 6.0) + gh * 50.0));
-  col = mix(col, exposeHere(mix(vec3(1.0), sunTint(), 0.5)), glit * paw * uPaws.y * vis * (1.0 - gCloud));
+  col = mix(col, exposeHere(mix(vec3(1.0), sunTint(), 0.5)), glit * paw * vis * (1.0 - gCloud) * uCloudStrength);
   // Whitecaps on the chop's crests in a storm.
   float caps = smoothstep(0.55, 0.9, chop) * smoothstep(0.45, 1.0, windForce()) * smoothstep(0.4, 0.9, windGust(p.xz) + 0.2);
   col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.6) * skyTint()), caps * 0.45);
