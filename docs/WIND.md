@@ -190,14 +190,14 @@ The game gives the renderer, every frame, the wind client's last two snapshots a
   less as rain or snow wets them.
   The ground air lifts dust where it's over 5.5 m/s and over 1.1 times the day's average, so it's the gusts that lift it,
   a bigger puff in a stronger gust. The dust is carried downwind at 0.6 times the ground air's speed and rises from 0.5 m.
-  How much lifts, how long it lingers, how high it rises, and the rolling head are the look (`DUST_LOOKS`). A gust's
-  front lifts more, and higher, where the wind picks up fast. The developer picked billows (C of three: heavy puffs up
-  to 7 m, each gust's front a rolling wall), clearing sooner than C's 10 s so dust doesn't hang behind the shed after a
-  gust: 5 s or 3 s, offered while they pick (the demo's Dust buttons, `?dust=c5|c3`). It's the renderer's own motion,
-  which no game logic reads, stepped a tick of the game's wind at a time: it holds still while the game is paused. The
-  post pass draws it as a layer of depth, read along each pixel's view. Its cost: none while there's no storm and no dust left up. In a storm, up to
-  about 1.2 ms of the main thread per wind tick (10 a second), 200 m at 1 m, on a Ryzen 5 1600, and about 0.2 ms of the
-  GPU a frame at 1080p.
+  How much lifts, how long it lingers, how high it rises, and the rolling head are the look (`DUST_LOOK`). A gust's
+  front lifts more, and higher, where the wind picks up fast. The developer picked billows (#43; C of three): heavy
+  puffs rising to 7 m, each gust's front a rolling wall, clearing in 5 s. C first hung 10 s, so dust stayed behind the
+  shed after a gust had passed; 5 s was picked over 3 s. It's the renderer's own motion, which no game logic reads,
+  stepped a tick of the game's wind at a time: it holds still while the game is paused. The post pass draws it as a
+  layer of depth, read along each pixel's view. Its cost: none while there's no storm and no dust left up. In a storm,
+  up to about 1.6 ms of the main thread per wind tick (10 a second), 200 m at 1 m, on a Ryzen 5 1600, and about 0.2 ms
+  of the GPU a frame at 1080p.
 - **Steady is steady.** With gustiness 0 the map is the goal everywhere (but in shelter), so nothing gusts.
 - **The haze's patches** (fog and dust) are laid along the wind and drift with it. When the wind turns more than 25° from
   them, or strengthens or slackens enough to stretch or shrink them by 30%, a new set is laid along the wind as it is and fades

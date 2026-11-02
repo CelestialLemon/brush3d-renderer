@@ -10,7 +10,6 @@ import { steadyWind, WIND_SCALE, windName, type WindStrength } from '../renderer
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
 import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, timelineWind, type SpellName } from './timeline';
 import { WindWorker } from '../wind/client';
-import { DUST_LOOKS, type DustLookName } from '../renderer/dust';
 import { TICK as WIND_TICK, type WindGoal, type WindSave } from '../wind/sim';
 import { WindView } from './windView';
 
@@ -20,7 +19,6 @@ import { WindView } from './windView';
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   rhythm (how the gusts come: 0 rare and strong, 1 frequent and mild)  windMap (the living wind from above, #36)
 //   windSeed (which gusts: a whole number)
-//   dust=c5|c3 (fresh dust's look in a dust storm, while the developer picks, #36: billows clearing in 5 s or 3 s)
 //   weather (clear|scattered|overcast|soft-rain|storm|fog|dust|heat-wave|snow|blizzard), then each value over it:
 //     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop, hazeBase (metres)
 //     hazeKind=fog|dust
@@ -157,9 +155,6 @@ for (let j = 0; j < DUST_GRID.nz; j++) for (let i = 0; i < DUST_GRID.nx; i++) {
   const x = DUST_GRID.x0 + i + 0.5, z = DUST_GRID.z0 + j + 0.5;
   bare[j * DUST_GRID.nx + i] = scene.bare(x, z); groundY[j * DUST_GRID.nx + i] = scene.height(x, z);
 }
-// The fresh dust's look, while the developer picks (#36).
-let dustLook: DustLookName = Object.hasOwn(DUST_LOOKS, params.get('dust') ?? '') ? params.get('dust') as DustLookName : 'c5';
-renderer.dust.look = DUST_LOOKS[dustLook];
 let dustWet = -1;
 function dustSource(wet: number) {
   if (Math.abs(wet - dustWet) < 0.02) return;
@@ -250,16 +245,6 @@ function hud() {
   hudEl.append(slider('gusts', 0, 1, 0.05, () => wind.gust ?? 0.5, windSet((v) => { wind.gust = v; }), (v) => v.toFixed(2), true));
   hudEl.append(slider('rhythm', 0, 1, 0.05, () => rhythm, windSet((v) => { rhythm = v; }),
     (v) => `${v < 0.35 ? 'rare, strong' : v > 0.65 ? 'frequent, mild' : 'between'} ${v.toFixed(2)}`));
-  // Fresh dust's looks, while the developer picks (#36): laid afresh at once in the new look.
-  const dustLooks: Record<DustLookName, string> = {
-    c5: 'Billows, clearing in 5 s once a gust has passed', c3: 'Billows, clearing in 3 s once a gust has passed',
-  };
-  for (const l of Object.keys(dustLooks) as DustLookName[]) {
-    const b = document.createElement('button');
-    b.textContent = `Dust C ${l.slice(1)} s`; b.className = dustLook === l ? 'on' : ''; b.title = dustLooks[l];
-    b.onclick = () => { dustLook = l; renderer.dust.look = DUST_LOOKS[l]; renderer.dust.restart(); hud(); };
-    hudEl.append(b);
-  }
   // The zoom by its doubling, so each step of the slider zooms as much as the last.
   hudEl.append(slider('Zoom', Math.log2(MIN_ZOOM), Math.log2(MAX_ZOOM), 0.01, () => Math.log2(view.zoom), (v) => { view.zoom = 2 ** v; },
     (v) => `${(2 ** v).toFixed(0)} px/m`, true));
