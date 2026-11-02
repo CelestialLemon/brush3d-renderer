@@ -174,6 +174,8 @@ export class DustField {
     }
     // The textures hold the ground too: a clear one must be sent afresh with it.
     this.blank.clear();
+    // Ground that's newly bare has no past wind kept (only lifting ground keeps it): no head until the next step.
+    this.speedSet = false;
   }
 
   /**
