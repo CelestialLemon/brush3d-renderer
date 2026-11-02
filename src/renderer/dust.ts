@@ -251,8 +251,8 @@ export class DustField {
 }
 
 const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
-/** A float to a half float, quickly, for the field's values (finite, within a half's range; tiny ones go to 0). */
-function half(x: number) {
+/** A float to a half float, quickly, for the fields' values (finite, within a half's range; tiny ones go to 0). */
+export function half(x: number) {
   f32[0] = x;
   const b = u32[0], e = (b >>> 23) & 0xff;
   if (e < 113) return (b >>> 16) & 0x8000;

@@ -5,7 +5,7 @@ import { CLOUD_SHAPE, type CloudShape } from './clouds';
 import type { Look } from './look';
 import { CLOUD_DEPTH, CLOUD_NIGHT, gapCover, OVERCAST, overcastLook, skyShare, UNDER_CLOUD_FADE } from './overcast';
 import {
-  createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
+  createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type PawLook, type SharedUniforms,
 } from './materials';
 import { fogNoiseTexture, litFog } from './fog';
 import { POST_FRAG, POST_VERT } from './post';
@@ -245,6 +245,9 @@ export class BrushRenderer {
    * game's updates; 'immediate' puts them there at once (a level loading, a screenshot).
    */
   setWeather(weather: Weather, immediate = false) { this.weather.set(weather, immediate); }
+
+  /** Cat's paws' look on the water (#36, while the developer picks). */
+  setPaws(look: PawLook) { this.shared.uPaws.value.set(look.dark, look.glint, look.rough, look.reach); }
 
   /** The shared material of a kind (one per renderer, so meshes of a kind batch their state). */
   material(kind: MaterialKind) {
@@ -645,7 +648,7 @@ export class BrushRenderer {
     s.uWindSpeed.value = w.speed;
     s.uWindDrift.value.set(w.driftX, w.driftZ);
     const f = this.windField;
-    s.tWindA.value = f.a; s.tWindB.value = f.b; s.uWindBlend.value = f.blend; s.uWindGrid.value.copy(f.grid);
+    s.tWindA.value = f.a; s.tWindB.value = f.b; s.tWindUsual.value = f.usual; s.uWindBlend.value = f.blend; s.uWindGrid.value.copy(f.grid);
     this.trees.update(time, this.windNow, w.gust);
     s.tTreePose.value = this.trees.texture;
     s.uWindFlutter.value = w.flutter;

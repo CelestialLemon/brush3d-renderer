@@ -181,6 +181,14 @@ The game gives the renderer, every frame, the wind client's last two snapshots a
   of before is gone. The small quick swirls the wind's 1 m grid can't carry are added as shoves into each spring, as strong
   as the game's gustiness: at gustiness 0 a tree leans and holds still. The springs are the developer's pick, 'stiff' (#40):
   trees settle within a few swings. About 0.5 ms of the main thread a frame for the farm's 174 trees.
+- **Cat's paws** (#36). In a light wind, where a gust passes over the water, a patch of it roughens: fine ripples that
+  break up the reflection, darken it and glint, the patch travelling with the gust while its ripples stay nearly put.
+  None in a dead calm, and they fade out from 6 to 10 m/s, when the whole surface is chop. The water lies low among banks
+  and trees, sheltered more in some places than others, so a gust is read against how hard the wind usually blows just
+  there (`windGustHere`): the renderer keeps each cell's usual ground air, its average over the last 20 s, as a third
+  texture (`WindField.usual`). A paw shows where it blows a third harder than usual. Three looks are offered while the
+  developer picks: the demo's Paws buttons, or `?paws=a|b|c`. A is dark (matte, darker patches), B is glitter (fine
+  winking glints), C is both and bigger.
 - **Fresh dust** (`src/renderer/dust.ts`). In a dust storm, and only then, the gusts lift dust off bare, dry ground in
   puffs. The rule is the developer's (2026-11-02): never on an ordinary dry, windy day, and a minor storm can come in a gale.
   The storm is the weather's dust haze: half strength at a thin haze, full from a haze of 0.25, none once it has thinned

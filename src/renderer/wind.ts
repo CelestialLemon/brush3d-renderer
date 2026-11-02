@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { half } from './dust';
 import type { WindSnapshot } from '../wind/sim';
 
 // Wind: the game owns it (src/wind, #36) and hands the renderer each tick's snapshot of the living wind over the world; the
@@ -56,12 +57,19 @@ export class WindField {
   blend = 0;
   /** Where the map lies: its corner (x, z) and 1 over its size in metres (x, z). */
   readonly grid = new THREE.Vector4(0, 0, 1, 1);
+  /**
+   * How hard the ground air usually blows in each cell (m/s), as a texture: its average over the last USUAL seconds, so a
+   * gust reads against what's usual just there, behind a hedge or on open ground (cat's paws, #36).
+   */
+  readonly usual = WindField.texture(THREE.RedFormat);
   /** The snapshots the textures hold (by identity: another wind's snapshot may share a tick number). */
   private snapA: WindSnapshot | null = null;
   private snapB: WindSnapshot | null = null;
+  private mean = new Float32Array(0);
+  private meanTick = -1;
 
-  private static texture() {
-    const t = new THREE.DataTexture(new Uint16Array(2), 1, 1, THREE.RGFormat, THREE.HalfFloatType);
+  private static texture(format: THREE.PixelFormat = THREE.RGFormat) {
+    const t = new THREE.DataTexture(new Uint16Array(format === THREE.RGFormat ? 2 : 1), 1, 1, format, THREE.HalfFloatType);
     t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearFilter;
     t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
     t.needsUpdate = true;
@@ -77,6 +85,7 @@ export class WindField {
       } else WindField.upload(this.a, prev);
       this.snapA = prev;
       WindField.upload(this.b, cur); this.snapB = cur;
+      this.updateUsual(cur);
     }
     this.blend = prev.tick === cur.tick ? 1 : alpha;
   }
@@ -89,13 +98,41 @@ export class WindField {
       t.image = { data, width: s.nx, height: s.nz };
       t.dispose();
     }
-    const half = THREE.DataUtils.toHalfFloat;
     for (let k = 0; k < n; k++) {
       data[k * 2] = half(s.u[k]); data[k * 2 + 1] = half(s.v[k]);
     }
     t.needsUpdate = true;
   }
+
+  /** The usual wind carried on to a new tick; laid afresh on a new map, a jump back or a long way on. */
+  private updateUsual(s: WindSnapshot) {
+    const n = s.nx * s.nz, t = this.usual;
+    let mean = this.mean;
+    if (mean.length !== n || s.tick < this.meanTick || s.tick > this.meanTick + 50) {
+      // Laid as the shelter would have it: the ground air's speed over the map, shared out by each cell's shelter.
+      mean = this.mean = new Float32Array(n);
+      let sum = 0, kSum = 0;
+      for (let c = 0; c < n; c++) { sum += Math.hypot(s.u[c], s.v[c]); kSum += s.k[c]; }
+      const per = kSum > 0 ? sum / kSum : 0;
+      for (let c = 0; c < n; c++) mean[c] = kSum > 0 ? s.k[c] * per : Math.hypot(s.u[c], s.v[c]);
+    } else {
+      const a = 1 - Math.exp(-((s.tick - this.meanTick) * 0.1) / USUAL);
+      for (let c = 0; c < n; c++) { const u = s.u[c], v = s.v[c]; mean[c] += (Math.sqrt(u * u + v * v) - mean[c]) * a; }
+    }
+    this.meanTick = s.tick;
+    let data = t.image.data as Uint16Array;
+    if (t.image.width !== s.nx || t.image.height !== s.nz) {
+      data = new Uint16Array(n);
+      t.image = { data, width: s.nx, height: s.nz };
+      t.dispose();
+    }
+    for (let c = 0; c < n; c++) data[c] = half(mean[c]);
+    t.needsUpdate = true;
+  }
 }
+
+/** Over how long the usual wind is taken, seconds: several gusts and lulls. */
+const USUAL = 20;
 
 /** One frame the haze's patches lie in (see WindState.haze). */
 export interface HazeFrame {
@@ -213,6 +250,7 @@ export class WindState {
 const WIND_UNIFORMS = /* glsl */ `
 uniform sampler2D tWindA;    // the game's wind map at its earlier tick and its later (see WindField)
 uniform sampler2D tWindB;
+uniform sampler2D tWindUsual; // how hard the ground air usually blows there (m/s, see WindField.usual)
 uniform float uWindBlend;    // the frame's share of the way between them
 uniform vec4 uWindGrid;      // the map's corner (x, z) and 1 over its size (x, z)
 uniform float uWindOn;       // 1, or 0 to read a still wind (the shelter map's pass)
@@ -222,6 +260,7 @@ uniform float uWindOn;       // 1, or 0 to read a still wind (the shelter map's 
  * The wind in GLSL, with the map's uniforms. Needs uWindSpeed and uWindDir (LIGHT_UNIFORMS has them). Strengths are in metres per second.
  *   windGround(xz): the ground air's velocity (x, z) at a point, from the game's map, between its last two ticks.
  *   windGust(xz):   0..1, how hard it blows at a point against the wind's average: 0.5 at the average, 1 at twice it.
+ *   windGustHere(xz): how hard it blows at a point against how hard it usually blows just there: 1 as usual.
  */
 export const WIND_GLSL = /* glsl */ `
 ${WIND_UNIFORMS}
@@ -233,6 +272,11 @@ vec2 windGround(vec2 xz) {
 }
 // A wind's direction as a vector in the ground plane, or the wind's as a whole where it's still.
 vec3 windDirOf(vec2 w) { float l = length(w); return l > 0.01 ? vec3(w.x, 0.0, w.y) / l : windDir3(); }
+// How hard it blows at a point against how hard it usually blows there: 1 as usual, more in a gust.
+float windGustHere(vec2 xz) {
+  vec2 uv = (xz - uWindGrid.xy) * uWindGrid.zw;
+  return length(windGround(xz)) / max(texture2D(tWindUsual, uv).x, 0.3);
+}
 float windGust(vec2 xz) { return clamp(0.5 * length(windGround(xz)) / max(uWindSpeed, 0.5), 0.0, 1.0); }
 `;
 
