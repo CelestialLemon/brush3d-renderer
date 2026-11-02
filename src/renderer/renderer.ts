@@ -206,7 +206,7 @@ export class BrushRenderer {
         uWindBlend: this.shared.uWindBlend, uWindGrid: this.shared.uWindGrid, uWindOn: this.shared.uWindOn,
         uShimmer: { value: new THREE.Vector2() },
         tDustA: { value: this.dust.a }, tDustB: { value: this.dust.b }, uDustBlend: { value: 0 },
-        uDustGrid: { value: this.dust.grid }, uDustOn: { value: 0 }, uDustColor: { value: new THREE.Color() },
+        uDustGrid: { value: this.dust.grid }, uDustOn: { value: 0 }, uDustColor: { value: new THREE.Color() }, uDustReach: { value: 4.5 },
       },
     });
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.post));
@@ -521,6 +521,7 @@ export class BrushRenderer {
     // Fresh dust: the earth's colour, or a dusty air's where there is one, lit as the fog is.
     const f = this.dust;
     u.tDustA.value = f.a; u.tDustB.value = f.b; u.uDustBlend.value = f.blend; u.uDustOn.value = f.any ? 1 : 0;
+    u.uDustReach.value = f.look.top + 0.5;
     litFog(u.uDustColor.value, FRESH_DUST.clone().lerp(w.hazeColor, w.dust), s.uSunColor.value, s.uSkyColor.value);
   }
 
