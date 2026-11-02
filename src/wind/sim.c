@@ -117,39 +117,126 @@ EXPORT(reset) void reset(f32 u, f32 v) {
 }
 
 // ---- The gust recipe (Sol's round 4, a placeholder look for the look PR to replace) ----
-// Fronts across the wind, every L metres; how much of the cycle is gust (duty), a sharp rise over 2 m and a long fall;
-// the fronts bend and their strength varies along them. Mean 1 over a cycle, so the game's speed stays the mean.
+// ---- The gust recipe (#36; Sol's research, tools/research-wind36 in her worktree, summed up in docs/WIND.md) ----
+// Gusts come one to an interval: the intervals follow each other along the wind, each its own length (0.4 to 1.6 of
+// the usual), and each holds one gust with its own strength, length, rise (1 to 2 s, or now and then a 0.3 s slap) and fall,
+// all from a seeded hash of the interval's number, so the same seed gives the same gusts. Each interval's gust is
+// balanced against a lull over the rest of it, so the recipe's mean over every interval is exactly 1 whatever the gust:
+// that is what keeps the game's average from drifting with the luck of the draw. The caller sets each generation of
+// gusts (a heading, the interval's length in metres and in seconds, the lull floor B and the peak ceiling H) and the
+// spell (the slow swell of gusty and quiet minutes); the fronts bend and their strength varies along them, as before.
 static inline f32 smooth(f32 x) { x = x < 0 ? 0 : (x > 1 ? 1 : x); return x * x * (3 - 2 * x); }
 static inline f32 fmod_(f32 x, f32 L) { return x - __builtin_floorf(x / L) * L; }
 static inline f32 wave(f32 y, f32 L) { f32 u = fmod_(y, L) / L; return u < 0.5f ? smooth(u * 2) : 1 - smooth((u - 0.5f) * 2); }
-static inline f32 pat(f32 x, f32 y, f32 rhythm, f32 g, f32 lull) {
-  f32 L = 108 - 72 * rhythm, duty = 0.55f + 0.4f * rhythm, tail = L * duty - 2;
-  f32 phase = 5 * (wave(y, 40) - 0.5f) + 1.5f * (wave(y + 7, 17) - 0.5f), amp = 0.65f + 0.35f * wave(y + 11, 53);
-  f32 s = fmod_(-x + phase, L);
-  f32 p = s < 2 ? smooth(s / 2) : (s < 2 + tail ? 1 - smooth((s - 2) / tail) : 0);
-  return 1 + g * lull * amp * (p / (duty * 0.5f) - 1);
+
+static u32 seed;
+static inline u32 hash(u32 a) { a ^= a >> 16; a *= 0x7feb352dU; a ^= a >> 15; a *= 0x846ca68bU; a ^= a >> 16; return a; }
+// A seeded random number in [0, 1) for interval k, one stream per salt.
+static inline f32 rnd(u32 k, u32 salt) { return (f32)(hash((k ^ seed) + salt * 0x9e3779b9U) >> 8) * (1.0f / 16777216.0f); }
+
+// A generation of gusts: its heading (hx, hy), how far across it's shifted (o), an interval's usual length in metres
+// (L) and seconds (T), the lull floor and peak ceiling at full gustiness (B, H), the share of slaps, and where it is:
+// interval k0 + p is at the world's centre now (k0 whole, p small, so it stays exact however long the game runs).
+typedef struct { f32 hx, hy, o, L, T, B, H, slap, p; u32 k0; } Gen;
+static Gen gens[2];
+// An interval (numbered from k0): where it starts, its length (in intervals), its gust's share of it (d), rise and fall
+// (shares of the gust), its tilt (> 0 it hits hardest at first and eases off, < 0 it builds to the end), the gust's
+// share Q of the mean, and how strong the gust is before the strength along the front
+// and the spell.
+typedef struct { f32 left, span, d, rise, fall, tilt, Q, budget; } Interval;
+#define MAXI 128
+static Interval table[2][MAXI];
+static int tmin[2], tn[2];
+
+EXPORT(setSeed) void setSeed(u32 s) { seed = s; }
+EXPORT(setGusts) void setGusts(int slot, f32 hx, f32 hy, f32 o, f32 L, f32 T, f32 B, f32 H, f32 slap, u32 k0, f32 p) {
+  Gen *G = &gens[slot & 1];
+  G->hx = hx; G->hy = hy; G->o = o; G->L = L; G->T = T; G->B = B; G->H = H; G->slap = slap; G->k0 = k0; G->p = p;
 }
 
-// The free wind for this tick at every cell, from the recipe: the wind blows along (dx, dy) at `speed` times the
-// pattern. The pattern comes in up to two generations, each laid along its own frozen heading (hx, hy) and travelled s
-// metres along it; after a turn the new one fades in (weight w) while the old fades out, so nothing swings.
+// Where interval k0 + k starts, in intervals from k0: k, moved up to 0.3 either way.
+static inline f32 edge(const Gen *G, int k) { return (f32)k + 0.3f * (2 * rnd(G->k0 + (u32)k, 17) - 1); }
+
+static void interval(const Gen *G, int k, Interval *I) {
+  const u32 n = G->k0 + (u32)k;
+  const f32 left = edge(G, k), span = edge(G, k + 1) - left, seconds = span * G->T;
+  // The gust's peak (up to the ceiling H) and the lull's floor (down to B, now and then shallower), at full gustiness,
+  // strength along the front and spell; then the gust's length that balances them over the interval, so a long
+  // interval holds a long push and a long lull, both full strength. It builds over 1 to 2 s (or slaps in 0.3) and dies
+  // away over 1 to 2.5.
+  // One in six intervals is a quiet one, its gust barely there, so the gusts don't come like clockwork. (0.03 kept
+  // clear of each bound for the spell's own swell.)
+  const f32 strength = rnd(n, 59) < 0.16f ? 0.1f + 0.15f * rnd(n, 53) : 0.55f + 0.45f * rnd(n, 53);
+  const f32 peak = 1 + (G->H - 1.03f) * strength, floor = G->B + 0.03f + (0.97f - G->B) * 0.3f * rnd(n, 131);
+  f32 rise = rnd(n, 97) < G->slap ? 0.3f : 1 + rnd(n, 71), fall = 1 + 1.5f * rnd(n, 113);
+  const f32 length = min_((1 - floor) / (peak - floor) * seconds + 0.5f * (rise + fall), 0.9f * seconds);
+  if (rise + fall > length) { const f32 s = length / (rise + fall); rise *= s; fall *= s; }
+  I->left = left; I->span = span; I->d = length / seconds; I->rise = rise / length; I->fall = fall / length;
+  // Some gusts hit hardest at first and ease off, some build through, some hold: the gust times 1 - tilt u (or
+  // 1 + tilt (1 - u) when it builds). Its mean, exactly: the ramps' and the hold's, less the tilt times their moment.
+  const f32 r = I->rise, f = I->fall, tilt = 0.6f * (rnd(n, 157) - 0.4f), area = 1 - 0.5f * (r + f);
+  const f32 moment = 0.35f * r * r + 0.5f * ((1 - f) * (1 - f) - r * r) + f * (0.5f - 0.35f * f);
+  I->tilt = tilt;
+  I->Q = I->d * (tilt >= 0 ? area - tilt * moment : area + tilt * (area - moment));
+  // How far the gust goes over and the lull under, balanced over the interval (the two agree unless the gust was cut
+  // short to fit, when the nearer bound holds).
+  I->budget = min_((1 - floor) / I->Q, (peak - 1) / (1 - I->Q));
+}
+
+// The intervals that cross the world this tick, from the furthest upwind to the furthest down, one either side spare.
+static void tabulate(int g, f32 halfX, f32 halfY) {
+  const Gen *G = &gens[g];
+  const f32 reach = (fabs_(G->hx) * halfX + fabs_(G->hy) * halfY) / G->L + 0.05f;
+  const int lo = (int)__builtin_floorf(G->p - reach) - 1, hi = (int)__builtin_floorf(G->p + reach) + 1;
+  tmin[g] = lo; tn[g] = hi - lo + 1 > MAXI ? MAXI : hi - lo + 1;
+  for (int i = 0; i < tn[g]; i++) interval(G, lo + i, &table[g][i]);
+}
+
+// The gust's part of the recipe at a point (x, y from the world's centre), before gustiness: positive in the gust,
+// negative in the lull, averaging 0 over each interval.
+static inline f32 gust(int g, f32 x, f32 y, f32 spell) {
+  const Gen *G = &gens[g];
+  const f32 along = x * G->hx + y * G->hy, across = y * G->hx - x * G->hy + G->o;
+  const f32 bend = (5 * (wave(across, 40) - 0.5f) + 1.5f * (wave(across + 7, 17) - 0.5f)) / 108;
+  const f32 amp = 0.65f + 0.35f * wave(across + 11, 53);
+  const f32 z = G->p - along / G->L - bend;
+  int k = (int)__builtin_floorf(z);
+  Interval spare;
+  const Interval *I;
+  // The interval the point is in: its number's, or the one before or after (an edge moves at most 0.3).
+  for (int pass = 0;; pass++) {
+    const int i = k - tmin[g];
+    if (i >= 0 && i < tn[g]) I = &table[g][i]; else { interval(G, k, &spare); I = &spare; }
+    if (pass) break;
+    if (z < I->left) k--; else if (z >= I->left + I->span) k++; else break;
+  }
+  const f32 u = ((z - I->left) / I->span - 0.5f * (1 - I->d)) / I->d;
+  const f32 pulse = smooth(u / I->rise) * smooth((1 - u) / I->fall) * (I->tilt >= 0 ? 1 - I->tilt * u : 1 + I->tilt * (1 - u));
+  return amp * spell * I->budget * (pulse - I->Q);
+}
+
+// The free wind for this tick at every cell, from the recipe: the wind blows along (dx, dy) at `speed` times
+// 1 + g (0.03 swell + gust). The gusts come in up to two generations (set by setGusts); after a turn or a change of
+// pace the new one fades in (weight w) while the old fades out, so nothing swings or jumps. `swell` is the spell, -1
+// (quiet) to 1 (gusty), and `spell` the gusts' strength in it.
 // Sets the inflow f, the free air above U = 1.5 f and its reach K.
-EXPORT(force) void force(f32 speed, f32 dx, f32 dy, f32 g, f32 rhythm, f32 lull,
-                         f32 hx0, f32 hy0, f32 s0, f32 o0, f32 hx1, f32 hy1, f32 s1, f32 o1, f32 w) {
+EXPORT(force) void force(f32 speed, f32 dx, f32 dy, f32 g, f32 swell, f32 spell, f32 w) {
   if (speed <= 0) {
     for (int k = 0; k < N; k++) { FX[k] = 0; FY[k] = 0; UX[k] = 0; UY[k] = 0; K[k] = K0; }
     return;
   }
-  const f32 is2 = 1.0f / (speed * speed);
+  const f32 is2 = 1.0f / (speed * speed), halfX = 0.5f * (f32)nx * h, halfY = 0.5f * (f32)ny * h;
+  if (g != 0) { tabulate(0, halfX, halfY); if (w != 0) tabulate(1, halfX, halfY); }
+  const f32 base = 1 + g * 0.03f * swell;
   for (int j = 0; j < ny; j++) {
-    const f32 y = y0 + ((f32)j + 0.5f) * h;
+    const f32 y = ((f32)j + 0.5f) * h - halfY;
     for (int i = 0; i < nx; i++) {
       const int k = j * nx + i;
-      const f32 x = x0 + ((f32)i + 0.5f) * h;
+      const f32 x = ((f32)i + 0.5f) * h - halfX;
       f32 a = 1.0f, b = 1.0f;
       if (g != 0) {
-        a = pat(x * hx0 + y * hy0 - s0, y * hx0 - x * hy0 + o0, rhythm, g, lull);
-        b = w != 0 ? pat(x * hx1 + y * hy1 - s1, y * hx1 - x * hy1 + o1, rhythm, g, lull) : a;
+        a = base + g * gust(0, x, y, spell);
+        b = w != 0 ? base + g * gust(1, x, y, spell) : a;
       }
       f32 mag = speed * (a + (b - a) * w), u = mag * dx, v = mag * dy;
       FX[k] = u; FY[k] = v; UX[k] = UPPER * u; UY[k] = UPPER * v;
