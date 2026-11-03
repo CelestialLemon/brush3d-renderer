@@ -66,6 +66,10 @@ cover only the cells within one of water (into one buffer per grid, with room fo
   water the sheet dives from (a dry hollow lower than the river beside it isn't mirrored, or it would show in the
   river). The only error left is at the screen's edge, as before, and where water at two heights is equally near.
 - **The haze** in hollows measures from the lowest water, as it measured from the stream.
+- **Fast water, mud and the waterline** (being picked, #18's second PR): fast water (from about a metre a second) gets
+  streaks along the flow or foam carried along it, thickest at the banks; mud turns the water brown and opaque (lit by
+  the sun as well as the sky, as silt is); things standing in water get a wet band just above it, or a foam line. The
+  waterline is drawn by everything but the water (`waterline` in `writeGBuffer`), only below the highest water.
 
 ## The demo
 
@@ -76,6 +80,7 @@ rise and reaches every cell lower than that which it can get to over lower groun
 channel it runs at a quarter of the stream's speed.
 
 - `?water=usual|spate|flood`, then `rise` (m over the usual), `flow` (times the usual speed) and `mud` over it.
+- While the looks are picked: `?fast=off|a|b|c`, `?muddy=a|b`, `?waterline=off|a|b`, and the Fast, Mud and Line buttons.
 - The Water, flow and mud sliders.
 - `?timeline&spell=flood`: a storm swells the stream, which runs fast and brown, spills over the floodplain, and drains
   under clearing skies (17 game hours, about a minute at 3x).
