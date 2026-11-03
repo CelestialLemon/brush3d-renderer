@@ -19,7 +19,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   6. #36 wind: gusts and lulls as fronts sweeping the land, one gust field for the grass, trees, water and dust (with
      depth, a rolling head), and for the game to query. It grew out of #9: dust's gusts didn't read (done 2026-11-03,
      #41 to #44: see Wind);
-  7. #18 dynamic water: a state the game drives;
+  7. #18 dynamic water: a state the game drives (done 2026-11-03, #45 and #48: see Water);
   8. #11 rain and wet ground;
   9. #12 storms and lightning;
   10. #13 seasons;
@@ -103,7 +103,14 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   now catch the evening's warm light (#37); a clear evening's water is still slate-blue, and may want a sun-glare streak.
 - **No change with the camera's tilt.** The water looks much the same at every angle (Fresnel is fixed by depth, not by the
   view). Fine from the aerial camera, flat otherwise.
-- **The stream is brook-sized.** A wider river or a pond would show the reflections off better.
+- **The stream is brook-sized.** A wider river or a pond would show the reflections off better. (#47's valley has a pond.)
+- **Dynamic water (#18, done 2026-11-03, #45 and #48):** the game sends the water as a map (`setWater`: the surface,
+  flow and mud per tile, `docs/WATER.md`), eased in over 0.6 s, so a flood creeps over the land and drains. Reflections
+  work at any height from one pass, shifted on screen. The developer's picks (2026-11-03): fast water gets "streaks"
+  (long light bands along the flow), mud is "brown" (ochre, opaque), and things standing in water get a "foam line"
+  with a faint wet band above it; floating things (the boat) get none. Left out: foam on fast water, milky mud, the
+  plain wet band. Known: laying out the farm's 250 × 250 map costs 9 to 20 ms per send (a dropped frame; move it to a
+  worker if the game sends big maps often), and the demo's boat doesn't float up in a flood (the game's to move).
 - **Half-res reflections smear up close.** Soft by design, but edges blur at high zoom.
 - **Cloud reflections** (#8, #37): the water and the solar glass mirror the clouds overhead, drifting with them. The
   developer's picks (2026-11-01): "lit" (each cloud bright on its sunward side, its thick middle a cooler grey, warm in
