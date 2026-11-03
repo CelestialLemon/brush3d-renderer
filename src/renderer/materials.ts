@@ -629,6 +629,7 @@ void main() {
 /**
  * Inked: crisp cel bands, the colour barely drifting. aPaint.x picks a finish: 0 plain, 1 solar glass (uv over the panel,
  * aPaint.yz cells along u and v), 2 timber (grain along u), 3 tin (corrugations, aPaint.z of them a uv unit along v).
+ * aPaint.w: 1 if it floats (a boat: no waterline on it).
  */
 const INK_FRAG = /* glsl */ `
 ${FRAG_HEAD}
@@ -643,6 +644,8 @@ void main() {
   if (gl_FrontFacing == (uMirror > 0.5)) n = -n;
   vec3 p = vWorldPos;
   float finish = vPaint.x;
+  // It floats (no waterline on it, #18).
+  gFloats = vPaint.w;
   vec3 base = vColor;
   float vis = sunVisibility(p, n, 0.0);
   float light = sunLight(n, 0.2) * mix(0.2, 1.0, vis);

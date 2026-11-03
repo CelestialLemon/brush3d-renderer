@@ -22,15 +22,19 @@ export async function loadModel(url: string): Promise<THREE.Object3D> {
   return (await loader.loadAsync(url)).scene;
 }
 
-/** Adds a model's meshes to a builder, placed by `matrix`. */
-export function addModel(b: MeshBuilder, model: THREE.Object3D, matrix: THREE.Matrix4) {
+/**
+ * Adds a model's meshes to a builder, placed by `matrix`. One that `floats` (a boat) gets no waterline (#18): its inside is
+ * dry, though it's below the water's surface.
+ */
+export function addModel(b: MeshBuilder, model: THREE.Object3D, matrix: THREE.Matrix4, floats = false) {
   model.updateMatrixWorld(true);
   const p = new THREE.Vector3(), n = new THREE.Vector3(), c = new THREE.Color();
   model.traverse((o) => {
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh) return;
     const m = matrix.clone().multiply(mesh.matrixWorld), nm = new THREE.Matrix3().getNormalMatrix(m);
-    const g = mesh.geometry, paint = FINISH[(mesh.material as THREE.Material).name] ?? PLAIN;
+    const finish = FINISH[(mesh.material as THREE.Material).name] ?? PLAIN;
+    const g = mesh.geometry, paint: Paint = floats ? [finish[0], finish[1], finish[2], 1] : finish;
     const pos = g.getAttribute('position'), nrm = g.getAttribute('normal'), col = g.getAttribute('_color'), uv = g.getAttribute('uv');
     const base = b.vertexCount;
     for (let i = 0; i < pos.count; i++) {

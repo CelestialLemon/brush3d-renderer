@@ -297,7 +297,9 @@ export const GBUFFER_OUT = /* glsl */ `
 // The waterline on things standing in the water (#18, while the developer picks): A, a wet band, darker just above the
 // water where it has wetted them, its top ragged; B, a thin line of foam where the water meets them (not along blades
 // and leaves, where it would speckle) and a fainter band.
-// Only where the water is drawn, not where the sheet dives under the land.
+// Only where the water is drawn, not where the sheet dives under the land, and not on things floating in it (gFloats, set
+// by the material: a boat's inside is dry, and its own wet line rides with it).
+float gFloats = 0.0;
 vec3 waterline(vec3 color, vec3 p, float dy) {
   vec3 sheet = waterSheet(p.xz);
   // Where the water is drawn (as sheetHidden judges it).
@@ -332,7 +334,7 @@ void writeGBuffer(vec3 color, vec3 worldNormal, float viewDepth, float ink, floa
   // than the river).
   if (uMirror > 0.5 && vWorldPos.y < waterNear(vWorldPos.xz) - 0.01) discard;
 #ifndef WATER_SHEET
-  if (uWaterLook.z > 0.5 && vWorldPos.y < uWaterHigh + 0.3) color = waterline(color, vWorldPos, dy);
+  if (uWaterLook.z > 0.5 && gFloats < 0.5 && vWorldPos.y < uWaterHigh + 0.3) color = waterline(color, vWorldPos, dy);
 #endif
   vec3 vn = normalize((viewMatrix * vec4(worldNormal, 0.0)).xyz);
   // The reflection is stored premultiplied (over a clear, transparent black), so the water can filter it without darkening
