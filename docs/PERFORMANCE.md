@@ -160,6 +160,21 @@ the uncapped frame, its GPU timers count waiting): the farm's 1080p storm 14.99 
 0.67. Reading the map costs its readers (rain, wetness, snow),
 counted in their own lines.
 
+### Wet ground (#11)
+
+In the materials, only while some of the land is wet (dry frames are byte-for-byte what they were): the ground's state
+read with one lookup, the shelter with eight (one, read with the land's dips, for the ground, grass and crops), the
+colour darkened and deepened in plain RGB, mud and puddles on the ground. The land's dips are found once, about 5 ms on
+the farm (the first time it's wet, and when the land or its shelter changes). RX 570, 1080p storm, GPU ms:
+
+| | dry | wet |
+|---|---:|---:|
+| farm | 14.37 | 14.61 |
+| meadow | 5.25 | 5.53 |
+
+About 0.28 ms here at most, so about 0.5 on the laptop, inside the line's 0.8 (which frost and snow cover share, never
+at once with the wet). See docs/GROUND.md.
+
 ### Mist and fog (#9)
 
 In the post pass: each pixel's place in the world rebuilt from its depth, and the fog summed in four steps up the view's
