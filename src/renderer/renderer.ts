@@ -293,8 +293,14 @@ export class BrushRenderer {
   /** Adds a mesh of a kind. By default it casts a shadow and is mirrored in the water (water itself is neither). */
   add(geometry: THREE.BufferGeometry, kind: MaterialKind, options: MeshOptions = {}): THREE.Mesh {
     if (options.tile && kind !== 'water') {
-      // Returns the first tile, standing for them all to remove().
-      const tiles = cutIntoTiles(geometry, options.tile).map((g) => this.addOne(g, kind, options, true));
+      // Returns the first tile, standing for them all to remove(). Cut from the game's colours, if the season has turned
+      // them (the geometry is drawn already), so each tile keeps its own to turn.
+      const colour = geometry.getAttribute('color') as THREE.BufferAttribute | undefined, own = colour && this.ownColours.get(colour);
+      const turned = own && Float32Array.from(colour.array as Float32Array);
+      if (own) (colour.array as Float32Array).set(own);
+      const cut = cutIntoTiles(geometry, options.tile);
+      if (turned) (colour!.array as Float32Array).set(turned);
+      const tiles = cut.map((g) => this.addOne(g, kind, options, true));
       tiles[0].userData.tiles = tiles;
       return tiles[0];
     }
@@ -309,9 +315,11 @@ export class BrushRenderer {
       for (let i = 0; i < a.length; i++) a[i] = map[a[i]];
       geometry.userData.trees = undefined;
     }
-    if (options.seasonal ?? (kind === 'ground' || kind === 'grass')) this.seasonal.set(geometry, (this.seasonal.get(geometry) ?? 0) + 1);
+    const seasonal = options.seasonal ?? (kind === 'ground' || kind === 'grass');
+    if (seasonal) this.seasonal.set(geometry, (this.seasonal.get(geometry) ?? 0) + 1);
     this.turn(geometry);
     const mesh = new THREE.Mesh(geometry, this.material(kind));
+    mesh.userData.seasonal = seasonal;
     mesh.frustumCulled = cull;
     mesh.userData.kind = kind;
     mesh.userData.under = options.under ?? false;
@@ -339,7 +347,7 @@ export class BrushRenderer {
     const tiles = mesh.userData.tiles as THREE.Mesh[] | undefined;
     if (tiles) { for (const t of tiles) { t.userData.tiles = undefined; this.remove(t); } return; }
     this.scene.remove(mesh);
-    this.unseason(mesh.geometry);
+    if (mesh.userData.seasonal) this.unseason(mesh.geometry);
     this.casters = this.casters.filter((m) => m !== mesh);
     const i = this.twins.findIndex(([m]) => m === mesh);
     if (i >= 0) { this.silhouettes.remove(this.twins[i][1]); this.twins.splice(i, 1); }
