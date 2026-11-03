@@ -40,11 +40,7 @@ export const SHOWN_SINK = 1.25;
 /** How long a changed map takes to ease in by default, seconds. */
 export const WATER_EASE = 0.6;
 
-/**
- * The GLSL that reads the water map: its surface anywhere, for the reflection's clip. Between four cells' centres it's
- * the sheet's own two triangles (split from the +x cell to the +z one, as WaterField.index lays them), so the clip is
- * exactly where the drawn water is, however much the levels differ.
- */
+/** The GLSL that reads the water map: its surface anywhere, and the nearest water's, for the reflection's clip. */
 export const WATER_MAP_GLSL = /* glsl */ `
 uniform sampler2D tWaterA;     // the water as it was (level, flow x, flow z, mud per cell)
 uniform sampler2D tWaterB;     // the water as last sent
@@ -55,18 +51,29 @@ vec4 waterCell(ivec2 c) {
   c = clamp(c, ivec2(0), n - 1);
   return mix(texelFetch(tWaterA, c, 0), texelFetch(tWaterB, c, 0), uWaterBlend);
 }
-// The water's surface over a point, metres (far below everything where there's none).
-float waterTop(vec2 xz) {
-  if (uWaterGrid.w < 0.5) return -1.0e6;
+// The sheet over a point, on its own triangles (split from the +x cell to the +z one, as WaterField.index lays them):
+// per cell, the surface (x) and the surface it continues, before its dive (y; the same where it's wet). Far below
+// everything off the grid or with no map.
+vec2 waterSheet(vec2 xz) {
+  if (uWaterGrid.w < 0.5) return vec2(-1.0e6);
   vec2 g = (xz - uWaterGrid.xy) * uWaterGrid.z - 0.5;
   ivec2 n = textureSize(tWaterA, 0);
   // Off the sheet (which reaches the grid's edge, half a cell past the edge cells' centres).
-  if (g.x < -0.5 || g.y < -0.5 || g.x > float(n.x) - 0.5 || g.y > float(n.y) - 0.5) return -1.0e6;
+  if (g.x < -0.5 || g.y < -0.5 || g.x > float(n.x) - 0.5 || g.y > float(n.y) - 0.5) return vec2(-1.0e6);
   vec2 i = floor(g), f = g - i;
   ivec2 c = ivec2(i);
-  float a = waterCell(c).x, b = waterCell(c + ivec2(1, 0)).x, d = waterCell(c + ivec2(0, 1)).x, e = waterCell(c + ivec2(1, 1)).x;
-  return f.x + f.y < 1.0 ? a + (b - a) * f.x + (d - a) * f.y : e + (d - e) * (1.0 - f.x) + (b - e) * (1.0 - f.y);
+  vec4 a = waterCell(c), b = waterCell(c + ivec2(1, 0)), d = waterCell(c + ivec2(0, 1)), e = waterCell(c + ivec2(1, 1));
+  // Where it dives, its mud is how far down, negative (layWater).
+  vec2 va = vec2(a.x, a.x - min(a.w, 0.0)), vb = vec2(b.x, b.x - min(b.w, 0.0));
+  vec2 vd = vec2(d.x, d.x - min(d.w, 0.0)), ve = vec2(e.x, e.x - min(e.w, 0.0));
+  return f.x + f.y < 1.0 ? va + (vb - va) * f.x + (vd - va) * f.y : ve + (vd - ve) * (1.0 - f.x) + (vb - ve) * (1.0 - f.y);
 }
+// The water's surface over a point, metres, as drawn.
+float waterTop(vec2 xz) { return waterSheet(xz).x; }
+// The surface of the water nearest a point: as drawn where it's wet, and on dry land the water it's nearest (the surface
+// the sheet dives from). What the reflection leaves out is what's under it: a fence standing in a flood isn't mirrored
+// below the flood, and nor is a dry hollow lower than the river beside it (mirrored, it would show in the river).
+float waterNear(vec2 xz) { return waterSheet(xz).y; }
 `;
 
 /**

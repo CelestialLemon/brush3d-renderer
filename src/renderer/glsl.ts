@@ -297,9 +297,9 @@ export const GBUFFER_OUT = /* glsl */ `
 layout(location = 0) out vec4 gColor;
 layout(location = 1) out vec4 gAux;   // view normal xy, view depth, ink (1 inked, 0 painted)
 void writeGBuffer(vec3 color, vec3 worldNormal, float viewDepth, float ink, float alpha) {
-  // In the reflection, what's under the water isn't reflected: under the water just where it is (a flood stands higher
+  // In the reflection, what's under the water isn't reflected: under the water nearest (waterNear; a flood stands higher
   // than the river).
-  if (uMirror > 0.5 && vWorldPos.y < waterTop(vWorldPos.xz) - 0.01) discard;
+  if (uMirror > 0.5 && vWorldPos.y < waterNear(vWorldPos.xz) - 0.01) discard;
   vec3 vn = normalize((viewMatrix * vec4(worldNormal, 0.0)).xyz);
   // The reflection is stored premultiplied (over a clear, transparent black), so the water can filter it without darkening
   // the edges of what's reflected.

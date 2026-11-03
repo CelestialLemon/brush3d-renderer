@@ -551,7 +551,7 @@ void main() {
 #ifdef PREPASS
   // Only the dab's shape and coverage: the painting comes after, where the dab shows.
 #ifdef MIRROR_CLIP
-  if (vWorldPos.y < waterTop(vWorldPos.xz) - 0.01) discard;
+  if (vWorldPos.y < waterNear(vWorldPos.xz) - 0.01) discard;
 #endif
   gColor = vec4(0.0, 0.0, 0.0, alpha);
   gAux = vec4(0.0);
@@ -883,7 +883,7 @@ void main() {
 #endif
 #ifdef MIRROR_CLIP
   // As writeGBuffer does in the reflection: what's under the water isn't reflected.
-  if (vWorldPos.y < waterTop(vWorldPos.xz) - 0.01) discard;
+  if (vWorldPos.y < waterNear(vWorldPos.xz) - 0.01) discard;
 #endif
   gColor = vec4(0.0); gAux = vec4(0.0);
 }

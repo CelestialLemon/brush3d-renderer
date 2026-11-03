@@ -58,8 +58,10 @@ cover only the cells within one of water (into one buffer per grid, with room fo
 - **Reflections at any height.** The reflection is drawn once, mirrored about one surface (the median of the water).
   The camera is orthographic, so water standing higher or lower mirrors exactly the same picture moved up or down the
   screen by twice the difference: each pixel reads it shifted by its own amount. What's under the water isn't
-  reflected, judged by the water just where it is, read off the sheet's own triangles (a fence standing in a flood
-  isn't mirrored below the flood's surface), not by one plane. The only error left is at the screen's edge, as before.
+  reflected, judged by the nearest water, not by one plane: in water, its surface just there, read off the sheet's own
+  triangles (a fence standing in a flood isn't mirrored below the flood's surface); on dry land, the surface of the
+  water the sheet dives from (a dry hollow lower than the river beside it isn't mirrored, or it would show in the
+  river). The only error left is at the screen's edge, as before, and where water at two heights is equally near.
 - **The haze** in hollows measures from the lowest water, as it measured from the stream.
 
 ## The demo
