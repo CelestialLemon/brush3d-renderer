@@ -70,8 +70,9 @@ anything they cause, and the renderer draws what it's given. Weather is an epic,
 
 ## Layout
 
-- `src/renderer/`: the renderer (`renderer.ts`), its materials and GLSL, the camera, the time-of-day looks.
-- `src/scenes/`: demo scenes, built in TypeScript: `farm.ts` (the *Dear Alice* aerial, rebuilt), `meadow.ts` (the first slice),
+- `src/renderer/`: the renderer (`renderer.ts`), its materials and GLSL, the camera, the time-of-day looks, and the tiles big
+  meshes are cut into so each pass draws only what it sees (`tiles.ts`).
+- `src/scenes/`: demo scenes, built in TypeScript: `farm.ts` (the *Dear Alice* aerial, rebuilt and grown into a valley), `meadow.ts` (the first slice),
   and `kit.ts`, the pieces both are made of (trees, stones, grass, reeds, lines on the map, water).
 - `src/app/`: the demo viewer, and the scripted weather standing in for the game (`timeline.ts`).
 - `tools/`: headless capture (`shot.ts`), motion measurement (`motion.ts`), pops in the wind (`pops.ts`), videos

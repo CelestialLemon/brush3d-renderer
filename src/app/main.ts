@@ -40,7 +40,7 @@ const canvas = document.getElementById('view') as HTMLCanvasElement;
 const sceneName = params.get('scene') ?? 'farm';
 const farm = sceneName === 'farm';
 const renderer = new BrushRenderer(canvas, {
-  shadowRadius: farm ? 48 : 34, shadowMapSize: num('shadowMap', farm ? 4096 : 2048),
+  shadowRadius: 34, shadowFollow: farm, shadowMapSize: num('shadowMap', farm ? 4096 : 2048),
   pixelRatio: params.has('dpr') ? num('dpr', 1) : params.has('profile') ? 1 : undefined,
   samples: params.has('samples') ? num('samples', 4) : undefined,
   shelterSize: num('shelterSize', 1024),

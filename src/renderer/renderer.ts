@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { cutIntoTiles } from './tiles';
 import { CAMERA_DISTANCE, ViewCamera } from './camera';
 import { CloudMap, MIRROR } from './cloudMap';
 import { CLOUD_SHAPE, type CloudShape } from './clouds';
@@ -35,6 +36,11 @@ export interface RendererOptions {
   /** The square of ground (centre and half-size, metres) the sun's shadow covers. */
   shadowCenter?: THREE.Vector3;
   shadowRadius?: number;
+  /**
+   * The shadow follows the view, for land bigger than one square can cover sharply: it covers just the ground on
+   * screen, snapped to its texels so it holds still under a pan (see followView). Off, it stays on shadowCenter's square.
+   */
+  shadowFollow?: boolean;
   /** MSAA samples for the G-buffer (0 to turn it off). */
   samples?: number;
   /** Device pixels per CSS pixel to draw at; defaults to the screen's, capped at 2. */
@@ -87,6 +93,12 @@ export interface MeshOptions {
    * like are leaves, but no cover.
    */
   cover?: Cover;
+  /**
+   * Cut into tiles this many metres square, each drawn only when it's in a pass's view (see tiles.ts): for the big meshes
+   * of a large map (the ground too: its fields are baked from every tile). Not the water. add() then returns the first
+   * tile: remove() takes them all out with it, but moving or hiding it moves or hides only that tile.
+   */
+  tile?: number;
 }
 
 export class BrushRenderer {
@@ -117,6 +129,7 @@ export class BrushRenderer {
   private sunCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.5, 400);
   private shadowCenter: THREE.Vector3;
   private shadowRadius: number;
+  private shadowFollow: boolean;
   private post: THREE.ShaderMaterial;
   private postScene = new THREE.Scene();
   private postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -176,6 +189,7 @@ export class BrushRenderer {
     this.shared.uShadowTexel.value.set(1 / size, 1 / size);
     this.shadowCenter = options.shadowCenter?.clone() ?? new THREE.Vector3();
     this.shadowRadius = options.shadowRadius ?? 30;
+    this.shadowFollow = options.shadowFollow ?? false;
     const half = () => new THREE.WebGLRenderTarget(1, 1, {
       count: 2, type: THREE.HalfFloatType, format: THREE.RGBAFormat, depthBuffer: true,
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
@@ -260,7 +274,17 @@ export class BrushRenderer {
   }
 
   /** Adds a mesh of a kind. By default it casts a shadow and is mirrored in the water (water itself is neither). */
-  add(geometry: THREE.BufferGeometry, kind: MaterialKind, options: MeshOptions = {}) {
+  add(geometry: THREE.BufferGeometry, kind: MaterialKind, options: MeshOptions = {}): THREE.Mesh {
+    if (options.tile && kind !== 'water') {
+      // Returns the first tile, standing for them all to remove().
+      const tiles = cutIntoTiles(geometry, options.tile).map((g) => this.addOne(g, kind, options, true));
+      tiles[0].userData.tiles = tiles;
+      return tiles[0];
+    }
+    return this.addOne(geometry, kind, options, false);
+  }
+
+  private addOne(geometry: THREE.BufferGeometry, kind: MaterialKind, options: MeshOptions, cull: boolean) {
     // Its trees join the springs, numbered across every mesh (the same tree's wood and leaves, the same spring).
     const trees = geometry.userData.trees as TreeSpec[] | undefined, ids = geometry.getAttribute('aTreeId');
     if (trees?.length && ids) {
@@ -269,7 +293,7 @@ export class BrushRenderer {
       geometry.userData.trees = undefined;
     }
     const mesh = new THREE.Mesh(geometry, this.material(kind));
-    mesh.frustumCulled = false;
+    mesh.frustumCulled = cull;
     mesh.userData.kind = kind;
     mesh.userData.under = options.under ?? false;
     mesh.userData.reflect = options.reflect ?? kind !== 'water';
@@ -278,10 +302,10 @@ export class BrushRenderer {
     if (mesh.userData.cover !== 'none') this.shelter.changed();
     if (kind === 'ground') this.cloudArea = false;
     this.scene.add(mesh);
-    if (kind === 'ground') this.setHazeGround();
+    if (kind === 'ground') { this.setHazeGround(); this.land = null; }
     if (options.castShadow ?? kind !== 'water') this.casters.push(mesh);
     const twin = new THREE.Mesh(geometry, this.materials.get(kind)!.prepass);
-    twin.frustumCulled = false;
+    twin.frustumCulled = cull;
     twin.renderOrder = -1;
     twin.matrixAutoUpdate = false;
     twin.matrixWorldAutoUpdate = false;
@@ -292,12 +316,15 @@ export class BrushRenderer {
 
   /** Takes out a mesh added before (a building removed): from the scene, the sun's shadow, the silhouettes and the shelter. */
   remove(mesh: THREE.Mesh) {
+    // A mesh cut into tiles goes whole.
+    const tiles = mesh.userData.tiles as THREE.Mesh[] | undefined;
+    if (tiles) { for (const t of tiles) { t.userData.tiles = undefined; this.remove(t); } return; }
     this.scene.remove(mesh);
     this.casters = this.casters.filter((m) => m !== mesh);
     const i = this.twins.findIndex(([m]) => m === mesh);
     if (i >= 0) { this.silhouettes.remove(this.twins[i][1]); this.twins.splice(i, 1); }
     if (mesh.userData.cover !== 'none') this.shelter.changed();
-    if (mesh.userData.kind === 'ground') { this.setHazeGround(); this.cloudArea = false; }
+    if (mesh.userData.kind === 'ground') { this.setHazeGround(); this.cloudArea = false; this.land = null; }
   }
 
   /**
@@ -363,13 +390,16 @@ export class BrushRenderer {
     } else {
       target = new THREE.WebGLRenderTarget(size, size, options);
       const material = groundBakeMaterial(this.shared, map);
-      const flat = new THREE.Mesh(ground.geometry, material);
-      flat.frustumCulled = false;
-      ground.updateMatrixWorld();
-      flat.matrixWorld.copy(ground.matrixWorld);
-      flat.matrixAutoUpdate = false;
-      flat.matrixWorldAutoUpdate = false;
-      scene.add(flat);
+      // Every piece of it, if it was cut into tiles.
+      for (const piece of meshes.filter((m) => m.userData.fields)) {
+        const flat = new THREE.Mesh(piece.geometry, material);
+        flat.frustumCulled = false;
+        piece.updateMatrixWorld();
+        flat.matrixWorld.copy(piece.matrixWorld);
+        flat.matrixAutoUpdate = false;
+        flat.matrixWorldAutoUpdate = false;
+        scene.add(flat);
+      }
       bake(target);
       material.dispose();
       main.uniforms.uFields = { value: target.texture };
@@ -526,15 +556,26 @@ export class BrushRenderer {
   }
 
   private updateSunCamera() {
-    const r = this.shadowRadius, c = this.sunCamera;
-    c.left = -r; c.right = r; c.top = r; c.bottom = -r; c.near = 1; c.far = 300;
-    c.position.copy(this.shadowCenter).addScaledVector(this.shadowDir, 150);
+    const c = this.sunCamera, sun = this.shared.uSunDir.value;
     // Up in the shadow map is away from the sun's bearing (the same as the world's up for the sun itself), which holds
     // still while the cloud turns the shadows overhead: switching it near overhead would turn the map's texels at once.
-    const sun = this.shared.uSunDir.value;
     c.up.set(-sun.x, 0, -sun.z);
     if (c.up.lengthSq() < 1e-6) c.up.set(0, 0, 1);
-    c.lookAt(this.shadowCenter);
+    c.near = 1; c.far = 300;
+    if (this.shadowFollow) {
+      // Slid along the sun's own line to beside the view: that moves nothing across the map, so the map's texels stay
+      // on the same ground wherever the view is, and only the window onto them (followView) moves.
+      const t = this.view.target, d = this.shadowDir;
+      c.position.copy(d).multiplyScalar(d.dot(t) + 150);
+      c.lookAt(c.position.clone().sub(d));
+      c.updateMatrixWorld();
+      this.followView();
+    } else {
+      const r = this.shadowRadius;
+      c.left = -r; c.right = r; c.top = r; c.bottom = -r;
+      c.position.copy(this.shadowCenter).addScaledVector(this.shadowDir, 150);
+      c.lookAt(this.shadowCenter);
+    }
     c.updateProjectionMatrix();
     c.updateMatrixWorld();
     const bias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
@@ -542,6 +583,47 @@ export class BrushRenderer {
     this.shadowDirty = true;
   }
   private shadowDirty = true;
+
+  /**
+   * The shadow's window for the view (see shadowFollow): just the ground the camera sees, as the sun sees it. A grid of
+   * points across the screen, each traced down to the land and up again by what stands on it, bounds everything on
+   * screen; the sun's view of them holds every shadow that can show, whatever off-screen throws it (a shadow and what
+   * throws it fall on the same point of the map). Its size in steps of 4 m, so the texels' size changes only now and
+   * then (a zoom, a turn, a hill), and its edges on whole texels, so a pan doesn't make the shadows' edges crawl.
+   */
+  private followView() {
+    const c = this.sunCamera, v = this.view.camera;
+    v.updateMatrixWorld();
+    const land = (this.land ??= LandHeights.from(this.scene)) ?? LandHeights.FLAT;
+    const toSun = c.matrixWorldInverse, fwd = new THREE.Vector3(0, 0, -1).transformDirection(v.matrixWorld);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    const p = new THREE.Vector3(), edge = new THREE.Vector3();
+    const take = () => {
+      p.applyMatrix4(toSun);
+      x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
+    };
+    const N = 8;
+    for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+      edge.set(THREE.MathUtils.lerp(v.left, v.right, i / N), THREE.MathUtils.lerp(v.bottom, v.top, j / N), 0).applyMatrix4(v.matrixWorld);
+      const hit = land.trace(edge, fwd);
+      // Where the land is, and what stands on it up to TALL above.
+      p.copy(edge).addScaledVector(fwd, hit); take();
+      p.copy(edge).addScaledVector(fwd, hit + LandHeights.TALL / fwd.y); take();
+    }
+    // A little round it for the shadows' soft edges, and for the land between the points. The size grows at once, in
+    // steps of 8 m, but shrinks only when well too big: the land under a pan changes what's needed a little, and every
+    // change of size moves every texel, so it mustn't flick back and forth.
+    const size = (have: number, need: number) => need > have || need < have - 16 ? Math.ceil(need / 8) * 8 : have;
+    const w = (this.shadowSize[0] = size(this.shadowSize[0], x1 - x0 + 6));
+    const h = (this.shadowSize[1] = size(this.shadowSize[1], y1 - y0 + 6));
+    const tx = w / this.shadowTarget.width, ty = h / this.shadowTarget.height;
+    c.left = Math.round(((x0 + x1) / 2 - w / 2) / tx) * tx; c.right = c.left + w;
+    c.bottom = Math.round(((y0 + y1) / 2 - h / 2) / ty) * ty; c.top = c.bottom + h;
+  }
+  /** The land's heights, for followView: from the ground mesh, once it's there. */
+  private land: LandHeights | null = null;
+  /** The shadow window's size across and up the map (metres), held between frames (followView). */
+  private shadowSize: [number, number] = [0, 0];
   /** Where the shadows fall from: the sun, turned towards overhead under cloud. */
   private shadowDir = new THREE.Vector3(0, 1, 0);
 
@@ -660,6 +742,8 @@ export class BrushRenderer {
     this.view.apply(this.width * toScreen, this.height * toScreen);
     s.uViewBack.value.copy(this.view.backward());
     s.uViewTarget.value.copy(this.view.target);
+    // The shadow's window, for the view as it is now (the look set it for the last).
+    if (this.shadowFollow) this.updateSunCamera();
     // Where each pixel is in the world, for the fog: the camera's frame, scaled to half the view.
     const cam = this.view.camera, pu = this.post.uniforms;
     pu.uCamPos.value.copy(cam.position);
@@ -753,5 +837,61 @@ export class BrushRenderer {
     if (this.settings.shelterDebug) this.shelter.drawOverlay(gl, this.gbuffer.textures[1], this.view.camera, this.width, this.height);
     for (const o of grounded) o.visible = true;
     t?.endFrame();
+  }
+}
+
+/**
+ * The land's highest ground in each cell of a coarse grid, from the ground mesh, to trace the view's rays down to it
+ * (followView). Off the grid, and without a ground mesh, the land is flat at 0.
+ */
+class LandHeights {
+  /** How tall what stands on the land can be and still catch a shadow worth drawing (trees, roofs, the windmill's sails). */
+  static readonly TALL = 16;
+  static readonly CELL = 2;
+  static readonly FLAT = new LandHeights(0, 0, 0, 0, new Float32Array(0), 0, 0);
+  constructor(readonly x0: number, readonly z0: number, readonly nx: number, readonly nz: number, readonly max: Float32Array,
+    readonly lo: number, readonly hi: number) {}
+
+  static from(scene: THREE.Scene): LandHeights | null {
+    const box = new THREE.Box3();
+    const grounds = scene.children.filter((o): o is THREE.Mesh => o.userData.kind === 'ground' && (o as THREE.Mesh).isMesh);
+    for (const o of grounds) box.expandByObject(o);
+    if (box.isEmpty()) return null;
+    const C = LandHeights.CELL, nx = Math.ceil((box.max.x - box.min.x) / C) + 1, nz = Math.ceil((box.max.z - box.min.z) / C) + 1;
+    const max = new Float32Array(nx * nz).fill(box.min.y);
+    const p = new THREE.Vector3();
+    for (const o of grounds) {
+      const pos = o.geometry.getAttribute('position');
+      for (let i = 0; i < pos.count; i++) {
+        p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        const k = Math.floor((p.z - box.min.z) / C) * nx + Math.floor((p.x - box.min.x) / C);
+        if (p.y > max[k]) max[k] = p.y;
+      }
+    }
+    return new LandHeights(box.min.x, box.min.z, nx, nz, max, box.min.y, box.max.y);
+  }
+
+  /** The ground's highest point in the cell round (x, z), and its neighbours' (a vertex on a cell's edge counts for both). */
+  at(x: number, z: number) {
+    const C = LandHeights.CELL, i = Math.floor((x - this.x0) / C), j = Math.floor((z - this.z0) / C);
+    let m = -Infinity;
+    for (let dj = -1; dj <= 0; dj++) for (let di = -1; di <= 0; di++) {
+      const a = i + di, b = j + dj;
+      if (a >= 0 && b >= 0 && a < this.nx && b < this.nz) m = Math.max(m, this.max[b * this.nx + a]);
+    }
+    return m === -Infinity ? 0 : m;
+  }
+
+  /** How far along the ray (from, dir, pointing down) it reaches the land, to a metre or so. */
+  trace(from: THREE.Vector3, dir: THREE.Vector3) {
+    if (this.nx === 0) return -from.y / dir.y;
+    // From where it comes down past the land's highest to where it passes below its lowest.
+    let t = Math.max(0, (this.hi - from.y) / dir.y);
+    const end = (this.lo - from.y) / dir.y;
+    for (; t < end; t += 1) {
+      const x = from.x + dir.x * t, y = from.y + dir.y * t, z = from.z + dir.z * t;
+      if (y <= this.at(x, z)) return t;
+    }
+    return end;
   }
 }
