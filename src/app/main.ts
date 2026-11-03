@@ -8,8 +8,10 @@ import { cloudDriftSpeed } from '../renderer/clouds';
 import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weather, type WeatherName } from '../renderer/weather';
 import { steadyWind, WIND_SCALE, windName, type WindStrength } from '../renderer/wind';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
-import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, timelineWater, timelineWind, type SpellName } from './timeline';
+import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, timelineSoak, timelineWater, timelineWind, type SpellName } from './timeline';
 import { DemoWater, USUAL_WATER, type WaterState } from './water';
+import { DemoGround } from './ground';
+import { DEFAULT_WET_LOOKS, WET_LOOKS, type WetLooks } from '../renderer/ground';
 import { WindWorker } from '../wind/client';
 import { TICK as WIND_TICK, type WindGoal, type WindSave } from '../wind/sim';
 import { WindView } from './windView';
@@ -28,6 +30,8 @@ import { WindView } from './windView';
 //     a storm flooding the stream over the land)
 //   water=usual|spate|flood (the water, #18), then each value over it: rise (m over the usual), flow (times the usual
 //     speed), mud (0..1)
+//   wet (0..1: how wet the land is, #11; soaked where it rains, by default), then the looks for wet things while the
+//     developer picks (see WET_LOOKS): damp=a|b (painted things), sheen=a|b|c (inked things), puddles=a|b, mudLook=a|b
 //   cloudSeed (which cloud field: a whole number)
 //   falling=0 (leave out the things in the air: the wind's leaves, and rain and snow to come; dust is in the haze)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
@@ -79,6 +83,23 @@ function sendWater(w: WaterState, immediate = false) {
   renderer.setWater(demoWater.map(w), immediate ? 0 : undefined);
 }
 sendWater(water, true);
+// The ground (#11), standing in for the game's: a map of how wet and how muddy the land is, made from how soaked it is
+// overall (the controls or the timeline set it), sent whenever that changes. 'wet' is how soaked, 0..1.
+const demoGround = new DemoGround(scene.stream, scene.height, scene.bare);
+const ground = { wet: 0 };
+let groundSent = -1;
+/** Sends the ground as the game does, when it has changed: eased in, or at once. */
+function sendGround(wet: number, immediate = false) {
+  const w = Math.round(wet * 400) / 400;
+  if (w === groundSent) return;
+  groundSent = w;
+  renderer.setGround(w > 0 ? demoGround.map(2 * w - 1) : null, immediate ? 0 : undefined);
+}
+// The looks for wet things, while the developer picks (#11).
+const wetLookParam = <K extends keyof WetLooks>(k: K) =>
+  (Object.hasOwn(WET_LOOKS[k], params.get(k) ?? '') ? params.get(k) : DEFAULT_WET_LOOKS[k]) as WetLooks[K];
+const wetLooks: WetLooks = { damp: wetLookParam('damp'), sheen: wetLookParam('sheen'), puddles: wetLookParam('puddles'), mudLook: wetLookParam('mudLook') };
+renderer.setWetLooks(wetLooks);
 const view = renderer.view;
 view.view = num('view', 0); view.zoom = num('zoom', 40);
 view.target.set(num('x', farm ? 0 : -1), 0, num('z', 0));
@@ -147,6 +168,9 @@ const weather: Sky & { haze: Haze } = {
   },
 };
 if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase', 'hazeKind'].some((k) => params.has(k))) presetName = null;
+// Soaked where it's raining, unless asked.
+ground.wet = num('wet', weather.rain > 0 ? 1 : 0);
+sendGround(ground.wet, true);
 // The clouds' field (#8).
 const cloudSeed = num('cloudSeed', 1);
 
@@ -191,7 +215,7 @@ let sent: Weather = weather;
 /** Sends the weather as the game does, the clouds' drift and seed with it. */
 function send(w: Weather, immediate = false, time = lastTime) {
   sent = { ...w };
-  dustSource(Math.max(w.rain ?? 0, w.snow ?? 0));
+  dustSource(Math.max(w.rain ?? 0, w.snow ?? 0, ground.wet));
   renderer.setWeather({ ...w, drift: driftAt(time), cloudSeed }, immediate);
 }
 let lastTime = 0;
@@ -286,6 +310,8 @@ function hud() {
     Object.assign(weather, { cloud: p.cloud, rain: p.rain ?? 0, snow: p.snow ?? 0, heat: p.heat ?? 0 });
     weather.haze = p.haze ? { ...p.haze } : { ...weather.haze, amount: 0 };
     presetName = pick.value as WeatherName; playing = false; timelineEl.textContent = '';
+    // A rainy weather picked: the land as it would be after a while of it, soaked.
+    if (weather.rain > 0) { ground.wet = 1; sendGround(ground.wet); }
     send(weather);
     hud();
   };
@@ -345,6 +371,22 @@ function hud() {
     (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)} m`, true));
   hudEl.append(slider('flow', 0, 5, 0.05, () => water.flow, waterSet((v) => { water.flow = v; }), (v) => `${v.toFixed(2)}×`, true));
   hudEl.append(slider('mud', 0, 1, 0.01, () => water.mud, waterSet((v) => { water.mud = v; }), share, true));
+
+  // The ground (#11): how wet the land is, what the game would send (the timeline wets and dries it too); and the looks
+  // for wet things, while the developer picks.
+  hudEl.append(Object.assign(document.createElement('div'), { className: 'break' }));
+  hudEl.append(slider('Wet', 0, 1, 0.01, () => ground.wet, (v) => { ground.wet = v; sendGround(v); send(sent); },
+    (v) => (v <= 0 ? 'dry' : v < 0.5 ? `drying ${v.toFixed(2)}` : v < 0.85 ? `wet ${v.toFixed(2)}` : `soaked ${v.toFixed(2)}`)));
+  const labels: Record<keyof WetLooks, string> = { damp: 'Painted', sheen: 'Inked', puddles: 'Puddles', mudLook: 'Mud' };
+  for (const k of Object.keys(WET_LOOKS) as (keyof WetLooks)[]) {
+    hudEl.append(Object.assign(document.createElement('span'), { textContent: labels[k] }));
+    for (const [l, title] of Object.entries(WET_LOOKS[k])) {
+      const b = document.createElement('button');
+      b.textContent = l.toUpperCase(); b.className = wetLooks[k] === l ? 'on' : ''; b.title = title;
+      b.onclick = () => { (wetLooks as Record<string, string>)[k] = l; renderer.setWetLooks(wetLooks); hud(); };
+      hudEl.append(b);
+    }
+  }
 }
 const timelineEl = document.createElement('span');
 /** The weather controls' values, put back to what they show (the timeline moves them). */
@@ -379,6 +421,9 @@ function playTimeline(time: number) {
   // The water, when the spell moves it (the game's setWater), a few times a second as the weather is.
   const ws = timelineWater(time - timelineStart, speed, spell);
   if (ws) { Object.assign(water, ws); sendWater({ ...water }); for (const r of refreshers) r(); }
+  // The ground, as the game's rain and sun have wetted and dried it (#11).
+  const wet = (timelineSoak(time - timelineStart, speed, spell) + 1) / 2;
+  if (Math.abs(wet - ground.wet) > 1e-4) { ground.wet = wet; sendGround(wet); for (const r of refreshers) r(); }
   if (key === timelineSent) return;
   timelineSent = key;
   // The game sends the whole weather: what the spell leaves out is none (a haze thinned away keeps its colour and height).
@@ -416,7 +461,7 @@ if (params.has('shot')) {
     options: {
       hide?: MaterialKind[]; grain?: boolean; time?: number; hour?: number; wind?: Partial<typeof wind>;
       weather?: Partial<Weather> | WeatherName; timeline?: { time: number; speed?: number; spell?: SpellName }; ease?: boolean;
-      water?: Partial<WaterState>;
+      water?: Partial<WaterState>; wet?: number;
     } = {}) => {
     if (cam) { view.target.set(cam.x, 0, cam.z); view.zoom = cam.zoom; view.view = cam.view; view.update(0, true); }
     if (options.hour !== undefined) hour = options.hour;
@@ -435,11 +480,14 @@ if (params.has('shot')) {
       send(whole(timelineAt(t.time, t.speed ?? speed, t.spell ?? spell)), !options.ease, time);
       const ws = timelineWater(t.time, t.speed ?? speed, t.spell ?? spell);
       if (ws) Object.assign(water, ws);
+      ground.wet = (timelineSoak(t.time, t.speed ?? speed, t.spell ?? spell) + 1) / 2;
     }
     if (options.water) Object.assign(water, options.water);
+    if (options.wet !== undefined) ground.wet = options.wet;
     // The water's clock is the renderer's: put it at the frame's time first, so an ease starts from there.
     renderer.shared.uTime.value = time;
     sendWater({ ...water }, !options.ease);
+    sendGround(ground.wet, !options.ease);
     if (!options.weather && !options.timeline) send(sent, false, time);
     await windTo(time, windGoal(), !!options.ease);
     drawWind();

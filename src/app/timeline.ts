@@ -1,5 +1,6 @@
 import { WEATHER_PRESETS, type HazeKind, type Weather } from '../renderer/weather';
 import type { WaterState } from './water';
+import { soakStep } from './ground';
 
 // A stand-in for the game's weather (#7): scripted spells, at the game's speeds, sent the way the game sends it. The game's
 // day is 240 s at normal speed (Soil-n-Silo's DAY_SECONDS), up to 3x faster, so a game hour is 10 s; its conditions glide
@@ -48,7 +49,7 @@ export const SPELLS = {
       { hour: 11.5, cloud: 0, rain: 0 },
       { hour: 12, cloud: 0, rain: 0 },
     ],
-    phase: (h) => (h < 1.5 ? 'clear' : h < 4.5 ? 'cloud building' : h < 8 ? 'a shower' : 'clearing'),
+    phase: (h) => (h < 1.5 ? 'clear' : h < 4.5 ? 'cloud building' : h < 8 ? 'a shower' : h < 10 ? 'clearing' : 'the ground drying'),
   },
   fog: {
     keys: [
@@ -117,8 +118,12 @@ const smooth = (t: number) => t * t * (3 - 2 * t);
 
 /** A value of the spell at a time (seconds of real time, at a game speed), glided between its keys, held between ticks. */
 function valueAt(spell: SpellName, seconds: number, speed: number, value: (key: Key) => number) {
+  return valueAtHour(spell, hourAt(spell, Math.floor(seconds * TICK) / TICK, speed), value);
+}
+
+/** A value of the spell at an hour into it, glided between its keys. */
+function valueAtHour(spell: SpellName, hour: number, value: (key: Key) => number) {
   const keys: Key[] = SPELLS[spell].keys;
-  const hour = hourAt(spell, Math.floor(seconds * TICK) / TICK, speed);
   let i = 0;
   while (i < keys.length - 2 && hour >= keys[i + 1].hour) i++;
   const a = keys[i], b = keys[i + 1], t = smooth((hour - a.hour) / (b.hour - a.hour));
@@ -146,6 +151,20 @@ export function timelineWater(seconds: number, speed = 1, spell: SpellName = 'sh
   if ((SPELLS[spell].keys as Key[])[0].rise === undefined) return null;
   const at = (k: (key: Key) => number) => valueAt(spell, seconds, speed, k);
   return { rise: at((k) => k.rise ?? 0), flow: at((k) => k.flow ?? 1), mud: at((k) => k.mud ?? 0) };
+}
+
+/**
+ * How soaked the land is at a time (#11, -1 bone dry .. 1 soaked; see DemoGround): the game's rain and sun since the
+ * spell began, which starts with the land dry. Held between ticks, as the weather is.
+ */
+export function timelineSoak(seconds: number, speed = 1, spell: SpellName = 'shower') {
+  const end = hourAt(spell, Math.floor(seconds * TICK) / TICK, speed), STEP = 0.05;
+  let soak = -1;
+  for (let h = 0; h < end; h += STEP) {
+    const mid = Math.min(h + STEP / 2, end), rain = valueAtHour(spell, mid, (k) => k.rain);
+    soak = soakStep(soak, rain >= RAIN_FROM ? rain : 0, valueAtHour(spell, mid, (k) => k.cloud), Math.min(STEP, end - h));
+  }
+  return soak;
 }
 
 /** What the spell is doing at a time, for the demo's controls. */
