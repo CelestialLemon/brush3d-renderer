@@ -665,7 +665,8 @@ const f = (x: number) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
  *   deepens to blue-green, the water's own colour scattered back.
  *   The reflection: the scene mirrored in the water (uReflect), the sky where there's nothing, more of it where the water
  *   is deep and dark, broken along the flow by ripples.
- * Ripples drift with the flow; the reflection and the bed stay put. aPaint.z is the flow's direction.
+ * Ripples drift with the flow; the reflection and the bed stay put. aPaint.z is the flow's direction, aPaint.y its speed (1 a
+ * stream's).
  */
 const WATER_FRAG = /* glsl */ `
 ${FRAG_HEAD}
@@ -683,7 +684,8 @@ void main() {
   vec3 p = vWorldPos;
   float flowA = vPaint.z;
   vec2 dir = vec2(cos(flowA), sin(flowA));
-  vec2 q = p.xz - dir * uTime * 0.35;
+  // aPaint.y: how fast the ripples drift, against a stream's (a pond's barely do).
+  vec2 q = p.xz - dir * uTime * 0.35 * vPaint.y;
   vec2 uv = gl_FragCoord.xy / uScreen;
   // Ripples: long, soft swells along the flow, and their screen-space nudge.
   float r1 = strokes(q * 1.3, flowA), r2 = strokes(q * 2.9 + 7.0, flowA + 0.3);

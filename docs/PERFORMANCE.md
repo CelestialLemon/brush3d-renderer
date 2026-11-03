@@ -187,6 +187,22 @@ up the layer, or worked out as the grass's gusts are, each cost half again), and
 
 Dust is the dearest at 0.3 ms here (the preset's warmth and shimmer included), about 0.6 on the laptop, inside the line's 0.8.
 
+## The farm valley
+
+The farm grew from a 68 m square to a 176 m valley (2026-11-03). Measured on the RX 570 at 1080p:
+
+| | GPU ms | shadow | reflection | main view | CPU ms |
+|---|---:|---:|---:|---:|---:|
+| before, the default view | 11.9 | 3.4 | 1.4 | 6.7 | 0.6 |
+| the valley, the default view | 13.9 | 4.9 | 2.0 | 6.3 | 3 to 5 |
+| the valley, the widest zoom (16) | 23.0 | 8.8 | 3.6 | 9.6 | 7 |
+
+What keeps it near: the big meshes are cut into 24 m tiles, each drawn only in the passes that can see it (16 m tiles saved
+0.6 ms of GPU but cost 2 ms of CPU); the ground is tiled too (1.5 ms off the shadow pass); and the sun's shadow map covers
+only the ground on screen, traced down to the land, instead of a fixed square (a little off, and sharper). What's left is
+mostly the trees throwing shadows (4.3 ms of the shadow pass), and on the CPU the draw calls and the tree springs (1 ms).
+Not tuned further yet: thinner woods, fewer dabs in the shadow pass or merged meshes would bring it back.
+
 ## Quality settings
 
 One look on every machine for now. These are the knobs a weather task builds in, so a machine that misses its 45 fps can

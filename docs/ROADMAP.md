@@ -65,6 +65,20 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
     from every view. It reflects one sky across the array, with drifting light, long glints and the sun's sheen.
   - More props: big apple bins, empty ones stacked, baskets, a wheelbarrow, beehives, round hay bales, barrels by the table.
 
+- **The farm valley** (third pass 2026-11-03), awaiting review: the farm grown from a 68 m square into a 176 m valley, a
+  bigger and more varied test scene for renderer features. The *Dear Alice* core stays in the middle, and round it:
+  - A farmstead to the right: farmhouse, barn, hen house with its run, well, glasshouse in a paled kitchen garden of raised
+    beds, a hay wagon, under old trees.
+  - A hedged patchwork above: sunflowers, a ploughed field, barley, a hay meadow being cut with its bales, a back track.
+  - A windmill on a knoll up the stream to the left, with outcrops, dry-stone walls and lone pasture trees.
+  - Below: the stream opens into a pond (willows, reeds, a jetty and a rowing boat) and leaves by an outflow; lavender
+    with cypresses and hives, cabbages, an old orchard of standard fruit trees, a scarecrow.
+  - Woods along the edges, more hedges and drifts of wild flowers.
+  - The models (farmhouse, barn, hen house, well, glasshouse, windmill, hay wagon, rowing boat, scarecrow) were made in
+    Blender by Sol (`tools/blender/`); the layout is `src/scenes/farm.ts`'s header.
+  - For the bigger land: the big meshes are cut into 24 m tiles, each drawn only when a pass can see it
+    (`src/renderer/tiles.ts`), and the sun's shadow covers only the ground on screen (`shadowFollow`).
+
 ### Farm: known gaps
 
 - The reference looks down more steeply than the game's camera (30°), so its frame shows more ground and flatter trees; ours
@@ -74,8 +88,12 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   by 0.18 (was 0.15), all of it foliage (see Motion and stability).
 - Broadleaf crowns still read partly as repeated rounded clusters, and the water's reflections ripple more crisply than
   painted ones would.
-- The land stops at a square edge; at the widest zoom, or turned, its corners can show. No people or machines: those are the
-  game's.
+- The land stops at a square edge, with the sky beyond; the woods hide some of it, but panned to an edge it shows. No people or
+  machines: those are the game's.
+- The valley costs more than the old farm: 13.9 ms at 1080p on the RX 570 in the default view (11.9 before), 23 at the widest
+  zoom, and 3 to 5 ms of CPU (0.6 before: more draw calls, and 691 trees' springs). Most of the GPU's extra is trees
+  throwing shadows. Not tuned yet, by choice (see docs/PERFORMANCE.md, The farm valley).
+- Sunflowers read as dots from far off.
 
 ## Later
 

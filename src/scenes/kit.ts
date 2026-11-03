@@ -286,6 +286,28 @@ export function addReeds(g: MeshBuilder, ground: Ground, cx: number, cz: number,
   }
 }
 
+/**
+ * A clump of a low plant (a lavender cushion, a cabbage, a row of greens): leafy dabs over a dome `radius` across and
+ * `tall` high, its own colour on top going to `foot` at the bottom, with `fruit` dabs on it if it bears any. Not a tree:
+ * it doesn't sway, only flutters.
+ */
+export function addMound(b: MeshBuilder, x: number, y: number, z: number, radius: number, tall: number, col: THREE.Color, foot: THREE.Color,
+  count: number, rand: () => number, fruit?: THREE.Color) {
+  for (let i = 0; i < count; i++) {
+    const a = rand() * Math.PI * 2, up = Math.sqrt(rand()), out = Math.sqrt(1 - up * up) * (0.6 + rand() * 0.4);
+    const nrm = new THREE.Vector3(Math.cos(a) * out, up + 0.2, Math.sin(a) * out).normalize();
+    const p = new THREE.Vector3(x + Math.cos(a) * out * radius, y + up * tall * 0.85, z + Math.sin(a) * out * radius);
+    const c = foot.clone().lerp(col, smooth(0.1, 0.7, up)).offsetHSL((rand() - 0.5) * 0.015, 0, (rand() - 0.5) * 0.05);
+    addDab(b, p, nrm, c, (0.1 + rand() * 0.07) * Math.max(0.6, radius / 0.35), rand(), [0.6, 0.6 + rand() * 0.3, -1, 0.6]);
+  }
+  if (!fruit) return;
+  for (let i = 0; i < 4; i++) {
+    const a = rand() * Math.PI * 2, h = 0.3 + rand() * 0.55;
+    addDab(b, new THREE.Vector3(x + Math.cos(a) * radius * 0.9, y + h * tall, z + Math.sin(a) * radius * 0.9), new THREE.Vector3(Math.cos(a), 0.4, Math.sin(a)).normalize(),
+      fruit.clone().offsetHSL((rand() - 0.5) * 0.03, 0, (rand() - 0.5) * 0.08), 0.06 + rand() * 0.02, rand(), [0.2, 1, -1, 0.5]);
+  }
+}
+
 /** A drift of wildflowers of one colour. */
 export function addFlowers(b: MeshBuilder, ground: Ground, cx: number, cz: number, col: THREE.Color, count: number,
   rand: () => number, ok: (x: number, z: number) => boolean) {
@@ -308,7 +330,9 @@ export class MapLine {
   readonly points: THREE.Vector2[] = [];
   readonly length: number;
   private grid: Float32Array | null = null;
-  private gridMin = 0; private gridCell = 0.35; private gridN = 0;
+  /** How far round the line its distance grid reaches, metres. */
+  static readonly REACH = 24;
+  private gridX = 0; private gridMin = 0; private gridCell = 0.35; private gridN = 0; private gridNx = 0;
 
   constructor(control: [number, number][], step = 0.5) {
     const curve = new THREE.SplineCurve(control.map(([x, z]) => new THREE.Vector2(x, z)));
@@ -336,18 +360,29 @@ export class MapLine {
     return { distance: Math.sqrt(best), along, dx, dz, side };
   }
 
-  /** Distance to the line, from the grid (built on first use over a square of the given half-size). */
-  distance(x: number, z: number, half = 48): number {
+  /**
+   * Distance to the line, from a grid over the line's own neighbourhood (its bounds and `reach` metres round them), built
+   * on first use. Beyond that it's only a lower bound (the distance to the neighbourhood plus `reach`): every use of a
+   * line's distance has stopped caring well before then, and a grid over a whole large map would take seconds to fill.
+   */
+  distance(x: number, z: number, reach = MapLine.REACH): number {
     if (!this.grid) {
-      this.gridMin = -half; this.gridN = Math.ceil((2 * half) / this.gridCell) + 1;
-      const n = this.gridN, g = new Float32Array(n * n);
-      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) g[j * n + i] = this.near(this.gridMin + i * this.gridCell, this.gridMin + j * this.gridCell).distance;
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+      for (const p of this.points) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.y); z1 = Math.max(z1, p.y); }
+      const c = this.gridCell;
+      this.gridX = Math.floor((x0 - reach) / c) * c; this.gridMin = Math.floor((z0 - reach) / c) * c;
+      this.gridNx = Math.ceil((x1 + reach - this.gridX) / c) + 1; this.gridN = Math.ceil((z1 + reach - this.gridMin) / c) + 1;
+      const nx = this.gridNx, nz = this.gridN, g = new Float32Array(nx * nz);
+      for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) g[j * nx + i] = this.near(this.gridX + i * c, this.gridMin + j * c).distance;
       this.grid = g;
     }
-    const n = this.gridN, fx = (x - this.gridMin) / this.gridCell, fz = (z - this.gridMin) / this.gridCell;
-    if (fx < 0 || fz < 0 || fx >= n - 1 || fz >= n - 1) return this.near(x, z).distance;
+    const nx = this.gridNx, fx = (x - this.gridX) / this.gridCell, fz = (z - this.gridMin) / this.gridCell;
+    if (fx < 0 || fz < 0 || fx >= nx - 1 || fz >= this.gridN - 1) {
+      const ox = Math.max(0, -fx, fx - (nx - 1)) * this.gridCell, oz = Math.max(0, -fz, fz - (this.gridN - 1)) * this.gridCell;
+      return reach + Math.hypot(ox, oz);
+    }
     const i = Math.floor(fx), j = Math.floor(fz), tx = fx - i, tz = fz - j, g = this.grid;
-    const a = g[j * n + i], b = g[j * n + i + 1], c = g[(j + 1) * n + i], d = g[(j + 1) * n + i + 1];
+    const a = g[j * nx + i], b = g[j * nx + i + 1], c = g[(j + 1) * nx + i], d = g[(j + 1) * nx + i + 1];
     return (a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + d * tx) * tz;
   }
 
@@ -381,4 +416,20 @@ export function addWaterRibbon(b: MeshBuilder, line: MapLine, half: number, y: n
   }
   const i0 = b.vertexCount - pts.length * 2;
   for (let i = 0; i < pts.length - 1; i++) { const a = i0 + i * 2; b.quad(a, a + 1, a + 3, a + 2); }
+}
+
+/**
+ * Still water (a pond) over the cells of a 1 m grid where `wet` holds, at one level: its edges tuck under the banks, as a
+ * ribbon's do. Its ripples barely drift (aPaint.y, the drift's speed against a stream's), towards `flow` radians.
+ */
+export function addStillWater(b: MeshBuilder, x0: number, z0: number, x1: number, z1: number, y: number, flow: number,
+  wet: (x: number, z: number) => boolean) {
+  const up = new THREE.Vector3(0, 1, 0), nx = Math.ceil(x1 - x0) + 1, nz = Math.ceil(z1 - z0) + 1, i0 = b.vertexCount;
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) b.vertex({ x: x0 + i, y, z: z0 + j }, up, C.water, [0, 0.12, flow, 0], [0, 0.5]);
+  for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) {
+    if (!wet(x0 + i + 0.5, z0 + j + 0.5)) continue;
+    const a = i0 + j * nx + i;
+    // Wound to face up (x along i, z along j).
+    b.quad(a, a + nx, a + nx + 1, a + 1);
+  }
 }
