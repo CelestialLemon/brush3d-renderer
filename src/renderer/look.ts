@@ -55,6 +55,9 @@ const KEYS: Key[] = [
     hazeDensity: 0.03, hazeFloor: 0.14, hazeMax: 0.5, exposure: 0.55, saturation: 0.82, cloudDim: 0.5, cloudHaze: 0.85, night: 1, nightShift: 1 },
 ];
 
+/** The noon key: the sun at its height on the reference day. */
+const NOON_KEY = KEYS.find((k) => k.hour === REFERENCE_DAY.noon)!;
+
 /** Named hours on the reference day (season.ts), for the demo's buttons. */
 export const PRESETS = { Dawn: 7, Noon: 12, 'Golden hour': 17.5, Sunset: 19.5, Night: 22 } as const;
 export type HourName = keyof typeof PRESETS;
@@ -79,12 +82,17 @@ export function lookAt(hour: number, day: Day = REFERENCE_DAY): Look {
   const look = keyedLook(day === REFERENCE_DAY ? clock : referenceHour(clock, day));
   look.hour = clock;
   if (day.height !== REFERENCE_DAY.height || day.arc !== REFERENCE_DAY.arc) {
-    const byDay = 1 - look.night, noon = KEYS.find((k) => k.hour === REFERENCE_DAY.noon)!;
-    // Lowered most at noon and hardly near the horizon: the dawn's and golden hour's looks are tuned at their own heights
-    // (10° and 16°), and lower than about 12° the flat land turns its back on the sun and falls into shade, all of it at
-    // once. So a winter's golden hour still lights the land, a little lower (14°), and its noon is the season's.
-    if (look.sunEl > 0) look.sunEl *= 1 - (1 - day.height / noon.sunEl) * THREE.MathUtils.smoothstep(look.sunEl, 0, noon.sunEl) * byDay;
-    look.sunAz = noon.sunAz + (((look.sunAz - noon.sunAz + 540) % 360) - 180) * lerp(1, day.arc, byDay);
+    const byDay = 1 - look.night;
+    // Lowered most at noon and hardly near the horizon, rising all morning to the day's noon height: x / √(1 + b x²),
+    // which is x low down and the day's height at noon's. The dawn's and golden hour's looks are tuned at their own
+    // heights (10° and 16°), and lower than about 12° the flat land turns its back on the sun and falls into shade, all of
+    // it at once. So a winter's golden hour still lights the land, a little lower (14° under a 25° noon), and its noon is
+    // the season's.
+    if (look.sunEl > 0) {
+      const b = ((NOON_KEY.sunEl / day.height) ** 2 - 1) / NOON_KEY.sunEl ** 2;
+      look.sunEl = lerp(look.sunEl, look.sunEl / Math.sqrt(1 + b * look.sunEl * look.sunEl), byDay);
+    }
+    look.sunAz = NOON_KEY.sunAz + (((look.sunAz - NOON_KEY.sunAz + 540) % 360) - 180) * lerp(1, day.arc, byDay);
   }
   return look;
 }

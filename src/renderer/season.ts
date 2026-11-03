@@ -9,9 +9,9 @@
 // The hour's looks (look.ts) are keyed to one reference day: the sun up at 6, at its height at 12 and down at 20. A
 // season's day is mapped onto it piece by piece, so the keys follow the game's sun: sunrise to sunrise, the middle of the
 // game's day (where its sun is strongest) to noon, sunset to sunset. The twilights keep their length in hours (an hour of
-// first light before sunrise, two of dusk after sunset), and the morning, the afternoon and the night stretch or shrink to
-// fit. So a winter day of 8 to 16 has its dawn look at 8:40, noon at 12, golden hour at 14:45, the sunset at 15:45, and
-// dusk until 18.
+// first light before sunrise, two of dusk after sunset; shorter only when the night is), and the morning, the afternoon and
+// the night stretch or shrink to fit. So a winter day of 8 to 16 has its dawn look at 8:40, noon at 12, golden hour at
+// 14:45, the sunset at 15:45, and dusk until 18.
 
 export const SEASONS = ['spring', 'summer', 'autumn', 'winter'] as const;
 export type Season = (typeof SEASONS)[number];
@@ -25,7 +25,8 @@ export interface SeasonSettings {
   season: Season;
   /** The season's twist, in the game's words; none for an ordinary season. */
   character?: Character | null;
-  /** When the sun rises and sets, in the game's clock hours (0-24). Left out, the season's in the game's table. */
+  /** When the sun rises and sets, in the game's clock hours (0-24; a sunset before the sunrise is the next day's). Left
+   * out, the season's in the game's table. */
   sunrise?: number;
   sunset?: number;
 }
@@ -68,28 +69,42 @@ export interface Day {
 /** The day the looks are keyed to (look.ts). With no season set, the looks are as they were before seasons. */
 export const REFERENCE_DAY: Day = { sunrise: 6, noon: 12, sunset: 20, height: 58, arc: 1 };
 
-/** The first light's hours before sunrise, and the dusk's after sunset: kept in every season. */
+/** The first light's hours before sunrise, and the dusk's after sunset, on the reference day and in every season with
+ * a night long enough for them. */
 const FIRST_LIGHT = 1, DUSK = 2;
-/** The shortest and the longest day the mapping takes, hours (a day outside is clamped): room for the twilights. */
-const SHORTEST = 4, LONGEST = 19;
+/** The night (hours) under which the twilights shrink with it, so some full night is left. */
+const NIGHT_ROOM = 4;
+/** The shortest and the longest day the mapping takes, hours: only a day beyond either (no game sends one) is clamped,
+ * round its middle. */
+const SHORTEST = 0.5, LONGEST = 23.5;
 
-/** The day the looks follow in a season. */
+/** The day the looks follow in a season. Equal sunrise and sunset take the season's day length about them. */
 export function dayOf(s: SeasonSettings): Day {
   const sun = SEASON_SUN[s.season];
-  let sunrise = s.sunrise ?? sun.sunrise, sunset = s.sunset ?? sun.sunset;
-  if (!(sunset > sunrise)) sunset = sunrise + sun.sunset - sun.sunrise;
-  const length = Math.min(LONGEST, Math.max(SHORTEST, sunset - sunrise)), mid = (sunrise + sunset) / 2;
-  sunrise = mid - length / 2; sunset = mid + length / 2;
-  return { sunrise, noon: mid, sunset, height: SUN_HEIGHT[s.season], arc: SUN_ARC[s.season] };
+  const sunrise = s.sunrise ?? sun.sunrise;
+  let sunset = s.sunset ?? sun.sunset;
+  if (sunset === sunrise) sunset = sunrise + sun.sunset - sun.sunrise;
+  // A sunset before the sunrise is the next day's.
+  const span = (((sunset - sunrise) % 24) + 24) % 24, length = Math.min(LONGEST, Math.max(SHORTEST, span));
+  const mid = sunrise + span / 2;
+  return { sunrise: mid - length / 2, noon: mid, sunset: mid + length / 2, height: SUN_HEIGHT[s.season], arc: SUN_ARC[s.season] };
 }
+
+/** Each day's anchors (see anchors), worked out once a day. */
+const cache = new WeakMap<Day, [number, number][]>();
 
 /** A day's anchors: each the same moment on the reference day and on this one, over one turn from first light. */
 function anchors(day: Day): [number, number][] {
-  const r = REFERENCE_DAY;
-  return [
-    [r.sunrise - FIRST_LIGHT, day.sunrise - FIRST_LIGHT], [r.sunrise, day.sunrise], [r.noon, day.noon], [r.sunset, day.sunset],
-    [r.sunset + DUSK, day.sunset + DUSK], [r.sunrise - FIRST_LIGHT + 24, day.sunrise - FIRST_LIGHT + 24],
+  let a = cache.get(day);
+  if (a) return a;
+  const r = REFERENCE_DAY, room = Math.min(1, (24 - (day.sunset - day.sunrise)) / NIGHT_ROOM);
+  const first = FIRST_LIGHT * room, dusk = DUSK * room;
+  a = [
+    [r.sunrise - FIRST_LIGHT, day.sunrise - first], [r.sunrise, day.sunrise], [r.noon, day.noon], [r.sunset, day.sunset],
+    [r.sunset + DUSK, day.sunset + dusk], [r.sunrise - FIRST_LIGHT + 24, day.sunrise - first + 24],
   ];
+  cache.set(day, a);
+  return a;
 }
 
 const wrap = (h: number, from: number) => from + ((((h - from) % 24) + 24) % 24);
