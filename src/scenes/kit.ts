@@ -402,34 +402,16 @@ export class MapLine {
   }
 }
 
-/** Water along a line, at one level, wide enough that its edges tuck under the banks. Flows towards the line's start. */
-export function addWaterRibbon(b: MeshBuilder, line: MapLine, half: number, y: number) {
-  const up = new THREE.Vector3(0, 1, 0);
-  const pts = line.points;
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[Math.max(0, i - 1)], c = pts[Math.min(pts.length - 1, i + 1)];
-    const dx = c.x - a.x, dz = c.y - a.y, len = Math.hypot(dx, dz);
-    const nx = -dz / len, nz = dx / len, flow = Math.atan2(-dz, -dx);
-    const p = pts[i];
-    b.vertex({ x: p.x - nx * half, y, z: p.y - nz * half }, up, C.water, [0, 1, flow, 0], [0, 0]);
-    b.vertex({ x: p.x + nx * half, y, z: p.y + nz * half }, up, C.water, [0, 1, flow, 0], [0, 1]);
-  }
-  const i0 = b.vertexCount - pts.length * 2;
-  for (let i = 0; i < pts.length - 1; i++) { const a = i0 + i * 2; b.quad(a, a + 1, a + 3, a + 2); }
-}
-
 /**
- * Still water (a pond) over the cells of a 1 m grid where `wet` holds, at one level: its edges tuck under the banks, as a
- * ribbon's do. Its ripples barely drift (aPaint.y, the drift's speed against a stream's), towards `flow` radians.
+ * A scene's stream, as the demo's stand-in for the game reads it to make the water map (src/app/water.ts, #18): its usual
+ * surface, the grid the map covers, whether a point is in its channel, and which way it flows there (in xz, against the
+ * stream's speed: a unit vector in a stream, shorter in a pond).
  */
-export function addStillWater(b: MeshBuilder, x0: number, z0: number, x1: number, z1: number, y: number, flow: number,
-  wet: (x: number, z: number) => boolean) {
-  const up = new THREE.Vector3(0, 1, 0), nx = Math.ceil(x1 - x0) + 1, nz = Math.ceil(z1 - z0) + 1, i0 = b.vertexCount;
-  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) b.vertex({ x: x0 + i, y, z: z0 + j }, up, C.water, [0, 0.12, flow, 0], [0, 0.5]);
-  for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) {
-    if (!wet(x0 + i + 0.5, z0 + j + 0.5)) continue;
-    const a = i0 + j * nx + i;
-    // Wound to face up (x along i, z along j).
-    b.quad(a, a + nx, a + nx + 1, a + 1);
-  }
+export interface Stream {
+  level: number;
+  grid: { nx: number; nz: number; cell: number; x0: number; z0: number };
+  channel: (x: number, z: number) => boolean;
+  along: (x: number, z: number) => [number, number];
+  /** Whether a point is on the land (the water can't spread off its edge), if the land doesn't fill the grid. */
+  land?: (x: number, z: number) => boolean;
 }

@@ -8,7 +8,9 @@
 //   mirror-panels (the clouds drifting in the farm's stream and its solar glass, close), mirror-pan (along the stream), timeline (the demo's
 //   scripted shower at 3x the game's speed), fog-lift (the scripted morning fog lifting to a mist and clearing, at 3x;
 //   QUERY="hour=7" for a dawn), dust-storm (the wind getting up and blowing a dust storm through, at 3x), heat (held
-//   still, then panning; QUERY="weather=heat-wave")
+//   still, then panning; QUERY="weather=heat-wave"), flood (the scripted storm swelling the farm's stream, flooding the
+//   land and draining, at 3x; #18), flood-meadow (the same over the meadow; QUERY="scene=meadow"), stream-spate and
+//   stream-usual (the farm's stream close, in spate and as usual: the flow carrying the ripples)
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
 // tools/browser.ts for the rest.
@@ -28,7 +30,9 @@ const STRENGTHS = { calm: 0, breeze: 5, gale: 17, storm: 25, hurricane: 35 };
  */
 interface Move {
   seconds: number; at: (t: number) => Cam; wind?: (t: number) => number; cloud?: (t: number) => number;
-  timeline?: (t: number) => number; spell?: 'shower' | 'fog' | 'dust'; ease?: boolean; extra?: boolean;
+  timeline?: (t: number) => number; spell?: 'shower' | 'fog' | 'dust' | 'flood'; ease?: boolean; extra?: boolean;
+  /** The water (#18): how far it stands over the usual (m), how fast it runs (times the usual), how muddy (0..1). */
+  water?: (t: number) => { rise?: number; flow?: number; mud?: number };
 }
 /** The game's updates: a few a second (src/app/timeline.ts), so the weather comes in steps the renderer eases over. */
 const tick = (t: number) => Math.floor(t * 4) / 4;
@@ -71,6 +75,11 @@ const MOVES: Record<string, Move> = {
   'dust-storm': { seconds: 34, at: () => ({ x: -6, z: 4, zoom: 28, view: 0 }), timeline: (t) => t, spell: 'dust', ease: true, extra: true },
   // Held still, then panning: the heat's shimmer should stay with the land, not swim over it.
   heat: { seconds: 8, at: (t) => pan({ x: -8, z: 6, zoom: 40, view: 0 }, 40 * Math.max(0, t - 4), 10 * Math.max(0, t - 4)), extra: true },
+  // The water (#18): a storm's flood, the camera still and wide, at 3x; and the stream close, the flow carrying the ripples.
+  flood: { seconds: 57, at: () => ({ x: -6, z: 17, zoom: 24, view: 0 }), timeline: (t) => t, spell: 'flood', ease: true, extra: true },
+  'flood-meadow': { seconds: 57, at: () => ({ x: 0, z: 0, zoom: 26, view: 0 }), timeline: (t) => t, spell: 'flood', ease: true, extra: true },
+  'stream-spate': { seconds: 8, at: () => ({ x: -14, z: 20, zoom: 64, view: 0 }), water: () => ({ rise: 0.15, flow: 3.5, mud: 0.75 }), extra: true },
+  'stream-usual': { seconds: 8, at: () => ({ x: -14, z: 20, zoom: 64, view: 0 }), water: () => ({ rise: 0, flow: 1, mud: 0 }), extra: true },
 };
 
 /** The camera moved by screen pixels (right, up), as dragging does. */
@@ -98,11 +107,12 @@ try {
       // Each move starts from its own wind (the demo's, if it sets none), not where the last one left it; then eases if asked.
       const wind = move.wind ? { speed: move.wind(t) } : i === 0 ? {} : undefined;
       const weather = move.cloud ? { cloud: move.cloud(t) } : i === 0 && !move.timeline ? {} : undefined;
-      const png = await page.evaluate(async (cam, time, wind, weather, timeline, ease) => {
-        await (window as any).__draw(cam, { time, wind, weather, timeline, ease });
+      const water = move.water?.(t);
+      const png = await page.evaluate(async (cam, time, wind, weather, timeline, ease, water) => {
+        await (window as any).__draw(cam, { time, wind, weather, timeline, ease, water });
         return document.querySelector('canvas')!.toDataURL('image/png');
       }, move.at(t), 3 + t, wind, weather, move.timeline ? { time: move.timeline(t), speed: 3, spell: move.spell ?? 'shower' } : undefined,
-      !!move.ease && i > 0);
+      !!move.ease && i > 0, water);
       await writeFile(join(dir, `${String(i).padStart(4, '0')}.png`), Buffer.from(png.split(',')[1], 'base64'));
     }
     const file = join(out, `${name}.mp4`);

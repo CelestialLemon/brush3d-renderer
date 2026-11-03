@@ -17,6 +17,7 @@ import { airLook, HEAT, heatShare } from './air';
 import { leafStorm, WindField, WindState } from './wind';
 import { DustField, type DustSource } from './dust';
 import { TreeSprings, type TreeSpec } from './trees';
+import { WATER_EASE, WaterField, type WaterMap } from './water';
 import type { WindSnapshot } from '../wind/sim';
 
 // The renderer: the clouds' shade over the land (#8); a sun shadow map; for the water, the bed drawn without it and the
@@ -148,8 +149,9 @@ export class BrushRenderer {
   private underTarget: THREE.WebGLRenderTarget;
   private reflectTarget: THREE.WebGLRenderTarget;
   private look: Look | null = null;
-  /** The water's level, if the scene has water: the fog measures how deep it lies from it. */
-  private waterLevel: number | null = null;
+  /** The game's water as drawn (#18): its map, eased between updates, and the sheet drawn from it. */
+  readonly water = new WaterField();
+  private waterMesh: THREE.Mesh | null = null;
   /** The wind as drawn: the game's, as last given (see setWind), and its map on the GPU. Still until it's given. */
   readonly wind = new WindState();
   readonly windField = new WindField();
@@ -425,6 +427,11 @@ export class BrushRenderer {
 
   /** Shows or hides every mesh of a kind (for A/B comparisons). */
   setVisible(kind: MaterialKind, visible: boolean) {
+    if (kind === 'water') {
+      this.waterShown = visible;
+      if (this.waterMesh) this.waterMesh.visible = visible && this.water.any;
+      return;
+    }
     for (const o of this.scene.children) {
       if (o.userData.kind !== kind || o.visible === visible) continue;
       o.visible = visible;
@@ -432,18 +439,32 @@ export class BrushRenderer {
     }
   }
 
-  /** The height of the water's surface, the plane it mirrors the scene in. */
-  setWaterLevel(y: number) {
-    this.shared.uMirrorY.value = y; this.waterLevel = y;
+  /**
+   * The game's water (#18, see WaterMap): its surface, flow and mud over a grid, sent again whenever it changes. A changed
+   * map eases in over `ease` seconds (a moment by default, so a rising flood creeps rather than steps; 0 at once, for a
+   * level loading or a screenshot). Null: no water.
+   */
+  setWater(map: WaterMap | null, ease = WATER_EASE) {
+    const before = this.water.geometry;
+    this.water.set(map, this.shared.uTime.value, ease);
+    const s = this.shared;
+    s.tWaterA.value = this.water.a; s.tWaterB.value = this.water.b; s.uWaterGrid.value.copy(this.water.grid);
+    if (this.water.geometry !== before || !this.waterMesh) {
+      if (this.waterMesh) this.remove(this.waterMesh);
+      this.waterMesh = this.water.geometry ? this.add(this.water.geometry, 'water') : null;
+    }
+    if (this.waterMesh) this.waterMesh.visible = this.water.any && this.waterShown;
     this.setHazeGround();
   }
+  /** Whether the water is shown (setVisible), apart from whether there is any. */
+  private waterShown = true;
 
   /**
    * A haze on the ground starts just under the lowest land: the ground's lowest point (it's laid in world space, its brush
    * baked by place), or the water's bed if lower.
    */
   private setHazeGround() {
-    let low = this.waterLevel === null ? Infinity : this.waterLevel - 1;
+    let low = this.water.floor === null ? Infinity : this.water.floor - 1;
     for (const o of this.scene.children) {
       if (o.userData.kind !== 'ground') continue;
       const g = (o as THREE.Mesh).geometry;
@@ -538,7 +559,7 @@ export class BrushRenderer {
     // A fog thins in the wind; dust is what the wind lifts.
     const thin = THREE.MathUtils.lerp(1 / (1 + Math.max(0, wind.speed - 5) / 20), 1, w.dust);
     // It thins over most of its depth, measured from its base or else the water (the valley's floor).
-    const floor = Math.max(w.hazeBase, this.waterLevel ?? w.hazeTop - 4);
+    const floor = Math.max(w.hazeBase, this.water.floor ?? w.hazeTop - 4);
     u.uFog.value.set(w.haze * thin, w.hazeBase, w.hazeTop, Math.max(0.5, 0.7 * (w.hazeTop - floor)));
     // The patches drift downwind and are drawn out along it, dust's faster and further (WindState); dust's streaks blow
     // by faster still, stronger as the wind rises, and the gusts sweep it in in waves.
@@ -639,6 +660,17 @@ export class BrushRenderer {
     for (const o of hidden) o.visible = true;
   }
 
+  /**
+   * The most the reflection is read off its own pixel for water above or below the surface it's drawn about (WATER_VERT's
+   * vMirrorShift), in screen uv.
+   */
+  private mirrorShift() {
+    const f = this.water, dh = 2 * Math.max(f.wetHigh - f.mirror, f.mirror - f.shownLow, 0);
+    const cam = this.view.camera, m = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).elements;
+    // The y column: where a step up the world moves on screen.
+    return new THREE.Vector2(m[4] * dh * 0.5, m[5] * dh * 0.5);
+  }
+
   private waterBox = new THREE.Box2();
   private corner = new THREE.Vector3();
   /** Where the water is on screen (-1 to 1 across and up), or null where none shows. */
@@ -663,10 +695,10 @@ export class BrushRenderer {
    * lookups reach, `reach` in screen uv plus `px` screen pixels (see WATER_REACH), with a texel for filtering and one to
    * spare. Null draws the whole target.
    */
-  private waterRect(onScreen: THREE.Box2, target: THREE.WebGLRenderTarget, reach: number, px: number) {
+  private waterRect(onScreen: THREE.Box2, target: THREE.WebGLRenderTarget, reach: number, px: number, shift = new THREE.Vector2()) {
     if (!this.settings.waterScissor) return null;
     const w = target.width, h = target.height;
-    const rx = reach + px / this.width, ry = reach + px / this.height;
+    const rx = reach + Math.abs(shift.x) + px / this.width, ry = reach + Math.abs(shift.y) + px / this.height;
     const x0 = Math.max(0, Math.floor(((onScreen.min.x + 1) / 2 - rx) * w) - 2);
     const y0 = Math.max(0, Math.floor(((onScreen.min.y + 1) / 2 - ry) * h) - 2);
     const x1 = Math.min(w, Math.ceil(((onScreen.max.x + 1) / 2 + rx) * w) + 2);
@@ -706,6 +738,7 @@ export class BrushRenderer {
       // The turned square's bounds, and a little more.
       const half = f ? (f.side / 2) * (Math.abs(Math.cos(f.turn)) + Math.abs(Math.sin(f.turn))) + 2 : 64;
       this.cloudMap.setArea((f?.x ?? 0) - half, (f?.z ?? 0) - half, 2 * half);
+      this.shared.uLandSquare.value.set(f?.x ?? 0, f?.z ?? 0, f ? f.side / 2 : 0, f?.turn ?? 0);
       const sky = half + MIRROR.height / MIRROR.rise;
       this.skyMap.setArea((f?.x ?? 0) - sky, (f?.z ?? 0) - sky, 2 * sky);
       this.cloudArea = !!f;
@@ -732,6 +765,9 @@ export class BrushRenderer {
     s.tTreePose.value = this.trees.texture;
     s.uWindFlutter.value = w.flutter;
     this.weather.update(time);
+    s.uWaterBlend.value = this.water.blend(time);
+    if (this.water.settle(time) && this.waterMesh) this.waterMesh.visible = false;
+    s.uMirrorY.value = this.water.mirror;
     this.applyLook(this.look);
     const grounded: THREE.Object3D[] = [];
     if (!this.settings.falling) {
@@ -801,7 +837,7 @@ export class BrushRenderer {
       // Mirroring flips the winding, so one-sided surfaces show their back faces.
       const flipped = [...this.materials.values()].flatMap((m) => [m.main, m.mirrorPrepass]).filter((m) => m.side === THREE.FrontSide);
       for (const m of flipped) m.side = THREE.BackSide;
-      const rect = this.waterRect(water, this.reflectTarget, nudge * WATER_REACH.reflectNudge, WATER_REACH.blurPx);
+      const rect = this.waterRect(water, this.reflectTarget, nudge * WATER_REACH.reflectNudge, WATER_REACH.blurPx, this.mirrorShift());
       this.drawOnly(this.reflectTarget, (m) => m.userData.reflect || m === this.silhouettes, rect);
       for (const m of flipped) m.side = THREE.FrontSide;
       this.shared.uMirror.value = 0;

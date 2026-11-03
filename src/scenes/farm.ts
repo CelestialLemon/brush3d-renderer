@@ -13,8 +13,7 @@ import haywagonModel from './models/haywagon.glb?url';
 import rowboatModel from './models/rowboat.glb?url';
 import scarecrowModel from './models/scarecrow.glb?url';
 import {
-  C, MapLine, addFlowers, addMound, addReeds, addStillWater, addStone, addTuft, addWaterRibbon, groundOf, growTree, smooth,
-  treeWind, type Tree,
+  C, MapLine, addFlowers, addMound, addReeds, addStone, addTuft, groundOf, growTree, smooth, treeWind, type Stream, type Tree,
 } from './kit';
 import { DRAG, type Obstacle } from '../wind/sim';
 
@@ -310,7 +309,9 @@ function height(x: number, z: number) {
 const ground = groundOf(height);
 
 export interface Farm {
-  center: THREE.Vector3; radius: number; waterLevel: number;
+  center: THREE.Vector3; radius: number;
+  /** The stream (#18): the demo makes the game's water map from it. */
+  stream: Stream;
   /** What the wind meets (#36). */
   wind: Obstacle[];
   /** Settles once the models are loaded and in the scene. */
@@ -331,7 +332,6 @@ const TILE = 24;
 export function buildFarm(renderer: BrushRenderer): Farm {
   const r: Adder = { add: (g, kind, o = {}) => renderer.add(g, kind, { ...o, tile: TILE }) };
   terrain(r);
-  water(r);
   crops(r);
   panels(r);
   fences(r);
@@ -343,7 +343,7 @@ export function buildFarm(renderer: BrushRenderer): Farm {
   goods(r);
   stones(r);
   grass(r);
-  return { center: new THREE.Vector3(0, 0, 0), radius: LAND * Math.SQRT2, waterLevel: WATER_Y, wind: windObstacles(), ready: models(r), height, bare };
+  return { center: new THREE.Vector3(0, 0, 0), radius: LAND * Math.SQRT2, stream: WATER, wind: windObstacles(), ready: models(r), height, bare };
 }
 
 /** Strips of an obstacle along a line, every 2 m: a hedge or a row, `offset` to its left. */
@@ -496,16 +496,27 @@ function fixWinding(g: THREE.BufferGeometry) {
   return g;
 }
 
-function water(r: Adder) {
-  const b = new MeshBuilder('water');
-  for (const s of STREAMS) addWaterRibbon(b, s, 2.0 * WIDE, WATER_Y);
-  // The pond, over the map's square round it (in the world it's turned, so take its bounds there).
-  const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, c]) => W(POND.u + a * (POND.a + 4), POND.v + c * (POND.b + 4)));
-  const xs = corners.map((p) => p[0]), zs = corners.map((p) => p[1]);
-  addStillWater(b, Math.floor(Math.min(...xs)), Math.floor(Math.min(...zs)), Math.ceil(Math.max(...xs)), Math.ceil(Math.max(...zs)), WATER_Y, 0.6,
-    (x, z) => pondShore(...M(x, z)) < 2.2);
-  r.add(b.build(), 'water');
-}
+/**
+ * The water for the water map (#18): a cell a metre over the land (the map's square turned to the world's axes), as the
+ * game's tiles are. Its channel is where the bed lies under the water: the streams' and the pond's. Each stream flows
+ * towards its line's start (the stream into the pond, the brook out of it to the near edge); the pond barely drifts,
+ * except where the stream runs into it.
+ */
+const POND_DRIFT: [number, number] = [Math.cos(0.6) * 0.12, Math.sin(0.6) * 0.12];
+const WATER: Stream = {
+  level: WATER_Y,
+  grid: { nx: 250, nz: 250, cell: 1, x0: -125, z0: -125 },
+  channel: (x, z) => waterDistance(x, z) < 1.6,
+  along: (x, z) => {
+    let best = STREAMS[0], d = Infinity;
+    for (const s of STREAMS) { const ds = s.distance(x, z); if (ds < d) { d = ds; best = s; } }
+    const n = best.near(x, z);
+    // Into the pond, the stream's run fades over a few metres into its drift.
+    const run = 1 - smooth(0, 6, -pondShore(...M(x, z)));
+    return [-n.dx * run + POND_DRIFT[0] * (1 - run), -n.dz * run + POND_DRIFT[1] * (1 - run)];
+  },
+  land: (x, z) => { const [u, v] = M(x, z); return Math.abs(u) <= LAND && Math.abs(v) <= LAND; },
+};
 
 /**
  * A field of a crop: a painted mass laid over the field, rounded down into the ground at its edges, banded along its rows.

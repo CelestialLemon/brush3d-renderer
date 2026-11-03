@@ -8,7 +8,8 @@ import { cloudDriftSpeed } from '../renderer/clouds';
 import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weather, type WeatherName } from '../renderer/weather';
 import { steadyWind, WIND_SCALE, windName, type WindStrength } from '../renderer/wind';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
-import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, timelineWind, type SpellName } from './timeline';
+import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, timelineWater, timelineWind, type SpellName } from './timeline';
+import { DemoWater, USUAL_WATER, type WaterState } from './water';
 import { WindWorker } from '../wind/client';
 import { TICK as WIND_TICK, type WindGoal, type WindSave } from '../wind/sim';
 import { WindView } from './windView';
@@ -23,7 +24,10 @@ import { WindView } from './windView';
 //     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop, hazeBase (metres)
 //     hazeKind=fog|dust
 //   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
-//   spell=shower|fog|dust (which scripted weather: a shower, a morning fog lifting, or a dust storm blowing through)
+//   spell=shower|fog|dust|flood (which scripted weather: a shower, a morning fog lifting, a dust storm blowing through, or
+//     a storm flooding the stream over the land)
+//   water=usual|spate|flood (the water, #18), then each value over it: rise (m over the usual), flow (times the usual
+//     speed), mud (0..1)
 //   cloudSeed (which cloud field: a whole number)
 //   falling=0 (leave out the things in the air: the wind's leaves, and rain and snow to come; dust is in the haze)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
@@ -54,7 +58,27 @@ const scene = farmScene ?? buildMeadow(renderer);
 const loaded = farmScene?.ready ?? Promise.resolve();
 let isLoaded = false;
 loaded.then(() => { isLoaded = true; });
-renderer.setWaterLevel(scene.waterLevel);
+// The water (#18), standing in for the game's: a map made from the scene's stream and the water's state (a preset, the
+// controls or the timeline), sent whenever it changes.
+const WATER_PRESETS: Record<string, WaterState> = {
+  usual: USUAL_WATER,
+  // In spate after a storm: up to its banks, fast and brown.
+  spate: { rise: 0.15, flow: 3.5, mud: 0.75 },
+  // Over its banks and spreading over the floodplain.
+  flood: { rise: 0.4, flow: 2.5, mud: 0.9 },
+};
+const demoWater = new DemoWater(scene.stream, scene.height);
+const waterPreset = WATER_PRESETS[params.get('water') ?? 'usual'] ?? USUAL_WATER;
+const water: WaterState = { rise: num('rise', waterPreset.rise), flow: num('flow', waterPreset.flow), mud: num('mud', waterPreset.mud) };
+let waterSent = '';
+/** Sends the water as the game does, when it has changed: eased in, or at once. */
+function sendWater(w: WaterState, immediate = false) {
+  const key = JSON.stringify(w);
+  if (key === waterSent) return;
+  waterSent = key;
+  renderer.setWater(demoWater.map(w), immediate ? 0 : undefined);
+}
+sendWater(water, true);
 const view = renderer.view;
 view.view = num('view', 0); view.zoom = num('zoom', 40);
 view.target.set(num('x', farm ? 0 : -1), 0, num('z', 0));
@@ -296,7 +320,7 @@ function hud() {
   const spellName = (s: string) => (s === 'fog' ? 'morning fog' : s === 'dust' ? 'dust storm' : s);
   for (const name of Object.keys(SPELLS)) spells.append(new Option(spellName(name), name, false, name === spell));
   spells.title = 'shower: clear, cloud building, a shower, clearing again · morning fog: a fog lifting, then mist gathering in the evening · ' +
-    'dust storm: the wind getting up and blowing a dust storm through';
+    'dust storm: the wind getting up and blowing a dust storm through · flood: a storm swelling the stream, which floods the land and drains';
   spells.onchange = () => { spell = spells.value as SpellName; timelineStart = null; timelineSent = ''; };
   spells.onkeydown = (e) => e.stopPropagation();
   play.onclick = () => {
@@ -313,6 +337,14 @@ function hud() {
     speed = next; pace.textContent = `${speed}× speed`;
   };
   hudEl.append(play, spells, pace, timelineEl);
+
+  // The water (#18): what the game would send. The timeline's flood moves it too.
+  hudEl.append(Object.assign(document.createElement('div'), { className: 'break' }));
+  const waterSet = (f: (v: number) => void) => (v: number) => { f(v); sendWater({ ...water }); };
+  hudEl.append(slider('Water', -0.3, 1.2, 0.01, () => water.rise, waterSet((v) => { water.rise = v; }),
+    (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)} m`, true));
+  hudEl.append(slider('flow', 0, 5, 0.05, () => water.flow, waterSet((v) => { water.flow = v; }), (v) => `${v.toFixed(2)}×`, true));
+  hudEl.append(slider('mud', 0, 1, 0.01, () => water.mud, waterSet((v) => { water.mud = v; }), share, true));
 }
 const timelineEl = document.createElement('span');
 /** The weather controls' values, put back to what they show (the timeline moves them). */
@@ -344,6 +376,9 @@ function playTimeline(time: number) {
   // The wind, when the spell brings its own (the game's setWind).
   const gust = timelineWind(time - timelineStart, speed, spell);
   if (gust !== null && gust !== wind.speed) { wind.speed = gust; living.setGoal(windGoal()); for (const r of refreshers) r(); }
+  // The water, when the spell moves it (the game's setWater), a few times a second as the weather is.
+  const ws = timelineWater(time - timelineStart, speed, spell);
+  if (ws) { Object.assign(water, ws); sendWater({ ...water }); for (const r of refreshers) r(); }
   if (key === timelineSent) return;
   timelineSent = key;
   // The game sends the whole weather: what the spell leaves out is none (a haze thinned away keeps its colour and height).
@@ -381,6 +416,7 @@ if (params.has('shot')) {
     options: {
       hide?: MaterialKind[]; grain?: boolean; time?: number; hour?: number; wind?: Partial<typeof wind>;
       weather?: Partial<Weather> | WeatherName; timeline?: { time: number; speed?: number; spell?: SpellName }; ease?: boolean;
+      water?: Partial<WaterState>;
     } = {}) => {
     if (cam) { view.target.set(cam.x, 0, cam.z); view.zoom = cam.zoom; view.view = cam.view; view.update(0, true); }
     if (options.hour !== undefined) hour = options.hour;
@@ -397,7 +433,13 @@ if (params.has('shot')) {
       const s = timelineWind(t.time, t.speed ?? speed, t.spell ?? spell);
       if (s !== null) wind.speed = s;
       send(whole(timelineAt(t.time, t.speed ?? speed, t.spell ?? spell)), !options.ease, time);
+      const ws = timelineWater(t.time, t.speed ?? speed, t.spell ?? spell);
+      if (ws) Object.assign(water, ws);
     }
+    if (options.water) Object.assign(water, options.water);
+    // The water's clock is the renderer's: put it at the frame's time first, so an ease starts from there.
+    renderer.shared.uTime.value = time;
+    sendWater({ ...water }, !options.ease);
     if (!options.weather && !options.timeline) send(sent, false, time);
     await windTo(time, windGoal(), !!options.ease);
     drawWind();

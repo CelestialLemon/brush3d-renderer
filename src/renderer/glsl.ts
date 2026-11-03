@@ -1,4 +1,5 @@
 import { CLOUD_MAP_GLSL, MIRROR } from './cloudMap';
+import { WATER_MAP_GLSL } from './water';
 
 // Shared GLSL: noise, OKLab colour, and the painted light model every surface uses.
 //
@@ -163,7 +164,8 @@ uniform sampler2D uShadowMap;
 uniform mat4 uShadowMatrix;  // world -> shadow-map uv and depth
 uniform vec2 uShadowTexel;
 uniform float uMirror;       // 1 while drawing the water's reflection: the scene mirrored in the plane y = uMirrorY
-uniform float uMirrorY;
+uniform float uMirrorY;      // (the water at another height reads it shifted on screen: see WATER_FRAG)
+${WATER_MAP_GLSL}
 `;
 
 /**
@@ -295,8 +297,9 @@ export const GBUFFER_OUT = /* glsl */ `
 layout(location = 0) out vec4 gColor;
 layout(location = 1) out vec4 gAux;   // view normal xy, view depth, ink (1 inked, 0 painted)
 void writeGBuffer(vec3 color, vec3 worldNormal, float viewDepth, float ink, float alpha) {
-  // In the reflection, what's under the water isn't reflected.
-  if (uMirror > 0.5 && vWorldPos.y < uMirrorY - 0.01) discard;
+  // In the reflection, what's under the water isn't reflected: under the water nearest (waterNear; a flood stands higher
+  // than the river).
+  if (uMirror > 0.5 && vWorldPos.y < waterNear(vWorldPos.xz) - 0.01) discard;
   vec3 vn = normalize((viewMatrix * vec4(worldNormal, 0.0)).xyz);
   // The reflection is stored premultiplied (over a clear, transparent black), so the water can filter it without darkening
   // the edges of what's reflected.
