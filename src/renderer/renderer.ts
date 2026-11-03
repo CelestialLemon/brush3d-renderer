@@ -537,6 +537,8 @@ export class BrushRenderer {
     this.seasonal.delete(geometry);
     const colour = geometry.getAttribute('color') as THREE.BufferAttribute | undefined, own = colour && this.ownColours.get(colour);
     if (!colour || !own) return;
+    // Not while another seasonal geometry draws the same colours.
+    for (const g of this.seasonal.keys()) if (g.getAttribute('color') === colour) return;
     (colour.array as Float32Array).set(own);
     colour.needsUpdate = true;
     this.ownColours.delete(colour);
