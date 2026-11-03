@@ -160,8 +160,10 @@ export class BrushRenderer {
   private look: Look | null = null;
   private seasonSet: SeasonSettings | null = null;
   private dayNow: Day = REFERENCE_DAY;
-  /** The geometries the season turns (MeshOptions.seasonal). */
-  private seasonal = new Set<THREE.BufferGeometry>();
+  /** The geometries the season turns (MeshOptions.seasonal), and how many meshes in the scene draw each. */
+  private seasonal = new Map<THREE.BufferGeometry, number>();
+  /** Their colours as the game sent them, by colour attribute (a tile's copy of a geometry has its own), once turned. */
+  private ownColours = new WeakMap<THREE.BufferAttribute, Float32Array>();
   /** The game's water as drawn (#18): its map, eased between updates, and the sheet drawn from it. */
   readonly water = new WaterField();
   private waterMesh: THREE.Mesh | null = null;
@@ -307,7 +309,7 @@ export class BrushRenderer {
       for (let i = 0; i < a.length; i++) a[i] = map[a[i]];
       geometry.userData.trees = undefined;
     }
-    if (options.seasonal ?? (kind === 'ground' || kind === 'grass')) this.seasonal.add(geometry);
+    if (options.seasonal ?? (kind === 'ground' || kind === 'grass')) this.seasonal.set(geometry, (this.seasonal.get(geometry) ?? 0) + 1);
     this.turn(geometry);
     const mesh = new THREE.Mesh(geometry, this.material(kind));
     mesh.frustumCulled = cull;
@@ -337,7 +339,7 @@ export class BrushRenderer {
     const tiles = mesh.userData.tiles as THREE.Mesh[] | undefined;
     if (tiles) { for (const t of tiles) { t.userData.tiles = undefined; this.remove(t); } return; }
     this.scene.remove(mesh);
-    this.seasonal.delete(mesh.geometry);
+    this.unseason(mesh.geometry);
     this.casters = this.casters.filter((m) => m !== mesh);
     const i = this.twins.findIndex(([m]) => m === mesh);
     if (i >= 0) { this.silhouettes.remove(this.twins[i][1]); this.twins.splice(i, 1); }
@@ -517,7 +519,19 @@ export class BrushRenderer {
     this.seasonSet = season && { ...season };
     this.dayNow = season ? dayOf(season) : REFERENCE_DAY;
     // Its colours, turned once here (the season holds all level): from each mesh's own, as the game sent them.
-    for (const g of this.seasonal) this.turn(g);
+    for (const g of this.seasonal.keys()) this.turn(g);
+  }
+  /** A seasonal geometry's mesh is taken out: with its last, its colours go back to the game's. */
+  private unseason(geometry: THREE.BufferGeometry) {
+    const users = this.seasonal.get(geometry);
+    if (users === undefined) return;
+    if (users > 1) { this.seasonal.set(geometry, users - 1); return; }
+    this.seasonal.delete(geometry);
+    const colour = geometry.getAttribute('color') as THREE.BufferAttribute | undefined, own = colour && this.ownColours.get(colour);
+    if (!colour || !own) return;
+    (colour.array as Float32Array).set(own);
+    colour.needsUpdate = true;
+    this.ownColours.delete(colour);
   }
   /** Turns a seasonal geometry's colours by the season, from its own (kept the first time). */
   private turn(geometry: THREE.BufferGeometry) {
@@ -525,9 +539,10 @@ export class BrushRenderer {
     const colour = geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
     if (!colour) return;
     const t = seasonTurn(this.seasonSet);
+    let own = this.ownColours.get(colour);
     // Untouched while no season has turned it: no copy kept.
-    if (!geometry.userData.ownColour && t.shift === 0 && t.chroma === 1 && t.light === 0) return;
-    const own =(geometry.userData.ownColour ??= Float32Array.from(colour.array as Float32Array)) as Float32Array;
+    if (!own && t.shift === 0 && t.chroma === 1 && t.light === 0) return;
+    if (!own) this.ownColours.set(colour, own = Float32Array.from(colour.array as Float32Array));
     turnColours(own, colour.array as Float32Array, t);
     colour.needsUpdate = true;
   }

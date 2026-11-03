@@ -23,7 +23,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   7. #18 dynamic water: a state the game drives (done 2026-11-03, #45 and #48: see Water);
   8. #11 rain and wet ground;
   9. #12 storms and lightning;
-  10. #13 seasons (the trees' look in a thread of its own; part 1, the hour following the game's sun, in review);
+  10. #13 seasons (the trees' look in a thread of its own; part 1, the hour following the game's sun, and part 2, the season's look, in review);
   11. #14 snow, frost and ice;
   12. #19 the water's own look, chosen under every weather.
 - **The demo on GitHub Pages** (#15, shipped 2026-10-30): https://celestiallemon.github.io/brush3d-renderer/main/, and a preview
@@ -178,7 +178,12 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   sunset, the twilights keeping their hours. The sun is lowered to the season's noon height (summer 58°, spring and autumn
   45°, winter 25°, the developer's pick of 18°, 25° and 32°), least near the horizon so dawn and golden hour
   keep their light, and a winter sun's path is shorter. With no season set the frames are main's. Part 2, the season's
-  look for everything but the trees, is next.
+  look for everything but the trees (`src/renderer/seasonLook.ts`, in review): the greens of the ground, the grass and
+  reeds, and the leaves of flowers and garden plants take the season's colour, turned once per level (a hue shift within
+  a green window, so earths, crops and flowers keep theirs; `MeshOptions.seasonal`); the season's light is a base coat on
+  the hour's look; the game's character words shift the grass (a dry summer golden, a wet one lusher, a hard winter
+  drabber). Candidates `?seasonLook=a|b` and `?winterGrass=pale|straw`. The demo's scenes stand in for the game's crops by
+  season (young, ripe, stubble, ploughed; the wildflowers thinning out; the lavender in flower only in summer).
 
 ### Motion and stability
 

@@ -163,6 +163,16 @@ the uncapped frame, its GPU timers count waiting): the farm's 1080p storm 14.99 
 0.67. Reading the map costs its readers (rain, wetness, snow),
 counted in their own lines.
 
+### The season's look (#13)
+
+No line in the budget: nothing a frame. The season turns the greens' colours once, when the level sets it
+(`renderer.setSeason`), on the vertices of what grows (src/renderer/seasonLook.ts), and its light is a tint on the hour's
+look's numbers. That turn is a load cost: on the farm, 1.47 million vertices of ground and grass in 0.30 s on the RX 570's
+desktop's CPU (a run of one colour, a tuft's blades, is turned once), and the meadow's 182,000 in 0.05 s; their colours as
+the game sent them are kept beside them (12 bytes a vertex, about 18 MB on the farm), only once a season has been set.
+Crawl (`AB=2 tools/motion.ts`, farm noon) is the same in every season as today's (soft 0.50 to 0.55, 0.53 today), and no
+pops in a gale (`tools/pops.ts`, 0 patches).
+
 ### Mist and fog (#9)
 
 In the post pass: each pixel's place in the world rebuilt from its depth, and the fog summed in four steps up the view's
