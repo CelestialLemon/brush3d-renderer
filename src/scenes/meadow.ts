@@ -3,6 +3,7 @@ import type { BrushRenderer } from '../renderer/renderer';
 import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
 import { C, addFlowers, addReeds, addStone, addTuft, groundOf, growTree, smooth, treeWind, type Stream, type Tree } from './kit';
 import type { Obstacle } from '../wind/sim';
+import type { Season } from '../renderer/season';
 
 // The first slice: a corner of a farm in a meadow. A stream, a field of wheat, three trees (two broadleaf, one with fruit,
 // and a blue-green cypress), long grass and wildflowers, and one solar panel, the only inked thing.
@@ -75,7 +76,15 @@ export interface Meadow {
   bare: (x: number, z: number) => number;
 }
 
-export function buildMeadow(r: BrushRenderer): Meadow {
+/**
+ * The season the meadow is built in (#13): the demo stands in for the game, whose crops and flowers these are. The wheat
+ * young and green in spring, ripe in summer (the scene as made), stubble in autumn, the bed dug over in winter; the
+ * wildflowers thinning out to none.
+ */
+let SEASON: Season = 'summer';
+
+export function buildMeadow(r: BrushRenderer, season: Season = 'summer'): Meadow {
+  SEASON = season;
   terrain(r);
   field(r);
   trees(r);
@@ -147,13 +156,19 @@ function field(r: BrushRenderer) {
     ink.addGeometry(new THREE.BoxGeometry(sx, 0.26, sz), new THREE.Matrix4().makeTranslation(bx, y0 + 0.08, bz), C.timber, [2, 1, 0, 0]);
   board(cx, z0, w + 0.12, 0.12); board(cx, z1, w + 0.12, 0.12); board(x0, cz, 0.12, d); board(x1, cz, 0.12, d);
   r.add(ink.build(), 'ink');
+  if (SEASON === 'winter') return;
+  const young = SEASON === 'spring', stubble = SEASON === 'autumn';
+  const tipColour = young ? srgb(0xa8c860) : stubble ? srgb(0xeedc9c) : C.wheatTip;
+  const rootColour = young ? srgb(0x4e7e38) : stubble ? srgb(0xa08a4a) : C.wheatRoot;
 
   // Wheat: a painted golden mass filling the bed, and stalks with heavy ears standing out of it and round its edge. The mass
   // carries the field's colour; the stalks only break its top and sides, so little of the field is thin, crawling geometry.
   const mass = new MeshBuilder('crop');
-  mass.addGeometry(new THREE.BoxGeometry(w - 0.5, 0.36, d - 0.5), new THREE.Matrix4().makeTranslation(cx, y0 + 0.16 + 0.3, cz),
-    C.wheatTip.clone().lerp(C.wheatRoot, 0.35), [1, 3.0, 0.4, 0]);
+  const massTall = young ? 0.22 : stubble ? 0.08 : 0.36;
+  mass.addGeometry(new THREE.BoxGeometry(w - 0.5, massTall, d - 0.5), new THREE.Matrix4().makeTranslation(cx, y0 + 0.16 + massTall * 0.5 + 0.12, cz),
+    tipColour.clone().lerp(rootColour, stubble ? 0.6 : 0.35), [1, 3.0, 0.4, 0]);
   r.add(mass.build(), 'crop');
+  if (stubble) return;
   const g = new MeshBuilder('grass');
   const rand = rng(5);
   const up = new THREE.Vector3(0, 1, 0);
@@ -161,12 +176,12 @@ function field(r: BrushRenderer) {
   for (let tx = 0; tx < 3; tx++) for (let tz = 0; tz < 3; tz++) {
     for (let k = 0; k < 60; k++) {
       const x = x0 + 0.12 + tx + rand() * 0.86, z = z0 + 0.12 + tz + rand() * 0.86;
-      const h = 0.55 + rand() * 0.18, lean = (rand() - 0.5) * 0.1, seed = rand();
+      const h = (0.55 + rand() * 0.18) * (young ? 0.55 : 1), lean = (rand() - 0.5) * 0.1, seed = rand();
       const dir = rand() * Math.PI;
       const ox = Math.cos(dir) * 0.026, oz = Math.sin(dir) * 0.026;
       const paint: Paint = [0.5, 1.4, 0.4, 0.8];
       const tip = new THREE.Vector3(x + lean, soilTop + h, z + lean * 0.5);
-      const root = C.wheatRoot.clone(), gold = C.wheatTip.clone().lerp(C.wheatRoot, rand() * rand() * 0.6).offsetHSL((rand() - 0.5) * 0.03, 0, (rand() - 0.5) * 0.06);
+      const root = rootColour.clone(), gold = tipColour.clone().lerp(rootColour, rand() * rand() * 0.6).offsetHSL((rand() - 0.5) * 0.03, 0, (rand() - 0.5) * 0.06);
       // Stalk.
       const a = g.vertex({ x: x - ox, y: soilTop, z: z - oz }, up, root, paint, [0, 0], [0, seed, -0.026, dir]);
       const b = g.vertex({ x: x + ox, y: soilTop, z: z + oz }, up, root, paint, [0, 0], [0, seed, 0.026, dir]);
@@ -180,7 +195,8 @@ function field(r: BrushRenderer) {
       g.tri(d2, c2, e2); g.tri(d2, e2, e3); g.tri(d2, e3, e1);
     }
   }
-  r.add(g.build(), 'grass', { castShadow: false });
+  // The crop's colour, not the season's (#13).
+  r.add(g.build(), 'grass', { castShadow: false, seasonal: false });
 }
 
 function trees(r: BrushRenderer) {
@@ -223,7 +239,9 @@ function grass(r: BrushRenderer) {
   }
   // Wildflowers: drifts of one colour each, a few strays.
   const palette = [srgb(0xf08bb0), srgb(0xf7f2e4), srgb(0xf5cf3e), srgb(0xa77ad8), srgb(0xe8574a)];
-  for (let d = 0; d < 70; d++) {
+  // Thinning out from summer's to none in winter (#13).
+  const drifts = { spring: 55, summer: 70, autumn: 22, winter: 0 }[SEASON];
+  for (let d = 0; d < drifts; d++) {
     const cx = (rand() * 2 - 1) * half, cz = (rand() * 2 - 1) * half;
     const col = palette[Math.floor(rand() * palette.length)];
     addFlowers(flowers, ground, cx, cz, col, 6 + Math.floor(rand() * 14), rand, (x, z) => !blocked(x, z) && Math.abs(x) <= half && Math.abs(z) <= half);

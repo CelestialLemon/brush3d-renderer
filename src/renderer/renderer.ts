@@ -5,6 +5,7 @@ import { CloudMap, MIRROR } from './cloudMap';
 import { CLOUD_SHAPE, type CloudShape } from './clouds';
 import { lookAt, type Look } from './look';
 import { dayOf, REFERENCE_DAY, type Day, type SeasonSettings } from './season';
+import { seasonLight, seasonTurn, turnColours } from './seasonLook';
 import { CLOUD_DEPTH, CLOUD_NIGHT, gapCover, OVERCAST, overcastLook, skyShare, UNDER_CLOUD_FADE } from './overcast';
 import {
   createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
@@ -102,6 +103,12 @@ export interface MeshOptions {
    * tile: remove() takes them all out with it, but moving or hiding it moves or hides only that tile.
    */
   tile?: number;
+  /**
+   * Turned by the season (seasonLook.ts): its greens take the season's colour. By default the ground and the grass (the
+   * reeds among it); flowers' and garden plants' leaves opt in. Crops keep their own colour (their stage is the game's), and
+   * so do the trees and what people make.
+   */
+  seasonal?: boolean;
 }
 
 export class BrushRenderer {
@@ -153,6 +160,8 @@ export class BrushRenderer {
   private look: Look | null = null;
   private seasonSet: SeasonSettings | null = null;
   private dayNow: Day = REFERENCE_DAY;
+  /** The geometries the season turns (MeshOptions.seasonal). */
+  private seasonal = new Set<THREE.BufferGeometry>();
   /** The game's water as drawn (#18): its map, eased between updates, and the sheet drawn from it. */
   readonly water = new WaterField();
   private waterMesh: THREE.Mesh | null = null;
@@ -298,6 +307,8 @@ export class BrushRenderer {
       for (let i = 0; i < a.length; i++) a[i] = map[a[i]];
       geometry.userData.trees = undefined;
     }
+    if (options.seasonal ?? (kind === 'ground' || kind === 'grass')) this.seasonal.add(geometry);
+    this.turn(geometry);
     const mesh = new THREE.Mesh(geometry, this.material(kind));
     mesh.frustumCulled = cull;
     mesh.userData.kind = kind;
@@ -326,6 +337,7 @@ export class BrushRenderer {
     const tiles = mesh.userData.tiles as THREE.Mesh[] | undefined;
     if (tiles) { for (const t of tiles) { t.userData.tiles = undefined; this.remove(t); } return; }
     this.scene.remove(mesh);
+    this.seasonal.delete(mesh.geometry);
     this.casters = this.casters.filter((m) => m !== mesh);
     const i = this.twins.findIndex(([m]) => m === mesh);
     if (i >= 0) { this.silhouettes.remove(this.twins[i][1]); this.twins.splice(i, 1); }
@@ -504,6 +516,20 @@ export class BrushRenderer {
   setSeason(season: SeasonSettings | null) {
     this.seasonSet = season && { ...season };
     this.dayNow = season ? dayOf(season) : REFERENCE_DAY;
+    // Its colours, turned once here (the season holds all level): from each mesh's own, as the game sent them.
+    for (const g of this.seasonal) this.turn(g);
+  }
+  /** Turns a seasonal geometry's colours by the season, from its own (kept the first time). */
+  private turn(geometry: THREE.BufferGeometry) {
+    if (!this.seasonal.has(geometry)) return;
+    const colour = geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
+    if (!colour) return;
+    const t = seasonTurn(this.seasonSet);
+    // Untouched while no season has turned it: no copy kept.
+    if (!geometry.userData.ownColour && t.shift === 0 && t.chroma === 1 && t.light === 0) return;
+    const own =(geometry.userData.ownColour ??= Float32Array.from(colour.array as Float32Array)) as Float32Array;
+    turnColours(own, colour.array as Float32Array, t);
+    colour.needsUpdate = true;
   }
   /** The season as set, or null before setSeason. */
   get season(): SeasonSettings | null { return this.seasonSet && { ...this.seasonSet }; }
@@ -511,7 +537,7 @@ export class BrushRenderer {
   get day(): Day { return this.dayNow; }
 
   /** Sets the look at a clock hour of the season's day (look.ts's lookAt): what the game calls as its clock runs. */
-  setHour(hour: number) { this.look = lookAt(hour, this.dayNow); }
+  setHour(hour: number) { this.look = seasonLight(lookAt(hour, this.dayNow), this.seasonSet); }
 
   /**
    * Sets the light's uniforms from the hour's look under the weather as drawn. Three looks: the grade's (the post pass's
