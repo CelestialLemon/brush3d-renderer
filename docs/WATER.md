@@ -33,7 +33,7 @@ renderer.setWater(null);         // no water
   `flood.ts` does); the sheet's flat cell beyond takes care of the shore between cells.
 - **Flow** is the water's velocity. It carries the ripples and the glints along; calm water is glassy, fast water busy.
   The stream in the demo runs at 0.35 m/s, 3.5 times that in spate.
-- **Mud** is carried to the shaders for the look (still to be chosen, #18's second PR).
+- **Mud** turns the water brown and opaque (see below).
 - **Updates.** Send a new map when the water changes, a few times a second at most. Each one eases in from what's
   drawn at that moment, so maps sent faster than the ease still move smoothly. A map on a new grid comes in at once.
 - **Cost.** The map is laid out on the CPU when it's sent and uploaded as two textures; nothing is done per frame but a
@@ -66,6 +66,12 @@ cover only the cells within one of water (into one buffer per grid, with room fo
   water the sheet dives from (a dry hollow lower than the river beside it isn't mirrored, or it would show in the
   river). The only error left is at the screen's edge, as before, and where water at two heights is equally near.
 - **The haze** in hollows measures from the lowest water, as it measured from the stream.
+- **Fast water, mud and the waterline** (the developer's picks, 2026-11-03): fast water (from about a metre a second)
+  gets long light streaks along the flow ("streaks"); mud turns the water ochre brown and opaque ("brown"), lit by the
+  sun as well as the sky, as silt is; things standing in water get a thin foam line where it meets them and a faint wet
+  band above it ("foam line"). The waterline is drawn by everything but the water (`waterline` in `writeGBuffer`), only
+  below the highest water, not along blades and leaves (no foam line on them), and not on things that float (the boat:
+  `addModel`'s `floats`). Left out: foam carried on fast water, milky mud with swirls of silt, the wet band alone.
 
 ## The demo
 

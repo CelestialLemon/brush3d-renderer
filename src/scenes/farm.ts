@@ -397,7 +397,7 @@ async function models(r: Adder) {
     }
     const place = new THREE.Matrix4().compose(new THREE.Vector3(x, m === BOAT ? WATER_Y : y / n, z),
       new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)), new THREE.Vector3(1, 1, 1));
-    addModel(b, loaded[i], place);
+    addModel(b, loaded[i], place, m === BOAT);
   });
   r.add(b.build(), 'ink');
 }

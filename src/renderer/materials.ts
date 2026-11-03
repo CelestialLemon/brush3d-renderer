@@ -50,6 +50,7 @@ export function createSharedUniforms() {
     tWaterB: { value: null as THREE.Texture | null },
     uWaterBlend: { value: 1 },
     uWaterGrid: { value: new THREE.Vector4(0, 0, 1, 0) },
+    uWaterHigh: { value: -1e6 },
     // The land's square (the ground's, see MeshOptions.fields): its centre's x and z, half its side, its turn. The water
     // stops at its edge (half 0: no edge).
     uLandSquare: { value: new THREE.Vector4(0, 0, 0, 0) },
@@ -530,6 +531,8 @@ float dabShape(vec2 c, float seed, float aspect) {
 `;
 
 const FOLIAGE_FRAG = /* glsl */ `
+// Thin things (blades, leaves): no foam line along them, only the wet band (waterline).
+#define THIN 1
 ${FRAG_HEAD}
 ${DAB_SHAPE}
 varying vec4 vCard;
@@ -592,6 +595,8 @@ void main() {
 `;
 
 const GRASS_FRAG = /* glsl */ `
+// Thin things (blades, leaves): no foam line along them, only the wet band (waterline).
+#define THIN 1
 ${FRAG_HEAD}
 varying vec2 vBlade;
 void main() {
@@ -623,6 +628,7 @@ void main() {
 /**
  * Inked: crisp cel bands, the colour barely drifting. aPaint.x picks a finish: 0 plain, 1 solar glass (uv over the panel,
  * aPaint.yz cells along u and v), 2 timber (grain along u), 3 tin (corrugations, aPaint.z of them a uv unit along v).
+ * aPaint.w: 1 if it floats (a boat: no waterline on it).
  */
 const INK_FRAG = /* glsl */ `
 ${FRAG_HEAD}
@@ -637,6 +643,8 @@ void main() {
   if (gl_FrontFacing == (uMirror > 0.5)) n = -n;
   vec3 p = vWorldPos;
   float finish = vPaint.x;
+  // It floats (no waterline on it, #18).
+  gFloats = vPaint.w;
   vec3 base = vColor;
   float vis = sunVisibility(p, n, 0.0);
   float light = sunLight(n, 0.2) * mix(0.2, 1.0, vis);
@@ -745,9 +753,15 @@ float sparkle(vec2 q, vec2 dir) {
   float wink = max(0.0, sin(uTime * (2.0 + h * 3.0) + h * 40.0));
   return (1.0 - smoothstep(0.5, 1.0, length(f / vec2(0.15, 0.3)))) * step(0.5, h) * wink;
 }
+// Fast water's streaks (#18): long bands of light along the flow, in the flow's own frame, carried as the ripples are.
+float streaks(vec2 q, vec2 dir) {
+  vec2 r = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x)));
+  return snoise(r * vec2(0.2, 3.0)) * 0.65 + snoise(r * vec2(0.45, 6.5) + 5.0) * 0.35;
+}
 void main() {
   if (sheetHidden(vWorldPos, vMud)) discard;
-  float mud = max(vMud, 0.0);
+  // How much the silt shows: a little soon browns water (and halfway between teal and brown is grey).
+  float mud = 1.0 - pow(1.0 - clamp(vMud, 0.0, 1.0), 3.0);
   cloudAt(vWorldPos);
   vec3 n = vec3(0.0, 1.0, 0.0);
   vec3 p = vWorldPos;
@@ -804,11 +818,15 @@ void main() {
   vec3 waterLab = linToOklab(vColor);
   vec3 scatter = oklabToLin(lchShift(waterLab, 0.06, 1.35, 0.0));
   vec3 absorb = vec3(1.9, 0.75, 0.6);
+  // Muddy water (#18, the developer's pick "brown"): silt makes it ochre brown and opaque, the bed lost a hand's depth down.
+  scatter = mix(scatter, vec3(0.28, 0.15, 0.045), mud);
+  absorb = mix(absorb, vec3(4.0, 4.4, 5.0), mud);
   vec3 through = exp(-absorb * path);
   float vis = sunVisibility(p, n, ripple);
   // The body of the water is lit from above by the sky; the sun shows in its sparks.
   // The bed and the reflection are lit where they are already; the water's own light is exposed here (exposeHere).
-  scatter = exposeHere(scatter * skyTint() * mix(0.75, 1.0, vis));
+  // (Silt is lit as the land is, by the sun as much as the sky.)
+  scatter = exposeHere(scatter * mix(skyTint(), mix(skyTint(), sunTint(), 0.6), mud) * mix(0.75, 1.0, vis));
   vec3 under = bed * through + scatter * (1.0 - through);
 
   // The reflection, and the sky where nothing is reflected: looking down at 30 degrees, the water mirrors the sky 30 degrees up.
@@ -824,7 +842,8 @@ void main() {
   vec3 mirrored = sky * (1.0 - refl.a) + refl.rgb;
   // Mostly see-through: the bed shows in the shallows, and the reflection grows only where the water is deep and dark.
   float depthy = 1.0 - (through.g * 0.5 + through.b * 0.5);
-  float fres = clamp(0.08 + depthy * 0.22 + ripple * 0.1, 0.0, 0.5);
+  // (Muddy water is opaque, but its silt is what shows, not a deep pool's mirror.)
+  float fres = clamp(0.08 + depthy * 0.22 * (1.0 - 0.6 * mud) + ripple * 0.1, 0.0, 0.5);
   vec3 col = mix(under, mirrored, fres);
   // The clouds in it (#8), along the mirrored ray and shaken by the ripples: their light over the sky's, alike over the
   // shallows and the deep (the depth is read at half size, and its grain would show against a bright cloud and shimmer as
@@ -839,7 +858,7 @@ void main() {
   // Fading out at the very edge, where only a film of water lies over the bank.
   float film = smoothstep(0.0, 0.5, path);
   col += (clouded - sky) * (1.0 - solid) * film * 0.365 * (0.85 + 0.3 * ripple);
-  col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.25)), smoothstep(0.5, 0.9, ripple) * 0.25 * depthy);
+  col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.25)), smoothstep(0.5, 0.9, ripple) * 0.25 * depthy * (1.0 - 0.6 * mud));
   // Sparkle: glints of sun on the ripples' crests (sparkle), carried by the flow as the ripples are.
   float spark = (sparkle(q1, dir) * w1 + sparkle(q2, dir) * w2) * crest(ripple);
   // No glints under a cloud.
@@ -856,6 +875,14 @@ void main() {
   float gh = hash12(gc + 3.1);
   float glit = (1.0 - smoothstep(0.1, 0.2, length(gf))) * step(0.4, gh) * max(0.0, sin(uTime * (5.0 + gh * 6.0) + gh * 50.0));
   col = mix(col, exposeHere(mix(vec3(1.0), sunTint(), 0.5)), glit * paw * vis * max(uCloudStrength - gCloud, 0.0));
+  // Fast water (#18, the developer's pick "streaks"), from about a metre a second: the stream in spate.
+  float fast = smoothstep(0.45, 1.1, speed);
+  if (fast > 0.0) {
+    // Streaks: the surface torn into long bands along the flow, their faces catching the sky's glow, darker between.
+    float st = (streaks(q1, dir) * w1 + streaks(q2, dir) * w2) * norm;
+    col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.35) * skyTint()), smoothstep(0.2, 0.7, st) * fast * 0.32);
+    col *= 1.0 - (1.0 - smoothstep(-0.7, -0.2, st)) * fast * 0.14;
+  }
   // Whitecaps on the chop's crests in a storm.
   float caps = smoothstep(0.55, 0.9, chop) * smoothstep(0.45, 1.0, windForce()) * smoothstep(0.4, 0.9, windGust(p.xz) + 0.2);
   col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.6) * skyTint()), caps * 0.45);

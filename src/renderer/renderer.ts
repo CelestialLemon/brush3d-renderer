@@ -768,6 +768,7 @@ export class BrushRenderer {
     s.uWaterBlend.value = this.water.blend(time);
     if (this.water.settle(time) && this.waterMesh) this.waterMesh.visible = false;
     s.uMirrorY.value = this.water.mirror;
+    s.uWaterHigh.value = this.water.any ? this.water.wetHigh : -1e6;
     this.applyLook(this.look);
     const grounded: THREE.Object3D[] = [];
     if (!this.settings.falling) {
