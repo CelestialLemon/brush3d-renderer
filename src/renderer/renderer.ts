@@ -313,7 +313,8 @@ export class BrushRenderer {
     if (mesh.userData.cover !== 'none') this.shelter.changed();
     if (kind === 'ground') this.cloudArea = false;
     this.scene.add(mesh);
-    if (kind === 'ground') { this.setHazeGround(); this.land = null; this.hollows.changed(); }
+    // The maps over the ground's square: drawn again over its new square.
+    if (kind === 'ground') { this.setHazeGround(); this.land = null; this.hollows.changed(); this.shelter.changed(); }
     if (options.castShadow ?? kind !== 'water') this.casters.push(mesh);
     const twin = new THREE.Mesh(geometry, this.materials.get(kind)!.prepass);
     twin.frustumCulled = cull;
@@ -335,7 +336,7 @@ export class BrushRenderer {
     const i = this.twins.findIndex(([m]) => m === mesh);
     if (i >= 0) { this.silhouettes.remove(this.twins[i][1]); this.twins.splice(i, 1); }
     if (mesh.userData.cover !== 'none') this.shelter.changed();
-    if (mesh.userData.kind === 'ground') { this.setHazeGround(); this.cloudArea = false; this.land = null; this.hollows.changed(); }
+    if (mesh.userData.kind === 'ground') { this.setHazeGround(); this.cloudArea = false; this.land = null; this.hollows.changed(); this.shelter.changed(); }
   }
 
   /**
@@ -729,9 +730,8 @@ export class BrushRenderer {
   private drawShelter() {
     const cover = this.scene.children.filter((o): o is THREE.Mesh => (o as THREE.Mesh).isMesh && o.userData.cover !== undefined)
       .map((mesh) => ({ mesh, cover: mesh.userData.cover as Cover, depth: this.materials.get(mesh.userData.kind)!.depth }));
-    const ground = this.scene.children.find((o) => o.userData.kind === 'ground' && o.userData.fields);
     const s = this.shared;
-    this.shelter.draw(this.gl, this.scene, cover, ground?.userData.fields ?? null, () => {
+    this.shelter.draw(this.gl, this.scene, cover, this.groundSquare(), () => {
       // Every wind value and the clock set to one rest, whatever the weather, and the flutter kept across the map's own
       // view (straight down), not the camera's: what's left of the sway and the flutter (a little even in a calm) is then
       // the same every draw, so a new building can't nudge a tree's dry patch.
@@ -746,19 +746,25 @@ export class BrushRenderer {
     });
   }
 
+  /**
+   * The ground's square, for the maps over it (the shelter, the dips): its brush's, or without one a square round all of
+   * the ground (#11). Null with no ground.
+   */
+  private groundSquare(): NonNullable<MeshOptions['fields']> | null {
+    const grounds = this.scene.children.filter((o): o is THREE.Mesh => (o as THREE.Mesh).isMesh && o.userData.kind === 'ground');
+    const square = grounds.find((g) => g.userData.fields)?.userData.fields as MeshOptions['fields'] | undefined;
+    if (square || !grounds.length) return square ?? null;
+    const box = new THREE.Box3();
+    for (const g of grounds) box.expandByObject(g);
+    const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+    return { x: c.x, z: c.z, side: Math.max(size.x, size.z), turn: 0 };
+  }
+
   /** Finds the land's dips (HollowMap): every piece of the ground, from above, over its square. */
   private drawHollows() {
     const grounds = this.scene.children.filter((o): o is THREE.Mesh => (o as THREE.Mesh).isMesh && o.userData.kind === 'ground');
-    // Over the ground's square (its brush's), or, without one, a square round all of it.
-    let square = grounds.find((g) => g.userData.fields)?.userData.fields as MeshOptions['fields'] | undefined;
-    if (!square && grounds.length) {
-      const box = new THREE.Box3();
-      for (const g of grounds) box.expandByObject(g);
-      const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
-      square = { x: c.x, z: c.z, side: Math.max(size.x, size.z), turn: 0 };
-    }
     const depth = this.materials.get('ground')?.depth;
-    if (depth) this.hollows.draw(this.gl, this.scene, grounds, depth, square ?? null, this.shelter.uniforms);
+    if (depth) this.hollows.draw(this.gl, this.scene, grounds, depth, this.groundSquare(), this.shelter.uniforms);
   }
 
   /**
