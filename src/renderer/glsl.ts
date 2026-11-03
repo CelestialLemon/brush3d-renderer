@@ -331,6 +331,8 @@ void writeGBuffer(vec3 color, vec3 worldNormal, float viewDepth, float ink, floa
   // than the river).
   if (uMirror > 0.5 && vWorldPos.y < waterNear(vWorldPos.xz) - 0.01) discard;
 #ifndef WATER_SHEET
+  // Wet things (#11): the ground's state where the surface is (WET_GLSL, ground.ts).
+  if (uGroundOn > 0.5) color = wetLook(color, worldNormal, ink);
   if (gFloats < 0.5 && vWorldPos.y < uWaterHigh + 0.3) color = waterline(color, vWorldPos, dy);
 #endif
   vec3 vn = normalize((viewMatrix * vec4(worldNormal, 0.0)).xyz);

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CLOUD_LIGHT, GBUFFER_OUT, LIGHT_UNIFORMS, MIRROR_SKY, NOISE, OKLAB, PAINT, SHADOW } from './glsl';
 import { WIND_GLSL } from './wind';
 import { HIDDEN_DIVE, WATER_MAP_GLSL } from './water';
+import { WET_GLSL } from './ground';
 
 // The scene's materials. Each has a main variant (writes colour and the G-buffer) and a depth variant for the sun's
 // shadow map, built from the same vertex code so wind and billboarding cast the shadows they should.
@@ -383,8 +384,10 @@ varying vec3 vNormal;
 varying vec3 vColor;
 varying vec4 vPaint;
 varying float vViewDepth;
-${GBUFFER_OUT}
 vec3 toCamera() { return normalize(vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2])); }
+${MIRROR_SKY}
+${WET_GLSL}
+${GBUFFER_OUT}
 
 #ifdef BASIS
 // The brush by place, baked at load (basisBakeMaterial): for each of the BASIS brush scales, seven layers over the ground's
@@ -632,7 +635,6 @@ void main() {
  */
 const INK_FRAG = /* glsl */ `
 ${FRAG_HEAD}
-${MIRROR_SKY}
 uniform vec3 uSkyTop;
 uniform vec3 uSkyBottom;
 varying vec2 vUv;
@@ -728,7 +730,6 @@ bool sheetHidden(vec3 p, float mud) {
 
 const WATER_FRAG = /* glsl */ `
 ${FRAG_HEAD}
-${MIRROR_SKY}
 uniform sampler2D uUnder;
 uniform sampler2D uUnderAux;
 uniform sampler2D uReflect;
@@ -939,11 +940,15 @@ const FRAG: Record<MaterialKind, string> = {
   paint: PAINT_FRAG, ground: PAINT_FRAG, crop: PAINT_FRAG, ink: INK_FRAG, water: WATER_FRAG, foliage: FOLIAGE_FRAG, grass: GRASS_FRAG,
   debris: FOLIAGE_FRAG,
 };
-/** Painted wood bends with its tree; a crop shows the gusts. (The ground has no trees, but keeps paint's shader exactly.) */
+/**
+ * Painted wood bends with its tree; a crop shows the gusts. (The ground has no trees, but keeps paint's shader exactly.)
+ * The ground takes puddles and mud when wet (GROUND, #11); what's drawn at the ground reads its shelter from the ground's
+ * (AT_GROUND, see HOLLOW_GLSL).
+ */
 /** The water's own colour (C.water before #18, when the scenes built it), linear. */
 const WATER_LINEAR = new THREE.Color(0x2c6e74);
 const DEFINES: Partial<Record<MaterialKind, Record<string, number | string>>> = {
-  paint: { TREES: 1 }, ground: { TREES: 1 }, crop: { CROP: 1 },
+  paint: { TREES: 1 }, ground: { TREES: 1, GROUND: 1, AT_GROUND: 1 }, grass: { AT_GROUND: 1 }, crop: { CROP: 1, AT_GROUND: 1 },
   water: { WATER_SHEET: 1, WATER_COLOR: `vec3(${WATER_LINEAR.r.toFixed(6)}, ${WATER_LINEAR.g.toFixed(6)}, ${WATER_LINEAR.b.toFixed(6)})` },
 };
 const DABS = (kind: MaterialKind) => kind === 'foliage' || kind === 'debris';

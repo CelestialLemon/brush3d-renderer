@@ -18,6 +18,7 @@ import { leafStorm, WindField, WindState } from './wind';
 import { DustField, type DustSource } from './dust';
 import { TreeSprings, type TreeSpec } from './trees';
 import { WATER_EASE, WaterField, type WaterMap } from './water';
+import { DEFAULT_WET_LOOKS, GROUND_EASE, GroundField, HollowMap, wetLookVector, type GroundMap, type WetLooks } from './ground';
 import type { WindSnapshot } from '../wind/sim';
 
 // The renderer: the clouds' shade over the land (#8); a sun shadow map; for the water, the bed drawn without it and the
@@ -167,6 +168,12 @@ export class BrushRenderer {
    * call shelter.changed() after moving cover; adding a mesh or showing or hiding a kind does it already.
    */
   readonly shelter: ShelterMap;
+  /** The game's ground (#11): how wet and how muddy the land is, its map eased between updates (see setGround). */
+  readonly ground = new GroundField();
+  /** The land's dips, found from the ground's shape, for the puddles: once, when there's first something wet. */
+  readonly hollows = new HollowMap();
+  /** The looks for wet things, while the developer picks (#11, WET_LOOKS). */
+  private wetLook = { uWetLook: { value: wetLookVector(DEFAULT_WET_LOOKS, new THREE.Vector4()) } };
   /** The cloud field's shade over the land, drawn each frame the clouds move (#8). */
   readonly cloudMap: CloudMap;
   /** The cloud field again, coarser and further out: the sky the water and the solar glass mirror (MIRROR). */
@@ -197,6 +204,8 @@ export class BrushRenderer {
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
     });
     this.shelter = new ShelterMap(options.shelterSize ?? 1024);
+    // Every material reads the shelter map, the ground's state and the land's dips, for wet things (#11).
+    Object.assign(this.shared, this.shelter.uniforms, this.ground.uniforms, this.hollows.uniforms, this.wetLook);
     this.cloudMap = new CloudMap(this.shared);
     this.skyMap = new CloudMap({ uCloudMap: this.shared.uSkyMap, uCloudRect: this.shared.uSkyRect }, MIRROR.size);
     this.underTarget = half();
@@ -304,7 +313,7 @@ export class BrushRenderer {
     if (mesh.userData.cover !== 'none') this.shelter.changed();
     if (kind === 'ground') this.cloudArea = false;
     this.scene.add(mesh);
-    if (kind === 'ground') { this.setHazeGround(); this.land = null; }
+    if (kind === 'ground') { this.setHazeGround(); this.land = null; this.hollows.changed(); }
     if (options.castShadow ?? kind !== 'water') this.casters.push(mesh);
     const twin = new THREE.Mesh(geometry, this.materials.get(kind)!.prepass);
     twin.frustumCulled = cull;
@@ -326,7 +335,7 @@ export class BrushRenderer {
     const i = this.twins.findIndex(([m]) => m === mesh);
     if (i >= 0) { this.silhouettes.remove(this.twins[i][1]); this.twins.splice(i, 1); }
     if (mesh.userData.cover !== 'none') this.shelter.changed();
-    if (mesh.userData.kind === 'ground') { this.setHazeGround(); this.cloudArea = false; this.land = null; }
+    if (mesh.userData.kind === 'ground') { this.setHazeGround(); this.cloudArea = false; this.land = null; this.hollows.changed(); }
   }
 
   /**
@@ -458,6 +467,16 @@ export class BrushRenderer {
   }
   /** Whether the water is shown (setVisible), apart from whether there is any. */
   private waterShown = true;
+
+  /**
+   * The game's ground (#11, see GroundMap and docs/GROUND.md): how wet and how muddy the land is, over a grid as the
+   * water's is, sent again whenever it changes. A changed map eases in over `ease` seconds (0 at once). Under a roof the
+   * ground stays dry, and soaked ground fills the land's dips with puddles: those are the renderer's. Null: dry everywhere.
+   */
+  setGround(map: GroundMap | null, ease = GROUND_EASE) { this.ground.set(map, this.shared.uTime.value, ease); }
+
+  /** The looks for wet things, while the developer picks (#11, WET_LOOKS). */
+  setWetLooks(looks: WetLooks) { wetLookVector(looks, this.wetLook.uWetLook.value); }
 
   /**
    * A haze on the ground starts just under the lowest land: the ground's lowest point (it's laid in world space, its brush
@@ -727,6 +746,14 @@ export class BrushRenderer {
     });
   }
 
+  /** Finds the land's dips (HollowMap): every piece of the ground, from above, over its square. */
+  private drawHollows() {
+    const grounds = this.scene.children.filter((o): o is THREE.Mesh => (o as THREE.Mesh).isMesh && o.userData.kind === 'ground');
+    const square = grounds.find((g) => g.userData.fields)?.userData.fields as MeshOptions['fields'] | undefined;
+    const depth = this.materials.get('ground')?.depth;
+    if (depth) this.hollows.draw(this.gl, this.scene, grounds, depth, square ?? null, this.shelter.uniforms);
+  }
+
   /**
    * Draws the cloud map and the sky map (when the clouds or their shape have changed), over the ground's square: found again whenever
    * ground is added or taken out, and each frame until there is some.
@@ -769,6 +796,7 @@ export class BrushRenderer {
     if (this.water.settle(time) && this.waterMesh) this.waterMesh.visible = false;
     s.uMirrorY.value = this.water.mirror;
     s.uWaterHigh.value = this.water.any ? this.water.wetHigh : -1e6;
+    this.ground.update(time);
     this.applyLook(this.look);
     const grounded: THREE.Object3D[] = [];
     if (!this.settings.falling) {
@@ -793,7 +821,12 @@ export class BrushRenderer {
 
     // The shelter map, only when cover has changed: nothing to do most frames.
     t?.mark('shelter', this.shelter.dirty);
-    if (this.shelter.dirty) this.drawShelter();
+    // The dips map holds the ground's shelter too: found again with it.
+    if (this.shelter.dirty) { this.drawShelter(); this.hollows.changed(); }
+    // The land's dips, for puddles: once there's something wet, and again only when the ground changes.
+    const dips = this.ground.any && this.hollows.dirty;
+    t?.mark('hollows', dips);
+    if (dips) this.drawHollows();
 
     // The clouds' shade over the land, as the game has them now.
     t?.mark('clouds');
@@ -820,7 +853,13 @@ export class BrushRenderer {
     gl.setClearColor(0x000000, 0);
     const water = this.waterOnScreen();
     const nudge = (WATER_REACH.ripple + WATER_REACH.chop * WATER_REACH.chopMax) * 1.1;
-    if (water) this.drawOnly(this.underTarget, (m) => m.userData.under, this.waterRect(water, this.underTarget, nudge, 0));
+    if (water) {
+      // The bed under the water is wet already: the ground's state isn't drawn there (#11).
+      const wet = this.ground.uniforms.uGroundOn, on = wet.value;
+      wet.value = 0;
+      this.drawOnly(this.underTarget, (m) => m.userData.under, this.waterRect(water, this.underTarget, nudge, 0));
+      wet.value = on;
+    }
     t?.mark('reflect');
     const pre = this.settings.prepass;
     if (water) {
