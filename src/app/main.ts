@@ -23,6 +23,7 @@ import { WindView } from './windView';
 //   weather (clear|scattered|overcast|soft-rain|storm|fog|dust|heat-wave|snow|blizzard), then each value over it:
 //     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop, hazeBase (metres)
 //     hazeKind=fog|dust
+//   sunUnder (0..1: how much of a low sun gets in under the cloud at dawn and dusk, the game's, now and then; 0 by default)
 //   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
 //   spell=shower|fog|dust|flood (which scripted weather: a shower, a morning fog lifting, a dust storm blowing through, or
 //     a storm flooding the stream over the land)
@@ -137,7 +138,7 @@ let presetName: WeatherName | null = weatherParam !== null && weatherParam in WE
 const preset: Weather = WEATHER_PRESETS[presetName ?? 'clear'];
 const presetHaze: Haze = preset.haze ?? { amount: 0, color: 0xcfd6d8, top: 4 };
 /** The weather as the demo holds it: the sky's values (the clouds' drift is added as it's sent, see send). */
-type Sky = Required<Omit<Weather, 'drift' | 'cloudSeed'>>;
+type Sky = Required<Omit<Weather, 'drift' | 'cloudSeed' | 'sunUnder'>>;
 const weather: Sky & { haze: Haze } = {
   cloud: num('cloud', preset.cloud), rain: num('rain', preset.rain ?? 0), snow: num('snow', preset.snow ?? 0), heat: num('heat', preset.heat ?? 0),
   haze: {
@@ -149,6 +150,9 @@ const weather: Sky & { haze: Haze } = {
 if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase', 'hazeKind'].some((k) => params.has(k))) presetName = null;
 // The clouds' field (#8).
 const cloudSeed = num('cloudSeed', 1);
+// How much of a low sun gets in under the cloud at dawn and dusk (#8): the game's, sent with the weather, and only now and
+// then (a rare sight, not every overcast evening); none unless asked for.
+let sunUnder = num('sunUnder', 0);
 
 // The clouds' drift, standing in for the game's: carried along by the demo's wind (standing in for the wind aloft) at the
 // drawn speed (cloudDriftSpeed), and sent with its speed whenever the weather is, as the game would.
@@ -192,7 +196,7 @@ let sent: Weather = weather;
 function send(w: Weather, immediate = false, time = lastTime) {
   sent = { ...w };
   dustSource(Math.max(w.rain ?? 0, w.snow ?? 0));
-  renderer.setWeather({ ...w, drift: driftAt(time), cloudSeed }, immediate);
+  renderer.setWeather({ sunUnder, ...w, drift: driftAt(time), cloudSeed }, immediate);
 }
 let lastTime = 0;
 send(weather, true, 0);
@@ -297,6 +301,7 @@ function hud() {
   };
   const share = (v: number) => v.toFixed(2);
   hudEl.append(slider('Cloud', 0, 1, 0.01, () => weather.cloud, weatherSet((v) => { weather.cloud = v; }), share, true));
+  hudEl.append(slider('low sun', 0, 1, 0.01, () => sunUnder, (v) => { sunUnder = v; send(sent); }, share, true));
   hudEl.append(slider('Rain', 0, 1, 0.01, () => weather.rain, weatherSet((v) => { weather.rain = v; }), share, true));
   hudEl.append(slider('Snow', 0, 1, 0.01, () => weather.snow, weatherSet((v) => { weather.snow = v; }), share, true));
   hudEl.append(slider('Heat', 0, 1, 0.01, () => weather.heat, weatherSet((v) => { weather.heat = v; }), share, true));

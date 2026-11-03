@@ -140,6 +140,9 @@ the land and 80 m round it (how far a mirrored ray reaches the clouds), drawn in
 adds 0.06 to the map (0.30 at 45% cover), and the frame goes 11.91 → 11.96 on the farm, 5.21 → 5.27 on the meadow: about
 0.4 a frame at worst for the clouds altogether.
 
+Golden-hour light under a deck (#49) changes only the light's numbers, set once a frame: no new pass and no shader
+change, so it costs nothing measurable. With `sunUnder` 0 (the default) frames are byte-for-byte what they were.
+
 ### The shelter map (#10)
 
 Two depth maps of the land from straight above, 1024² each (10 MB, with the byte a texel of colour a target must have):

@@ -11,7 +11,8 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   2. #7 the handoff from the game (`setWeather`), a scripted weather timeline in the demo, and the overcast look (done
      2026-10-31, #29 and #30: see Weather);
   3. #8 clouds: one cloud recipe the game shares (cloud shadows will cut solar panels' power, CelestialLemon/Soil-n-Silo#198),
-     shadows on the land (#34), reflections in the water and panels (#37); golden-hour light under a cloud deck next;
+     shadows on the land (#34), reflections in the water and panels (#37), golden-hour light under a cloud deck (#49)
+     (done 2026-11-03: see Weather);
   4. #9 mist, fog, dust and heat haze (done 2026-10-31, #33 and #35: see Weather);
   5. #10 the shelter map, so rain and snow stop at roofs, and a test shed (done 2026-10-31, #31 and #32: two depth maps
      from above, roofs and crowns (a crown keeps off 60%), drawn only when cover changes, `?shelter` to see it; a
@@ -140,6 +141,18 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   colourful than a sunny morning. Left: a small brightness swing at part cover (dawn and sunset are a little brighter at
   half to three-quarter cover than either end); judge it again with #8's cloud shadows, which change what part cover looks
   like.
+
+- **Clouds (#8, done 2026-11-03 in #34, #37 and #49).** One cloud recipe (`src/renderer/clouds.ts`, `CLOUD_SHAPE`) that
+  the game shares for its solar panels, drawn exactly as the game sends its cover and drift. Shadows on the land: shape
+  "ab" (cumulus turning into big soft masses as the sky closes), "mid" shade, "mid" drift (0.85 m/s in a breeze); the gaps
+  between clouds are a clear day's sun until the sky nearly closes. Reflections in the water and the solar glass: "lit"
+  at "clear" strength, warm in the evening (see Water). Golden-hour light under a cloud deck: at dawn and dusk under a
+  heavy cover (60% to full) the low sun gets in under the deck and lights the land gold under a grey sky, the look
+  "rake" (#49, the developer's pick of glow, rake and blaze): about half the sun's strength, long soft shadows, sunward
+  sides and crowns' edges catching the gold, the water still mirroring the grey deck (`src/renderer/golden.ts`). It's a
+  rare sight, so the game asks for it now and then (`setWeather`'s `sunUnder`, 0 if left out; `?sunUnder=1` in the
+  demo), and it's light only: the cloud field and the panels' power don't change. `tools/video.ts sunset` and `sunrise`
+  (QUERY="cloud=1&sunUnder=1") show the sun sinking and rising under the deck.
 
 - **Mist and fog (#9, part 1, merged in #33).** The haze from `setWeather` lies on the land: thickest low down and thinning
   to its top, so a shallow mist pools along the water and in the hollows and a deep fog veils the land while roofs and

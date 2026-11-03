@@ -14,6 +14,7 @@ import { ShelterMap, type Cover } from './shelter';
 import type { PassTimer } from './timer';
 import { WeatherState, type Weather } from './weather';
 import { airLook, HEAT, heatShare } from './air';
+import { GOLDEN, goldenLook, goldenShape, goldenShare } from './golden';
 import { leafStorm, WindField, WindState } from './wind';
 import { DustField, type DustSource } from './dust';
 import { TreeSprings, type TreeSpec } from './trees';
@@ -507,11 +508,15 @@ export class BrushRenderer {
     const gap = THREE.MathUtils.lerp(cover, gapCover(cover), strength);
     // What dust and the heat do to the light (air.ts), laid over each.
     const w = this.weather, air = (l: Look) => airLook(l, w, HEAT);
-    const grade = air(overcastLook(clear, cover, r)), look = air(overcastLook(clear, gap, r)), under = air(overcastLook(clear, 1, r));
-    const s = this.shared;
-    const shape = skyShare(gap), lift = shape * r.shadowLift;
-    s.uOvercast.value.set(shape * r.sky, shape * r.shadowFade, shape * r.shadowBlur);
-    s.uCloudOvercast.value.set(r.sky, THREE.MathUtils.lerp(UNDER_CLOUD_FADE, r.shadowFade, lift), r.shadowBlur);
+    // Golden hour under a deck (golden.ts): the light under the cloud turned back towards the low sun's, and the gaps' as
+    // far as they've turned overcast; the grade only in its haze's colour.
+    const g = goldenShare(w.sunUnder, clear, cover) * strength, gold = (l: Look, k: number) => goldenLook(l, clear, GOLDEN, g * k);
+    const graded = overcastLook(clear, cover, r), grade = air({ ...graded, hazeColor: gold(graded, cover).hazeColor });
+    const look = air(gold(overcastLook(clear, gap, r), gap)), under = air(gold(overcastLook(clear, 1, r), 1));
+    const s = this.shared, rs = goldenShape(r, GOLDEN, g);
+    const shape = skyShare(gap), lift = shape * rs.shadowLift;
+    s.uOvercast.value.set(shape * rs.sky, shape * rs.shadowFade, shape * rs.shadowBlur);
+    s.uCloudOvercast.value.set(rs.sky, THREE.MathUtils.lerp(THREE.MathUtils.lerp(UNDER_CLOUD_FADE, r.shadowFade, lift), rs.shadowFade, g), rs.shadowBlur);
     s.uCloudStrength.value = strength;
     const az = THREE.MathUtils.degToRad(look.sunAz), el = THREE.MathUtils.degToRad(Math.max(look.sunEl, 4));
     s.uSunDir.value.set(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
@@ -539,6 +544,9 @@ export class BrushRenderer {
     // thickening into the overcast sky as it closes.
     s.uGapSkyTop.value.copy(look.skyTop); s.uGapSkyBottom.value.copy(look.skyBottom);
     s.uCloudBelly.value.copy(under.skyTop).lerp(under.skyBottom, 0.25);
+    // The deck stays as grey in the mirror when the low sun lights the land under it: by the gaps' change of light, which
+    // is the light under a cloud's once the sky has closed (under part cover, where the gaps are in the sun, it's none).
+    if (g > 0) s.uCloudBelly.value.multiplyScalar(air(overcastLook(clear, gap, r)).exposure / look.exposure);
     const sun = clear.sunColor, warm = new THREE.Color(1, 1, 1).lerp(sun.clone().multiplyScalar(1 / Math.max(sun.r, sun.g, sun.b, 1e-3)), 0.85);
     s.uCloudLit.value.copy(look.skyBottom).lerp(warm, 0.7 * THREE.MathUtils.lerp(0.15, 1, dim));
     s.uSkyClosed.value = gap;
