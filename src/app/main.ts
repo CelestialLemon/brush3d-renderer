@@ -124,9 +124,26 @@ const hourParam = params.get('hour') ?? 'noon';
 let hour = hourParam in HOUR_NAMES ? hoursOf(renderer.day)[HOUR_NAMES[hourParam]] : Number(hourParam);
 /** The named hour the clock is on, if it's on one. */
 const namedHour = () => (Object.entries(hoursOf(renderer.day)) as [HourName, number][]).find(([, h]) => Math.abs(h - hour) < 0.01)?.[0];
-/** The URL as things stand: the camera, the hour (by its name if it's on one) and the candidates picked. */
+/**
+ * The URL as things stand: the camera, the hour (by its name if it's on one), the candidates picked, and the weather, wind,
+ * water and timeline as the controls have them, so a season's scene is built again under the same sky.
+ */
 function here() {
   const next = new URLSearchParams(params), was = namedHour();
+  for (const k of ['weather', 'cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase', 'hazeKind', 'timeline']) next.delete(k);
+  if (playing) next.set('timeline', String(speed));
+  else if (presetName) next.set('weather', presetName);
+  else {
+    for (const k of ['cloud', 'rain', 'snow', 'heat'] as const) next.set(k, String(weather[k]));
+    const h = weather.haze;
+    next.set('haze', String(h.amount)); next.set('hazeColor', h.color.toString(16).padStart(6, '0')); next.set('hazeTop', String(h.top));
+    if (h.base !== undefined) next.set('hazeBase', String(h.base));
+    if (h.kind) next.set('hazeKind', h.kind);
+  }
+  next.set('sunUnder', String(sunUnder));
+  next.set('wind', wind.speed.toFixed(2)); next.set('windDir', ((wind.direction * 180) / Math.PI).toFixed(1));
+  next.set('gust', String(wind.gust ?? 0.5)); next.set('rhythm', String(rhythm));
+  next.set('rise', String(water.rise)); next.set('flow', String(water.flow)); next.set('mud', String(water.mud));
   next.set('view', String(view.view)); next.set('zoom', view.zoom.toFixed(1));
   next.set('x', view.target.x.toFixed(2)); next.set('z', view.target.z.toFixed(2));
   next.set('hour', was ? Object.keys(HOUR_NAMES).find((k) => HOUR_NAMES[k] === was)! : hour.toFixed(2));
