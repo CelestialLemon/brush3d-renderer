@@ -10,7 +10,9 @@
 //   QUERY="hour=7" for a dawn), dust-storm (the wind getting up and blowing a dust storm through, at 3x), heat (held
 //   still, then panning; QUERY="weather=heat-wave"), flood (the scripted storm swelling the farm's stream, flooding the
 //   land and draining, at 3x; #18), flood-meadow (the same over the meadow; QUERY="scene=meadow"), stream-spate and
-//   stream-usual (the farm's stream close, in spate and as usual: the flow carrying the ripples)
+//   stream-usual (the farm's stream close, in spate and as usual: the flow carrying the ripples), sunset and sunrise (the
+//   hour running from 16:00 past sunset, or from before dawn to 9:00, the camera still: QUERY="cloud=1" for the low sun
+//   under a cloud deck, #8)
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
 // tools/browser.ts for the rest.
@@ -33,6 +35,8 @@ interface Move {
   timeline?: (t: number) => number; spell?: 'shower' | 'fog' | 'dust' | 'flood'; ease?: boolean; extra?: boolean;
   /** The water (#18): how far it stands over the usual (m), how fast it runs (times the usual), how muddy (0..1). */
   water?: (t: number) => { rise?: number; flow?: number; mud?: number };
+  /** The hour, if it moves. */
+  hour?: (t: number) => number;
 }
 /** The game's updates: a few a second (src/app/timeline.ts), so the weather comes in steps the renderer eases over. */
 const tick = (t: number) => Math.floor(t * 4) / 4;
@@ -79,6 +83,9 @@ const MOVES: Record<string, Move> = {
   flood: { seconds: 57, at: () => ({ x: -6, z: 17, zoom: 24, view: 0 }), timeline: (t) => t, spell: 'flood', ease: true, extra: true },
   'flood-meadow': { seconds: 57, at: () => ({ x: 0, z: 0, zoom: 26, view: 0 }), timeline: (t) => t, spell: 'flood', ease: true, extra: true },
   'stream-spate': { seconds: 8, at: () => ({ x: -14, z: 20, zoom: 64, view: 0 }), water: () => ({ rise: 0.15, flow: 3.5, mud: 0.75 }), extra: true },
+  // The sun sinking (or rising) under the sky as QUERY has it (#8: cloud=1 for golden hour under a deck), the camera still.
+  sunset: { seconds: 16, at: () => ({ x: -1, z: 4, zoom: 32, view: 0 }), hour: (t) => 16 + (4.5 * t) / 16, extra: true },
+  sunrise: { seconds: 16, at: () => ({ x: -1, z: 4, zoom: 32, view: 0 }), hour: (t) => 5.5 + (3.5 * t) / 16, extra: true },
   'stream-usual': { seconds: 8, at: () => ({ x: -14, z: 20, zoom: 64, view: 0 }), water: () => ({ rise: 0, flow: 1, mud: 0 }), extra: true },
 };
 
@@ -108,11 +115,11 @@ try {
       const wind = move.wind ? { speed: move.wind(t) } : i === 0 ? {} : undefined;
       const weather = move.cloud ? { cloud: move.cloud(t) } : i === 0 && !move.timeline ? {} : undefined;
       const water = move.water?.(t);
-      const png = await page.evaluate(async (cam, time, wind, weather, timeline, ease, water) => {
-        await (window as any).__draw(cam, { time, wind, weather, timeline, ease, water });
+      const png = await page.evaluate(async (cam, time, wind, weather, timeline, ease, water, hour) => {
+        await (window as any).__draw(cam, { time, wind, weather, timeline, ease, water, hour });
         return document.querySelector('canvas')!.toDataURL('image/png');
       }, move.at(t), 3 + t, wind, weather, move.timeline ? { time: move.timeline(t), speed: 3, spell: move.spell ?? 'shower' } : undefined,
-      !!move.ease && i > 0, water);
+      !!move.ease && i > 0, water, move.hour?.(t));
       await writeFile(join(dir, `${String(i).padStart(4, '0')}.png`), Buffer.from(png.split(',')[1], 'base64'));
     }
     const file = join(out, `${name}.mp4`);
