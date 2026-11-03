@@ -55,20 +55,21 @@ vec4 waterCell(ivec2 c) {
   return mix(texelFetch(tWaterA, c, 0), texelFetch(tWaterB, c, 0), uWaterBlend);
 }
 // The sheet over a point, on its own triangles (split from the +x cell to the +z one, as WaterField.index lays them):
-// per cell, the surface (x) and the surface it continues, before its dive (y; the same where it's wet). Far below
-// everything off the grid or with no map.
-vec2 waterSheet(vec2 xz) {
-  if (uWaterGrid.w < 0.5) return vec2(-1.0e6);
+// per cell, the surface (x), the surface it continues, before its dive (y; the same where it's wet), and its mud (z;
+// how far down, negative, where it dives: the water isn't drawn below -HIDDEN_DIVE). Far below everything off the grid
+// or with no map.
+vec3 waterSheet(vec2 xz) {
+  if (uWaterGrid.w < 0.5) return vec3(-1.0e6, -1.0e6, -1.0e6);
   vec2 g = (xz - uWaterGrid.xy) * uWaterGrid.z - 0.5;
   ivec2 n = textureSize(tWaterA, 0);
   // Off the sheet (which reaches the grid's edge, half a cell past the edge cells' centres).
-  if (g.x < -0.5 || g.y < -0.5 || g.x > float(n.x) - 0.5 || g.y > float(n.y) - 0.5) return vec2(-1.0e6);
+  if (g.x < -0.5 || g.y < -0.5 || g.x > float(n.x) - 0.5 || g.y > float(n.y) - 0.5) return vec3(-1.0e6, -1.0e6, -1.0e6);
   vec2 i = floor(g), f = g - i;
   ivec2 c = ivec2(i);
   vec4 a = waterCell(c), b = waterCell(c + ivec2(1, 0)), d = waterCell(c + ivec2(0, 1)), e = waterCell(c + ivec2(1, 1));
   // Where it dives, its mud is how far down, negative (layWater).
-  vec2 va = vec2(a.x, a.x - min(a.w, 0.0)), vb = vec2(b.x, b.x - min(b.w, 0.0));
-  vec2 vd = vec2(d.x, d.x - min(d.w, 0.0)), ve = vec2(e.x, e.x - min(e.w, 0.0));
+  vec3 va = vec3(a.x, a.x - min(a.w, 0.0), a.w), vb = vec3(b.x, b.x - min(b.w, 0.0), b.w);
+  vec3 vd = vec3(d.x, d.x - min(d.w, 0.0), d.w), ve = vec3(e.x, e.x - min(e.w, 0.0), e.w);
   return f.x + f.y < 1.0 ? va + (vb - va) * f.x + (vd - va) * f.y : ve + (vd - ve) * (1.0 - f.x) + (vb - ve) * (1.0 - f.y);
 }
 // The water's surface over a point, metres, as drawn.

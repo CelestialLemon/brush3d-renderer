@@ -1,5 +1,5 @@
 import { CLOUD_MAP_GLSL, MIRROR } from './cloudMap';
-import { WATER_MAP_GLSL } from './water';
+import { HIDDEN_DIVE, WATER_MAP_GLSL } from './water';
 
 // Shared GLSL: noise, OKLab colour, and the painted light model every surface uses.
 //
@@ -298,9 +298,10 @@ export const GBUFFER_OUT = /* glsl */ `
 // water where it has wetted them, its top ragged; B, a thin line of foam where the water meets them (not along blades
 // and leaves, where it would speckle) and a fainter band.
 // Only where the water is drawn, not where the sheet dives under the land.
-vec3 waterline(vec3 color, vec3 p) {
-  vec2 sheet = waterSheet(p.xz);
-  float shown = 1.0 - smoothstep(0.05, 0.15, sheet.y - sheet.x);
+vec3 waterline(vec3 color, vec3 p, float dy) {
+  vec3 sheet = waterSheet(p.xz);
+  // Where the water is drawn (as sheetHidden judges it).
+  float shown = smoothstep(-${HIDDEN_DIVE}, -${HIDDEN_DIVE / 2}, sheet.z);
   float h = p.y - sheet.x;
   if (shown <= 0.0 || h < -0.05 || h > 0.3) return color;
   float top = 0.16 + 0.07 * snoise(p.xz * 2.7 + p.y * 1.3);
@@ -311,7 +312,7 @@ vec3 waterline(vec3 color, vec3 p) {
   color = mix(color, wetColor, wet * (b > 0.5 ? 0.55 : 1.0));
 #ifndef THIN
   if (b > 0.5) {
-    float w = max(fwidth(h), 0.004);
+    float w = max(dy, 0.004);
     float line = (1.0 - smoothstep(0.025, 0.025 + w, abs(h - 0.01))) * shown;
     // Fainter along the ground's shore than round things standing in the water.
 #ifdef FIELDS
@@ -325,11 +326,13 @@ vec3 waterline(vec3 color, vec3 p) {
 layout(location = 0) out vec4 gColor;
 layout(location = 1) out vec4 gAux;   // view normal xy, view depth, ink (1 inked, 0 painted)
 void writeGBuffer(vec3 color, vec3 worldNormal, float viewDepth, float ink, float alpha) {
+  // (Taken before any fragment leaves, where its neighbours' are still there to compare with.)
+  float dy = fwidth(vWorldPos.y);
   // In the reflection, what's under the water isn't reflected: under the water nearest (waterNear; a flood stands higher
   // than the river).
   if (uMirror > 0.5 && vWorldPos.y < waterNear(vWorldPos.xz) - 0.01) discard;
 #ifndef WATER_SHEET
-  if (uWaterLook.z > 0.5 && vWorldPos.y < uWaterHigh + 0.3) color = waterline(color, vWorldPos);
+  if (uWaterLook.z > 0.5 && vWorldPos.y < uWaterHigh + 0.3) color = waterline(color, vWorldPos, dy);
 #endif
   vec3 vn = normalize((viewMatrix * vec4(worldNormal, 0.0)).xyz);
   // The reflection is stored premultiplied (over a clear, transparent black), so the water can filter it without darkening
