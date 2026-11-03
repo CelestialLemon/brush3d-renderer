@@ -3,7 +3,7 @@ import { BrushRenderer } from '../renderer/renderer';
 import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
-import type { MaterialKind } from '../renderer/materials';
+import { WATER_LOOKS, type MaterialKind, type WaterLooks } from '../renderer/materials';
 import { cloudDriftSpeed } from '../renderer/clouds';
 import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weather, type WeatherName } from '../renderer/weather';
 import { steadyWind, WIND_SCALE, windName, type WindStrength } from '../renderer/wind';
@@ -28,6 +28,7 @@ import { WindView } from './windView';
 //     a storm flooding the stream over the land)
 //   water=usual|spate|flood (the water, #18), then each value over it: rise (m over the usual), flow (times the usual
 //     speed), mud (0..1)
+//   fast=off|a|b|c, muddy=a|b, waterline=off|a|b (the water's looks, while the developer picks, #18: see WATER_LOOKS)
 //   cloudSeed (which cloud field: a whole number)
 //   falling=0 (leave out the things in the air: the wind's leaves, and rain and snow to come; dust is in the haze)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
@@ -79,6 +80,11 @@ function sendWater(w: WaterState, immediate = false) {
   renderer.setWater(demoWater.map(w), immediate ? 0 : undefined);
 }
 sendWater(water, true);
+// The water's looks, while the developer picks (#18).
+const lookParam = <K extends keyof WaterLooks>(k: K, fallback: WaterLooks[K]) =>
+  (Object.hasOwn(WATER_LOOKS[k], params.get(k) ?? '') ? params.get(k) : fallback) as WaterLooks[K];
+const waterLooks: WaterLooks = { fast: lookParam('fast', 'a'), muddy: lookParam('muddy', 'a'), waterline: lookParam('waterline', 'a') };
+renderer.setWaterLooks(waterLooks);
 const view = renderer.view;
 view.view = num('view', 0); view.zoom = num('zoom', 40);
 view.target.set(num('x', farm ? 0 : -1), 0, num('z', 0));
@@ -345,6 +351,17 @@ function hud() {
     (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)} m`, true));
   hudEl.append(slider('flow', 0, 5, 0.05, () => water.flow, waterSet((v) => { water.flow = v; }), (v) => `${v.toFixed(2)}×`, true));
   hudEl.append(slider('mud', 0, 1, 0.01, () => water.mud, waterSet((v) => { water.mud = v; }), share, true));
+  // The water's looks, while the developer picks (#18).
+  const labels = { fast: 'Fast', muddy: 'Mud', waterline: 'Line' };
+  for (const k of Object.keys(WATER_LOOKS) as (keyof WaterLooks)[]) {
+    hudEl.append(Object.assign(document.createElement('span'), { textContent: labels[k] }));
+    for (const [l, title] of Object.entries(WATER_LOOKS[k])) {
+      const b = document.createElement('button');
+      b.textContent = l === 'off' ? 'off' : l.toUpperCase(); b.className = waterLooks[k] === l ? 'on' : ''; b.title = title;
+      b.onclick = () => { (waterLooks as Record<string, string>)[k] = l; renderer.setWaterLooks(waterLooks); hud(); };
+      hudEl.append(b);
+    }
+  }
 }
 const timelineEl = document.createElement('span');
 /** The weather controls' values, put back to what they show (the timeline moves them). */

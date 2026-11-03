@@ -46,6 +46,9 @@ uniform sampler2D tWaterA;     // the water as it was (level, flow x, flow z, mu
 uniform sampler2D tWaterB;     // the water as last sent
 uniform float uWaterBlend;     // how far it has eased from A to B
 uniform vec4 uWaterGrid;       // x0, z0, 1 / cell, 0 with no map
+uniform float uWaterHigh;      // the highest the wet surface is, as it was and as last sent
+// The looks for fast water, mud and the waterline, while the developer picks (#18): 0 none, 1 A, 2 B, 3 C.
+uniform vec4 uWaterLook;
 vec4 waterCell(ivec2 c) {
   ivec2 n = textureSize(tWaterA, 0);
   c = clamp(c, ivec2(0), n - 1);

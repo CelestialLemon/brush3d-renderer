@@ -6,7 +6,7 @@ import { CLOUD_SHAPE, type CloudShape } from './clouds';
 import type { Look } from './look';
 import { CLOUD_DEPTH, CLOUD_NIGHT, gapCover, OVERCAST, overcastLook, skyShare, UNDER_CLOUD_FADE } from './overcast';
 import {
-  createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
+  createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, waterLookVector, type WaterLooks, type MaterialKind, type SharedUniforms,
 } from './materials';
 import { fogNoiseTexture, litFog } from './fog';
 import { POST_FRAG, POST_VERT } from './post';
@@ -444,6 +444,9 @@ export class BrushRenderer {
    * map eases in over `ease` seconds (a moment by default, so a rising flood creeps rather than steps; 0 at once, for a
    * level loading or a screenshot). Null: no water.
    */
+  /** The looks for fast water, mud and the waterline, while the developer picks (#18). */
+  setWaterLooks(looks: WaterLooks) { waterLookVector(looks, this.shared.uWaterLook.value); }
+
   setWater(map: WaterMap | null, ease = WATER_EASE) {
     const before = this.water.geometry;
     this.water.set(map, this.shared.uTime.value, ease);
@@ -768,6 +771,7 @@ export class BrushRenderer {
     s.uWaterBlend.value = this.water.blend(time);
     if (this.water.settle(time) && this.waterMesh) this.waterMesh.visible = false;
     s.uMirrorY.value = this.water.mirror;
+    s.uWaterHigh.value = this.water.any ? this.water.wetHigh : -1e6;
     this.applyLook(this.look);
     const grounded: THREE.Object3D[] = [];
     if (!this.settings.falling) {

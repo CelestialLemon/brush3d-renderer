@@ -50,6 +50,8 @@ export function createSharedUniforms() {
     tWaterB: { value: null as THREE.Texture | null },
     uWaterBlend: { value: 1 },
     uWaterGrid: { value: new THREE.Vector4(0, 0, 1, 0) },
+    uWaterHigh: { value: -1e6 },
+    uWaterLook: { value: new THREE.Vector4(1, 1, 1, 0) },
     // The land's square (the ground's, see MeshOptions.fields): its centre's x and z, half its side, its turn. The water
     // stops at its edge (half 0: no edge).
     uLandSquare: { value: new THREE.Vector4(0, 0, 0, 0) },
@@ -530,6 +532,8 @@ float dabShape(vec2 c, float seed, float aspect) {
 `;
 
 const FOLIAGE_FRAG = /* glsl */ `
+// Thin things (blades, leaves): no foam line along them, only the wet band (waterline).
+#define THIN 1
 ${FRAG_HEAD}
 ${DAB_SHAPE}
 varying vec4 vCard;
@@ -592,6 +596,8 @@ void main() {
 `;
 
 const GRASS_FRAG = /* glsl */ `
+// Thin things (blades, leaves): no foam line along them, only the wet band (waterline).
+#define THIN 1
 ${FRAG_HEAD}
 varying vec2 vBlade;
 void main() {
@@ -690,6 +696,19 @@ void main() {
  */
 /** How far the ripples shake the clouds in the water (MIRROR_SKY), metres for a unit of their screen nudge: a metre or two. */
 const MIRROR_WOBBLE = 400;
+/**
+ * The looks for fast water, muddy water and the waterline on things standing in it, while the developer picks (#18).
+ * Each is 0 (none: today's look), 1 (A), 2 (B) or 3 (C).
+ */
+export const WATER_LOOKS = {
+  fast: { off: 'Fast water as today', a: 'Streaks: long light streaks along the flow', b: 'Foam: flecks of foam carried along, thickest at the banks', c: 'Both: streaks and foam' },
+  muddy: { a: 'Brown: opaque, ochre brown', b: 'Milky: paler, café au lait, with swirls of silt carried along' },
+  waterline: { off: 'No waterline', a: 'Wet band: things are darker just above the water, where it has wetted them', b: 'Foam line: a thin line of foam where the water meets things, and a fainter wet band' },
+} as const;
+export type WaterLooks = { [K in keyof typeof WATER_LOOKS]: keyof (typeof WATER_LOOKS)[K] };
+const LOOK_INDEX: Record<string, number> = { off: 0, a: 1, b: 2, c: 3 };
+/** The looks' uniform: fast, muddy, waterline. */
+export function waterLookVector(l: WaterLooks, v: THREE.Vector4) { return v.set(LOOK_INDEX[l.fast], LOOK_INDEX[l.muddy], LOOK_INDEX[l.waterline], 0); }
 export const WATER_REACH = { ripple: 0.0035, chop: 0.006, chopMax: 1.5, reflectNudge: 1.6, blurPx: 3 };
 const f = (x: number) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
 
@@ -745,9 +764,20 @@ float sparkle(vec2 q, vec2 dir) {
   float wink = max(0.0, sin(uTime * (2.0 + h * 3.0) + h * 40.0));
   return (1.0 - smoothstep(0.5, 1.0, length(f / vec2(0.15, 0.3)))) * step(0.5, h) * wink;
 }
+// Fast water's looks (#18, while the developer picks): streaks, long bands of light along the flow; foam, flecks carried
+// along. Both in the flow's own frame, carried as the ripples are.
+float streaks(vec2 q, vec2 dir) {
+  vec2 r = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x)));
+  return snoise(r * vec2(0.2, 3.0)) * 0.65 + snoise(r * vec2(0.45, 6.5) + 5.0) * 0.35;
+}
+float foamNoise(vec2 q, vec2 dir) {
+  vec2 r = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x)));
+  return snoise(r * vec2(1.0, 1.9)) * 0.55 + snoise(r * vec2(2.5, 4.2) + 13.0) * 0.3 + snoise(r * 6.0 + 29.0) * 0.15;
+}
 void main() {
   if (sheetHidden(vWorldPos, vMud)) discard;
-  float mud = max(vMud, 0.0);
+  // How much the silt shows: a little soon browns water (and halfway between teal and brown is grey).
+  float mud = 1.0 - pow(1.0 - clamp(vMud, 0.0, 1.0), 3.0);
   cloudAt(vWorldPos);
   vec3 n = vec3(0.0, 1.0, 0.0);
   vec3 p = vWorldPos;
@@ -804,11 +834,22 @@ void main() {
   vec3 waterLab = linToOklab(vColor);
   vec3 scatter = oklabToLin(lchShift(waterLab, 0.06, 1.35, 0.0));
   vec3 absorb = vec3(1.9, 0.75, 0.6);
+  // Muddy water (#18, while the developer picks): silt makes it brown and opaque, the bed lost a hand's depth down.
+  // A: ochre brown. B: paler, milky, with swirls of lighter and darker silt carried by the flow.
+  if (uWaterLook.y > 1.5) {
+    float swirl = (snoise(q1 * 0.35 + 3.0) * w1 + snoise(q2 * 0.35 + 3.0) * w2) * norm;
+    scatter = mix(scatter, vec3(0.5, 0.34, 0.16) * (1.0 + 0.22 * swirl), mud);
+    absorb = mix(absorb, vec3(2.8, 3.1, 3.5), mud);
+  } else {
+    scatter = mix(scatter, vec3(0.28, 0.15, 0.045), mud);
+    absorb = mix(absorb, vec3(4.0, 4.4, 5.0), mud);
+  }
   vec3 through = exp(-absorb * path);
   float vis = sunVisibility(p, n, ripple);
   // The body of the water is lit from above by the sky; the sun shows in its sparks.
   // The bed and the reflection are lit where they are already; the water's own light is exposed here (exposeHere).
-  scatter = exposeHere(scatter * skyTint() * mix(0.75, 1.0, vis));
+  // (Silt is lit as the land is, by the sun as much as the sky.)
+  scatter = exposeHere(scatter * mix(skyTint(), mix(skyTint(), sunTint(), 0.6), mud) * mix(0.75, 1.0, vis));
   vec3 under = bed * through + scatter * (1.0 - through);
 
   // The reflection, and the sky where nothing is reflected: looking down at 30 degrees, the water mirrors the sky 30 degrees up.
@@ -824,7 +865,8 @@ void main() {
   vec3 mirrored = sky * (1.0 - refl.a) + refl.rgb;
   // Mostly see-through: the bed shows in the shallows, and the reflection grows only where the water is deep and dark.
   float depthy = 1.0 - (through.g * 0.5 + through.b * 0.5);
-  float fres = clamp(0.08 + depthy * 0.22 + ripple * 0.1, 0.0, 0.5);
+  // (Muddy water is opaque, but its silt is what shows, not a deep pool's mirror.)
+  float fres = clamp(0.08 + depthy * 0.22 * (1.0 - 0.6 * mud) + ripple * 0.1, 0.0, 0.5);
   vec3 col = mix(under, mirrored, fres);
   // The clouds in it (#8), along the mirrored ray and shaken by the ripples: their light over the sky's, alike over the
   // shallows and the deep (the depth is read at half size, and its grain would show against a bright cloud and shimmer as
@@ -839,7 +881,7 @@ void main() {
   // Fading out at the very edge, where only a film of water lies over the bank.
   float film = smoothstep(0.0, 0.5, path);
   col += (clouded - sky) * (1.0 - solid) * film * 0.365 * (0.85 + 0.3 * ripple);
-  col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.25)), smoothstep(0.5, 0.9, ripple) * 0.25 * depthy);
+  col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.25)), smoothstep(0.5, 0.9, ripple) * 0.25 * depthy * (1.0 - 0.6 * mud));
   // Sparkle: glints of sun on the ripples' crests (sparkle), carried by the flow as the ripples are.
   float spark = (sparkle(q1, dir) * w1 + sparkle(q2, dir) * w2) * crest(ripple);
   // No glints under a cloud.
@@ -856,6 +898,22 @@ void main() {
   float gh = hash12(gc + 3.1);
   float glit = (1.0 - smoothstep(0.1, 0.2, length(gf))) * step(0.4, gh) * max(0.0, sin(uTime * (5.0 + gh * 6.0) + gh * 50.0));
   col = mix(col, exposeHere(mix(vec3(1.0), sunTint(), 0.5)), glit * paw * vis * max(uCloudStrength - gCloud, 0.0));
+  // Fast water (#18, while the developer picks), from about a metre a second: the stream in spate.
+  float fast = smoothstep(0.45, 1.1, speed);
+  if (fast > 0.0 && (uWaterLook.x == 1.0 || uWaterLook.x == 3.0)) {
+    // Streaks: the surface torn into long bands along the flow, their faces catching the sky's glow, darker between.
+    float st = (streaks(q1, dir) * w1 + streaks(q2, dir) * w2) * norm;
+    col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.35) * skyTint()), smoothstep(0.2, 0.7, st) * fast * 0.32);
+    col *= 1.0 - (1.0 - smoothstep(-0.7, -0.2, st)) * fast * 0.14;
+  }
+  if (fast > 0.0 && uWaterLook.x >= 2.0) {
+    // Foam: flecks carried along, more in the faster water, and gathered thickest along the banks, in the shallows.
+    float fn = (foamNoise(q1, dir) * w1 + foamNoise(q2, dir) * w2) * norm;
+    float amount = fast * (0.35 + 0.65 * (1.0 - smoothstep(0.1, 0.8, path)));
+    float foam = smoothstep(0.62 - 0.45 * amount, 0.74 - 0.4 * amount, fn) * smoothstep(0.0, 0.1, amount);
+    vec3 foamColor = mix(vec3(0.85, 0.84, 0.8), vec3(0.6, 0.5, 0.36), mud * 0.6);
+    col = mix(col, exposeHere(foamColor * skyTint() * mix(0.7, 1.0, vis)), foam * 0.85);
+  }
   // Whitecaps on the chop's crests in a storm.
   float caps = smoothstep(0.55, 0.9, chop) * smoothstep(0.45, 1.0, windForce()) * smoothstep(0.4, 0.9, windGust(p.xz) + 0.2);
   col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.6) * skyTint()), caps * 0.45);
