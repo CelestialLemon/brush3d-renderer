@@ -11,7 +11,7 @@
 //   still, then panning; QUERY="weather=heat-wave"), flood (the scripted storm swelling the farm's stream, flooding the
 //   land and draining, at 3x; #18), flood-meadow (the same over the meadow; QUERY="scene=meadow"), stream-spate and
 //   stream-usual (the farm's stream close, in spate and as usual: the flow carrying the ripples), sunset and sunrise (the
-//   hour running from 16:00 past sunset, or from before dawn to 9:00, the camera still: QUERY="cloud=1" for the low sun
+//   hour running from 16:00 past sunset, or from before dawn to 9:00, the camera still: QUERY="cloud=1&sunUnder=1" for the low sun
 //   under a cloud deck, #8)
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
@@ -83,7 +83,7 @@ const MOVES: Record<string, Move> = {
   flood: { seconds: 57, at: () => ({ x: -6, z: 17, zoom: 24, view: 0 }), timeline: (t) => t, spell: 'flood', ease: true, extra: true },
   'flood-meadow': { seconds: 57, at: () => ({ x: 0, z: 0, zoom: 26, view: 0 }), timeline: (t) => t, spell: 'flood', ease: true, extra: true },
   'stream-spate': { seconds: 8, at: () => ({ x: -14, z: 20, zoom: 64, view: 0 }), water: () => ({ rise: 0.15, flow: 3.5, mud: 0.75 }), extra: true },
-  // The sun sinking (or rising) under the sky as QUERY has it (#8: cloud=1 for golden hour under a deck), the camera still.
+  // The sun sinking (or rising) under the sky as QUERY has it (#8: cloud=1&sunUnder=1 for golden hour under a deck), the camera still.
   sunset: { seconds: 16, at: () => ({ x: -1, z: 4, zoom: 32, view: 0 }), hour: (t) => 16 + (4.5 * t) / 16, extra: true },
   sunrise: { seconds: 16, at: () => ({ x: -1, z: 4, zoom: 32, view: 0 }), hour: (t) => 5.5 + (3.5 * t) / 16, extra: true },
   'stream-usual': { seconds: 8, at: () => ({ x: -14, z: 20, zoom: 64, view: 0 }), water: () => ({ rise: 0, flow: 1, mud: 0 }), extra: true },

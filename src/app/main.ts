@@ -1,6 +1,5 @@
 import { PRESETS, lookAt } from '../renderer/look';
 import { BrushRenderer } from '../renderer/renderer';
-import { GOLDEN_CANDIDATES, type GoldenName } from '../renderer/golden';
 import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
@@ -24,8 +23,7 @@ import { WindView } from './windView';
 //   weather (clear|scattered|overcast|soft-rain|storm|fog|dust|heat-wave|snow|blizzard), then each value over it:
 //     cloud, rain, snow, heat (0..1)  haze (0..1)  hazeColor (sRGB hex, e.g. cfd6d8)  hazeTop, hazeBase (metres)
 //     hazeKind=fog|dust
-//   sunUnder (0..1: how much of a low sun gets in under the cloud, the game's; the demo's is 1, a clear horizon)
-//   golden=a|b|c|off (the light under a cloud deck at golden hour, #8's candidates: a glow, b rake, c blaze)
+//   sunUnder (0..1: how much of a low sun gets in under the cloud at dawn and dusk, the game's, now and then; 0 by default)
 //   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
 //   spell=shower|fog|dust|flood (which scripted weather: a shower, a morning fog lifting, a dust storm blowing through, or
 //     a storm flooding the stream over the land)
@@ -152,13 +150,9 @@ const weather: Sky & { haze: Haze } = {
 if (['cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase', 'hazeKind'].some((k) => params.has(k))) presetName = null;
 // The clouds' field (#8).
 const cloudSeed = num('cloudSeed', 1);
-// How much of a low sun gets in under the cloud (#8): the game's, sent with the weather; the demo's horizon is clear.
-let sunUnder = num('sunUnder', 1);
-// The golden-hour light under a deck: the candidates (#8), for the developer to pick.
-const GOLDEN = ['a', 'b', 'c', 'off'] as const;
-let golden: (typeof GOLDEN)[number] = (GOLDEN as readonly string[]).includes(params.get('golden') ?? '') ? params.get('golden') as (typeof GOLDEN)[number] : 'b';
-const setGolden = () => { renderer.golden = golden === 'off' ? null : GOLDEN_CANDIDATES[golden as GoldenName]; };
-setGolden();
+// How much of a low sun gets in under the cloud at dawn and dusk (#8): the game's, sent with the weather, and only now and
+// then (a rare sight, not every overcast evening); none unless asked for.
+let sunUnder = num('sunUnder', 0);
 
 // The clouds' drift, standing in for the game's: carried along by the demo's wind (standing in for the wind aloft) at the
 // drawn speed (cloudDriftSpeed), and sent with its speed whenever the weather is, as the game would.
@@ -308,11 +302,6 @@ function hud() {
   const share = (v: number) => v.toFixed(2);
   hudEl.append(slider('Cloud', 0, 1, 0.01, () => weather.cloud, weatherSet((v) => { weather.cloud = v; }), share, true));
   hudEl.append(slider('low sun', 0, 1, 0.01, () => sunUnder, (v) => { sunUnder = v; send(sent); }, share, true));
-  const goldenButton = Object.assign(document.createElement('button'), { textContent: `golden ${golden}` });
-  goldenButton.title = 'The light under a cloud deck at dawn and dusk (#8): a glow (the deck\'s light warms), b rake (the low sun gets in, ' +
-    'half-strength, long soft shadows), c blaze (the land lit like a clear golden hour under the grey sky), off (as before)';
-  goldenButton.onclick = () => { golden = GOLDEN[(GOLDEN.indexOf(golden) + 1) % GOLDEN.length]; setGolden(); goldenButton.textContent = `golden ${golden}`; };
-  hudEl.append(goldenButton);
   hudEl.append(slider('Rain', 0, 1, 0.01, () => weather.rain, weatherSet((v) => { weather.rain = v; }), share, true));
   hudEl.append(slider('Snow', 0, 1, 0.01, () => weather.snow, weatherSet((v) => { weather.snow = v; }), share, true));
   hudEl.append(slider('Heat', 0, 1, 0.01, () => weather.heat, weatherSet((v) => { weather.heat = v; }), share, true));

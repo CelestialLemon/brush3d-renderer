@@ -9,8 +9,8 @@ import type { OvercastRecipe } from './overcast';
 // them (decided 2026-11-03). It shows only under heavy cover (from about 60% to full): under part cover the gaps already
 // have the evening's sun, and the cloud shadows keep their picked shade so they read as shadows.
 //
-// The light under a cloud (overcast.ts's look at full cover) is turned back towards the hour's clear light by a recipe,
-// as far as goldenShare says.
+// The light under a cloud (overcast.ts's look at full cover) is turned back towards the hour's clear light by a recipe
+// (GOLDEN), as far as goldenShare says.
 
 export interface GoldenRecipe {
   /** How far the sun's colour (hue and strength) goes back to the clear hour's: the low sun's gold. */
@@ -35,18 +35,15 @@ export interface GoldenRecipe {
 }
 
 /**
- * The candidates (#8), the developer to pick:
- * - a, glow: the deck's own light warms, as if bounced off its lit underside; no sun, no shadows, the grey day's shape.
- * - b, rake: the sun gets in low and half-strength: long soft shadows, sunward sides and crowns' edges catch the gold,
- *   the land still dimmer than a clear evening.
- * - c, blaze: the land as bright as a clear golden hour, crisp long shadows, against a slate distance and a grey sky.
+ * The golden light under a deck, the developer's pick (#8, 2026-11-03), "rake": the sun gets in low and at about half
+ * strength, with long soft shadows; sunward sides and crowns' edges catch the gold, and the land stays dimmer than a clear
+ * evening. Left out: a "glow" (the deck's own light warmed, no sun or shadows) and a "blaze" (the land as bright as a
+ * clear golden hour, crisp shadows, deeper shade). It's a rare sight, not every overcast evening: the game sends sunUnder
+ * only now and then (the developer, 2026-11-03).
  */
-export const GOLDEN_CANDIDATES = {
-  a: { sun: 1, exposure: 0.4, sky: 1, shadowFade: 0.4, shadowSun: 0, shadowBlur: 4, rim: 0.5, warmth: 1.6, depth: 0.78, air: 0.5 },
-  b: { sun: 1, exposure: 0.6, sky: 0.45, shadowFade: 0.35, shadowSun: 0.85, shadowBlur: 1.5, rim: 1.2, warmth: 1.4, depth: 0.95, air: 0.3 },
-  c: { sun: 1, exposure: 0.95, sky: 0.1, shadowFade: 0.05, shadowSun: 1, shadowBlur: 0.3, rim: 1.1, warmth: 1.5, depth: 1.3, air: 0.15 },
-} as const satisfies Record<string, GoldenRecipe>;
-export type GoldenName = keyof typeof GOLDEN_CANDIDATES;
+export const GOLDEN: GoldenRecipe = {
+  sun: 1, exposure: 0.6, sky: 0.45, shadowFade: 0.35, shadowSun: 0.85, shadowBlur: 1.5, rim: 1.2, warmth: 1.4, depth: 0.95, air: 0.3,
+};
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const lerpAngle = (a: number, b: number, t: number) => a + ((((b - a + 540) % 360) - 180) * t);

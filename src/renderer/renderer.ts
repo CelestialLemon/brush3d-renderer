@@ -14,7 +14,7 @@ import { ShelterMap, type Cover } from './shelter';
 import type { PassTimer } from './timer';
 import { WeatherState, type Weather } from './weather';
 import { airLook, HEAT, heatShare } from './air';
-import { GOLDEN_CANDIDATES, goldenLook, goldenShape, goldenShare, type GoldenRecipe } from './golden';
+import { GOLDEN, goldenLook, goldenShape, goldenShare } from './golden';
 import { leafStorm, WindField, WindState } from './wind';
 import { DustField, type DustSource } from './dust';
 import { TreeSprings, type TreeSpec } from './trees';
@@ -174,8 +174,6 @@ export class BrushRenderer {
   readonly skyMap: CloudMap;
   /** The clouds' shape (clouds.ts): the game's, the same one it reads its solar panels by. */
   cloudShape: CloudShape = CLOUD_SHAPE;
-  /** The light under a cloud deck at golden hour (golden.ts): a candidate, for the developer to pick (#8); null, none. */
-  golden: GoldenRecipe | null = GOLDEN_CANDIDATES.b;
 
   constructor(readonly canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true });
@@ -512,11 +510,10 @@ export class BrushRenderer {
     const w = this.weather, air = (l: Look) => airLook(l, w, HEAT);
     // Golden hour under a deck (golden.ts): the light under the cloud turned back towards the low sun's, and the gaps' as
     // far as they've turned overcast; the grade only in its haze's colour.
-    const gr = this.golden ?? GOLDEN_CANDIDATES.a, g = this.golden ? goldenShare(w.sunUnder, clear, cover) * strength : 0;
-    const gold = (l: Look, k: number) => goldenLook(l, clear, gr, g * k);
+    const g = goldenShare(w.sunUnder, clear, cover) * strength, gold = (l: Look, k: number) => goldenLook(l, clear, GOLDEN, g * k);
     const graded = overcastLook(clear, cover, r), grade = air({ ...graded, hazeColor: gold(graded, cover).hazeColor });
     const look = air(gold(overcastLook(clear, gap, r), gap)), under = air(gold(overcastLook(clear, 1, r), 1));
-    const s = this.shared, rs = goldenShape(r, gr, g);
+    const s = this.shared, rs = goldenShape(r, GOLDEN, g);
     const shape = skyShare(gap), lift = shape * rs.shadowLift;
     s.uOvercast.value.set(shape * rs.sky, shape * rs.shadowFade, shape * rs.shadowBlur);
     s.uCloudOvercast.value.set(rs.sky, THREE.MathUtils.lerp(THREE.MathUtils.lerp(UNDER_CLOUD_FADE, r.shadowFade, lift), rs.shadowFade, g), rs.shadowBlur);
