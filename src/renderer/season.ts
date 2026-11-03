@@ -62,12 +62,12 @@ export const SUN_ARC: Record<Season, number> = { spring: 0.85, summer: 1, autumn
 /** A day as the hour's looks follow it: its sunrise, noon and sunset (clock hours), the sun's height at noon (degrees) and
  * its path's swing (of summer's). */
 export interface Day {
-  sunrise: number; noon: number; sunset: number;
-  height: number; arc: number;
+  readonly sunrise: number; readonly noon: number; readonly sunset: number;
+  readonly height: number; readonly arc: number;
 }
 
 /** The day the looks are keyed to (look.ts). With no season set, the looks are as they were before seasons. */
-export const REFERENCE_DAY: Day = { sunrise: 6, noon: 12, sunset: 20, height: 58, arc: 1 };
+export const REFERENCE_DAY: Day = Object.freeze({ sunrise: 6, noon: 12, sunset: 20, height: 58, arc: 1 });
 
 /** The first light's hours before sunrise, and the dusk's after sunset, on the reference day and in every season with
  * a night long enough for them. */
@@ -78,16 +78,18 @@ const NIGHT_ROOM = 4;
  * round its middle. */
 const SHORTEST = 0.5, LONGEST = 23.5;
 
-/** The day the looks follow in a season. Equal sunrise and sunset take the season's day length about them. */
+/** The day the looks follow in a season. Equal sunrise and sunset take the season's day length about them. Frozen: its
+ * anchors are worked out once (anchors). */
 export function dayOf(s: SeasonSettings): Day {
   const sun = SEASON_SUN[s.season];
   const sunrise = s.sunrise ?? sun.sunrise;
   let sunset = s.sunset ?? sun.sunset;
   if (sunset === sunrise) sunset = sunrise + sun.sunset - sun.sunrise;
   // A sunset before the sunrise is the next day's.
-  const span = (((sunset - sunrise) % 24) + 24) % 24, length = Math.min(LONGEST, Math.max(SHORTEST, span));
-  const mid = sunrise + span / 2;
-  return { sunrise: mid - length / 2, noon: mid, sunset: mid + length / 2, height: SUN_HEIGHT[s.season], arc: SUN_ARC[s.season] };
+  let span = sunset - sunrise;
+  if (!(span > 0 && span <= 24)) span = ((span % 24) + 24) % 24;
+  const length = Math.min(LONGEST, Math.max(SHORTEST, span)), mid = sunrise + span / 2;
+  return Object.freeze({ sunrise: mid - length / 2, noon: mid, sunset: mid + length / 2, height: SUN_HEIGHT[s.season], arc: SUN_ARC[s.season] });
 }
 
 /** Each day's anchors (see anchors), worked out once a day. */
