@@ -749,7 +749,14 @@ export class BrushRenderer {
   /** Finds the land's dips (HollowMap): every piece of the ground, from above, over its square. */
   private drawHollows() {
     const grounds = this.scene.children.filter((o): o is THREE.Mesh => (o as THREE.Mesh).isMesh && o.userData.kind === 'ground');
-    const square = grounds.find((g) => g.userData.fields)?.userData.fields as MeshOptions['fields'] | undefined;
+    // Over the ground's square (its brush's), or, without one, a square round all of it.
+    let square = grounds.find((g) => g.userData.fields)?.userData.fields as MeshOptions['fields'] | undefined;
+    if (!square && grounds.length) {
+      const box = new THREE.Box3();
+      for (const g of grounds) box.expandByObject(g);
+      const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+      square = { x: c.x, z: c.z, side: Math.max(size.x, size.z), turn: 0 };
+    }
     const depth = this.materials.get('ground')?.depth;
     if (depth) this.hollows.draw(this.gl, this.scene, grounds, depth, square ?? null, this.shelter.uniforms);
   }

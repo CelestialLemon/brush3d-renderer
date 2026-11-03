@@ -81,11 +81,14 @@ export class GroundField {
 
   /**
    * Takes a map from the game, to ease in over `ease` seconds from the ground as drawn at `time` (0: at once). A map on a
-   * new grid comes in at once. Null: dry everywhere.
+   * new grid comes in at once. Null: dry everywhere (eased as any map is).
    */
   set(map: GroundMap | null, time: number, ease = GROUND_EASE) {
     const u = this.uniforms;
     if (!map) {
+      // Easing: to a dry map on the same grid (it turns off once the ease is done).
+      const { nx, nz, cell, x0, z0 } = this;
+      if (this.to && ease > 0) { this.set({ nx, nz, cell, x0, z0, wet: new Float32Array(nx * nz) }, time, ease); return; }
       this.from = this.to = null; this.wetFrom = this.wetTo = false; u.uGroundOn.value = 0;
       return;
     }
@@ -332,7 +335,7 @@ export const WET_LOOKS = {
   /** Puddles in the land's dips. */
   puddles: {
     a: 'mirror: the sky and the clouds in them, clear, inside a dark wet rim',
-    b: 'pale: a flat, pale patch of the sky\'s colour, its edge soft',
+    b: 'dark: deep, still water, darker than the mud, a pale line of the sky along its edge',
   },
   /** Mud on tracks and bare soil. */
   mudLook: {
@@ -461,9 +464,10 @@ vec3 puddled(vec3 c, vec3 p, float mud) {
     c = mix(c, c * 0.62, puddle);
     return mix(c, mix(c, sky, 0.78), inner);
   }
-  // Pale: a flat patch of the sky's colour.
+  // Dark: deep, still water, darker than the mud round it, a pale line of the sky along its edge.
   vec3 sky = exposeHere(mix(uGapSkyTop, uGapSkyBottom, 0.35));
-  return mix(c, mix(c, sky, 0.6), smoothstep(0.0, 1.0, puddle * 0.6 + inner * 0.4));
+  c = mix(c, mix(c * 0.4, sky * 0.3, 0.5), puddle);
+  return mix(c, sky, puddle * (1.0 - inner) * 0.7);
 }
 #endif
 vec3 wetLook(vec3 c, vec3 n, float ink) {

@@ -28,7 +28,7 @@ renderer.setGround({
   wet,                           // Float32Array: how wet per cell, 0 dry to 1 soaked
   mud,                           // optional Float32Array: how muddy per cell, 0 to 1 (none if left out)
 }, ease);                        // seconds to ease in (0.6 by default; 0 at once: a level loading, a screenshot)
-renderer.setGround(null);        // dry everywhere
+renderer.setGround(null, ease);  // dry everywhere, eased out as any map is (at once with 0)
 ```
 
 - **Wet** is how wet the surface is, not how much water the soil holds. Things look soaked by about 0.5; puddles start
@@ -50,7 +50,8 @@ renderer.setGround(null);        // dry everywhere
 - **`GroundField`** keeps the map as it was and as last sent, as two textures every material blends (`groundState`).
   Off the grid's edge the nearest cell carries on, so a one-cell map covers the whole land.
 - **`HollowMap`** finds the land's low places once: the ground drawn from straight above into a depth map (its height at
-  each 17 cm texel, exactly), then for each texel how far it lies below the ground round it, within 1.2 m (a track's
+  each texel, exactly: 17 cm over the farm's valley; over the ground's brush square, or a square round all the ground
+  without one), then for each texel how far it lies below the ground round it, within 1.2 m (a track's
   width) and within 4 m (a hollow's), the deeper of the two. With it, a pattern of the ground's unevenness, fixed to the
   world, picks which parts of a low place hold the water, and how sheltered the ground is. Done again only when ground
   is added or taken out, or the shelter map changes.
@@ -75,7 +76,8 @@ The developer picks, on the PR's preview (each a button in the demo's Wet row an
 - `damp`, painted things: `a` richer (a little darker, the colour deeper), `b` darker (much darker, a little deeper).
 - `sheen`, inked things: `a` streaks of shine where the surface turns to the light, `b` glaze (the sky and its clouds
   mirrored faintly, more at a glancing angle), `c` both.
-- `puddles`: `a` mirror (the sky and clouds, clear, in a dark wet rim), `b` pale (a flat, soft patch of the sky's colour).
+- `puddles`: `a` mirror (the sky and clouds, clear, in a dark wet rim), `b` dark (deep, still water, darker than the mud round
+  it, a pale line of the sky along its edge).
 - `mudLook`: `a` dark (dark, rich brown), `b` churned (dark brown with streaks of wet shine).
 
 ## The demo
