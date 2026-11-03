@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { clockHour, referenceHour, REFERENCE_DAY, type Day } from './season';
 
 // Time of day. A look is everything that changes with the hour: where the sun is, the colour of its light and of the sky
 // filling the shadows, which way the shade and lit bands lean in hue, the rim light on foliage and the haze in the distance.
@@ -8,6 +9,9 @@ export interface Look {
   hour: number;
   /** Sun direction in degrees: azimuth round from +x towards +z, elevation above the horizon. */
   sunAz: number; sunEl: number;
+  /** The sun's elevation on the reference day at this point of the day (season.ts), which the hour's colours are keyed to:
+   * how near dawn or dusk it is, whatever the season's sun does (a winter noon's sun is as low as a summer evening's). */
+  dayEl: number;
   sunColor: THREE.Color; skyColor: THREE.Color; rimColor: THREE.Color; hazeColor: THREE.Color;
   skyTop: THREE.Color; skyBottom: THREE.Color;
   shadeHue: number; shadeLean: number; shadeDepth: number; litHue: number; litLean: number;
@@ -23,7 +27,7 @@ export interface Look {
   nightShift: number;
 }
 
-interface Key extends Omit<Look, 'sunColor' | 'skyColor' | 'rimColor' | 'hazeColor' | 'skyTop' | 'skyBottom'> {
+interface Key extends Omit<Look, 'dayEl' | 'sunColor' | 'skyColor' | 'rimColor' | 'hazeColor' | 'skyTop' | 'skyBottom'> {
   sunColor: number; skyColor: number; rimColor: number; hazeColor: number; skyTop: number; skyBottom: number;
 }
 
@@ -51,14 +55,42 @@ const KEYS: Key[] = [
     hazeDensity: 0.03, hazeFloor: 0.14, hazeMax: 0.5, exposure: 0.55, saturation: 0.82, cloudDim: 0.5, cloudHaze: 0.85, night: 1, nightShift: 1 },
 ];
 
-/** Named hours for the demo's buttons. */
+/** Named hours on the reference day (season.ts), for the demo's buttons. */
 export const PRESETS = { Dawn: 7, Noon: 12, 'Golden hour': 17.5, Sunset: 19.5, Night: 22 } as const;
+export type HourName = keyof typeof PRESETS;
+
+/** The named hours on a day's clock: the dawn look just after its sunrise, noon in its middle, and so on. */
+export function hoursOf(day: Day): Record<HourName, number> {
+  return Object.fromEntries(Object.entries(PRESETS).map(([k, h]) => [k, clockHour(h, day)])) as Record<HourName, number>;
+}
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const lerpAngle = (a: number, b: number, t: number) => { const d = ((b - a + 540) % 360) - 180; return a + d * t; };
 const col = (a: number, b: number, t: number) => new THREE.Color(a).lerp(new THREE.Color(b), t);
 
-export function lookAt(hour: number): Look {
+/**
+ * The look at a clock hour of a day (by default the reference day, the looks' own). The day's hour is first mapped onto the
+ * reference day (season.ts), so the looks follow its sunrise and sunset; then, by day, the sun is lowered to the day's
+ * height at noon and its bearing's swing about noon's narrowed to the day's path. The night's moon is the same in every
+ * season.
+ */
+export function lookAt(hour: number, day: Day = REFERENCE_DAY): Look {
+  const clock = ((hour % 24) + 24) % 24;
+  const look = keyedLook(day === REFERENCE_DAY ? clock : referenceHour(clock, day));
+  look.hour = clock;
+  if (day.height !== REFERENCE_DAY.height || day.arc !== REFERENCE_DAY.arc) {
+    const byDay = 1 - look.night, noon = KEYS.find((k) => k.hour === REFERENCE_DAY.noon)!;
+    // Lowered most at noon and hardly near the horizon: the dawn's and golden hour's looks are tuned at their own heights
+    // (10° and 16°), and lower than about 12° the flat land turns its back on the sun and falls into shade, all of it at
+    // once. So a winter's golden hour still lights the land, a little lower (14°), and its noon is the season's.
+    if (look.sunEl > 0) look.sunEl *= 1 - (1 - day.height / noon.sunEl) * THREE.MathUtils.smoothstep(look.sunEl, 0, noon.sunEl) * byDay;
+    look.sunAz = noon.sunAz + (((look.sunAz - noon.sunAz + 540) % 360) - 180) * lerp(1, day.arc, byDay);
+  }
+  return look;
+}
+
+/** The look at an hour of the reference day, from its keys. */
+function keyedLook(hour: number): Look {
   const h = ((hour % 24) + 24) % 24;
   const span = [{ ...KEYS[KEYS.length - 1], hour: KEYS[KEYS.length - 1].hour - 24 }, ...KEYS, { ...KEYS[0], hour: KEYS[0].hour + 24 }];
   let i = 0;
@@ -66,7 +98,7 @@ export function lookAt(hour: number): Look {
   const a = span[i], b = span[i + 1];
   const t0 = (h - a.hour) / (b.hour - a.hour), t = t0 * t0 * (3 - 2 * t0);
   return {
-    hour: h, sunAz: lerpAngle(a.sunAz, b.sunAz, t), sunEl: lerp(a.sunEl, b.sunEl, t),
+    hour: h, sunAz: lerpAngle(a.sunAz, b.sunAz, t), sunEl: lerp(a.sunEl, b.sunEl, t), dayEl: lerp(a.sunEl, b.sunEl, t),
     sunColor: col(a.sunColor, b.sunColor, t), skyColor: col(a.skyColor, b.skyColor, t), rimColor: col(a.rimColor, b.rimColor, t),
     hazeColor: col(a.hazeColor, b.hazeColor, t), skyTop: col(a.skyTop, b.skyTop, t), skyBottom: col(a.skyBottom, b.skyBottom, t),
     shadeHue: lerpAngle(a.shadeHue, b.shadeHue, t), shadeLean: lerp(a.shadeLean, b.shadeLean, t),

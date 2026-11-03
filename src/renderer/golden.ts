@@ -52,11 +52,13 @@ const smooth = THREE.MathUtils.smoothstep;
 /**
  * How much the golden light shows: the game's sunUnder, as low as the sun is (from its rising to about 25° up, gone as it
  * sets), by day only, and as heavy as the cover (from 60% to full). After sunset the look's sun climbs again as it turns
- * into the moon (look.ts), so the light is gone as soon as the night starts: by about 20:00, and in by 6:45 at dawn.
+ * into the moon (look.ts), so the light is gone as soon as the night starts: by about 20:00, and in by 6:45 at dawn (on
+ * the reference day; a season's follow its sunrise and sunset). The sun's height is the reference day's (Look.dayEl), so
+ * it's dawn's and dusk's in every season, not all day under a low winter sun.
  */
 export function goldenShare(sunUnder: number, look: Look, cover: number) {
   const day = 1 - smooth(look.night, 0, 0.15);
-  return sunUnder * day * smooth(look.sunEl, -2, 3) * (1 - smooth(look.sunEl, 14, 26)) * smooth(cover, 0.6, 1);
+  return sunUnder * day * smooth(look.dayEl, -2, 3) * (1 - smooth(look.dayEl, 14, 26)) * smooth(cover, 0.6, 1);
 }
 
 /** The overcast recipe's shape (sky light and shadows) turned towards a golden recipe's, by g. */
