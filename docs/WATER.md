@@ -36,8 +36,11 @@ renderer.setWater(null);         // no water
 - **Mud** is carried to the shaders for the look (still to be chosen, #18's second PR).
 - **Updates.** Send a new map when the water changes, a few times a second at most. Each one eases in from what's
   drawn at that moment, so maps sent faster than the ease still move smoothly. A map on a new grid comes in at once.
-- **Cost.** The map is laid out on the CPU when it's sent (a few milliseconds for 100 × 100 cells) and uploaded as two
-  small textures; nothing is done per frame but a blend between them. The sheet's triangles are only round the water.
+- **Cost.** The map is laid out on the CPU when it's sent and uploaded as two textures; nothing is done per frame but a
+  blend between them. The sheet's triangles are only round the water. Laying out grows with the map: about 2 ms for
+  100 × 100 cells, and for the farm's valley (250 × 250) about 9 ms once warmed up, 15 to 20 ms in the browser for the
+  first few sends (on the dev machine). That's a dropped frame each time a big map is sent, fine a few times a second
+  while a flood moves; if the game sends big maps more often, the laying out can move off the main thread (a worker).
 - **The land's edge.** The water stops at the edge of the ground's square (the `fields` square it's baked over), where
   nothing would hide the sheet reaching past the last wet cell.
 
@@ -66,8 +69,9 @@ cover only the cells within one of water (into one buffer per grid, with room fo
 
 ## The demo
 
-The demo stands in for the game (`src/app/water.ts`): the scene describes its stream (its usual level, its channel and
-which way it flows), and the demo makes the map with the game's rule: the water stands at the stream's level plus a
+The demo stands in for the game (`src/app/water.ts`): the scene describes its water (its usual level, its channel and
+which way and how fast it flows: on the farm, the stream, the pond it runs into and the brook out of it), and the demo
+makes the map with the game's rule: the water stands at the stream's level plus a
 rise and reaches every cell lower than that which it can get to over lower ground, never off the land. Out of the
 channel it runs at a quarter of the stream's speed.
 

@@ -94,36 +94,37 @@ export function layWater(map: WaterMap): Laid {
   const { nx, nz, level } = map, n = nx * nz;
   if (level.length !== n) throw new Error(`water map: ${level.length} levels for ${nx} x ${nz} cells`);
   const data = new Float32Array(n * 4), dist = new Uint8Array(n).fill(255);
+  /** The surface each cell continues, before its dive. */
+  const source = new Float32Array(n).fill(-Infinity);
   // Breadth first from the wet cells (to all eight neighbours, so diagonal shores are as near as straight ones): each dry
-  // cell takes its surface, flow and mud from the highest of the cells it's reached from.
-  let queue: number[] = [];
-  const wet: number[] = [];
+  // cell takes its surface, flow and mud from the highest of the cells it's reached from. It reaches every cell (the
+  // reflection's clip reads the nearest water's surface anywhere on dry land), so it's kept lean: a large map is laid out
+  // each time the game sends it.
+  let queue = new Int32Array(n), next = new Int32Array(n), count = 0;
   for (let i = 0; i < n; i++) {
     if (Number.isNaN(level[i])) continue;
     data[i * 4] = level[i];
     data[i * 4 + 1] = map.flowX?.[i] ?? 0; data[i * 4 + 2] = map.flowZ?.[i] ?? 0; data[i * 4 + 3] = THREE.MathUtils.clamp(map.mud?.[i] ?? 0, 0, 1);
-    dist[i] = 0; queue.push(i); wet.push(level[i]);
+    dist[i] = 0; source[i] = level[i]; queue[count++] = i;
   }
-  /** The surface each cell continues, before its dive. */
-  const source = new Float32Array(n).fill(-Infinity);
-  for (const i of queue) source[i] = level[i];
-  for (let d = 1; queue.length && d < 255; d++) {
-    const next: number[] = [];
-    for (const i of queue) {
-      const x = i % nx, z = (i - x) / nx;
-      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-        const cx = x + dx, cz = z + dz;
-        if ((dx === 0 && dz === 0) || cx < 0 || cz < 0 || cx >= nx || cz >= nz) continue;
-        const j = cz * nx + cx;
-        if (dist[j] < d) continue;
-        if (dist[j] === 255) { dist[j] = d; next.push(j); }
-        if (source[i] > source[j]) {
-          source[j] = source[i];
+  const wet = new Float32Array(count);
+  for (let k = 0; k < count; k++) wet[k] = level[queue[k]];
+  for (let d = 1; count && d < 255; d++) {
+    let found = 0;
+    for (let q = 0; q < count; q++) {
+      const i = queue[q], x = i % nx, z = (i - x) / nx, si = source[i];
+      const xa = x > 0 ? -1 : 0, xb = x < nx - 1 ? 1 : 0, za = z > 0 ? -1 : 0, zb = z < nz - 1 ? 1 : 0;
+      for (let dz = za; dz <= zb; dz++) for (let dx = xa; dx <= xb; dx++) {
+        const j = i + dz * nx + dx, dj = dist[j];
+        if (dj < d) continue;
+        if (dj === 255) { dist[j] = d; next[found++] = j; }
+        if (si > source[j]) {
+          source[j] = si;
           data[j * 4 + 1] = data[i * 4 + 1]; data[j * 4 + 2] = data[i * 4 + 2]; data[j * 4 + 3] = data[i * 4 + 3];
         }
       }
     }
-    queue = next;
+    [queue, next] = [next, queue]; count = found;
   }
   for (let i = 0; i < n; i++) {
     if (dist[i] === 0) continue;
@@ -263,17 +264,22 @@ export class WaterField {
 
   /** The sheet's triangles: the squares between four cells where one of them is within REACH of water, then or now. */
   private index() {
-    const g = this.geometry!, { nx, nz } = this, from = this.from!.dist, to = this.to!.dist, vx = nx + 2;
-    // Whether vertex (i, j)'s cell is near water.
-    const near = (i: number, j: number) => {
-      const k = Math.min(Math.max(j - 1, 0), nz - 1) * nx + Math.min(Math.max(i - 1, 0), nx - 1);
-      return Math.min(from[k], to[k]) <= REACH;
-    };
+    const g = this.geometry!, { nx, nz } = this, from = this.from!.dist, to = this.to!.dist, vx = nx + 2, vz = nz + 2;
+    // Whether each vertex's cell is near water.
+    const near = new Uint8Array(vx * vz);
+    for (let j = 0; j < vz; j++) {
+      const row = Math.min(Math.max(j - 1, 0), nz - 1) * nx;
+      for (let i = 0; i < vx; i++) {
+        const k = row + Math.min(Math.max(i - 1, 0), nx - 1);
+        near[j * vx + i] = from[k] <= REACH || to[k] <= REACH ? 1 : 0;
+      }
+    }
     const index = g.index!, idx = index.array as Uint32Array;
     let count = 0, x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (let j = 0; j < nz + 1; j++) for (let i = 0; i < nx + 1; i++) {
-      if (!(near(i, j) || near(i + 1, j) || near(i, j + 1) || near(i + 1, j + 1))) continue;
-      const a = j * vx + i, b = a + 1, c = a + vx, d = c + 1;
+      const a = j * vx + i;
+      if (!(near[a] | near[a + 1] | near[a + vx] | near[a + vx + 1])) continue;
+      const b = a + 1, c = a + vx, d = c + 1;
       idx[count++] = a; idx[count++] = c; idx[count++] = b; idx[count++] = b; idx[count++] = c; idx[count++] = d;
       x0 = Math.min(x0, i); x1 = Math.max(x1, i + 1); z0 = Math.min(z0, j); z1 = Math.max(z1, j + 1);
     }
