@@ -95,7 +95,8 @@ export interface MeshOptions {
   cover?: Cover;
   /**
    * Cut into tiles this many metres square, each drawn only when it's in a pass's view (see tiles.ts): for the big meshes
-   * of a large map. Not for the ground (its fields are baked from it whole) nor the water.
+   * of a large map (the ground too: its fields are baked from every tile). Not the water. add() then returns the first
+   * tile: remove() takes them all out with it, but moving or hiding it moves or hides only that tile.
    */
   tile?: number;
 }
@@ -275,7 +276,9 @@ export class BrushRenderer {
   /** Adds a mesh of a kind. By default it casts a shadow and is mirrored in the water (water itself is neither). */
   add(geometry: THREE.BufferGeometry, kind: MaterialKind, options: MeshOptions = {}): THREE.Mesh {
     if (options.tile && kind !== 'water') {
+      // Returns the first tile, standing for them all to remove().
       const tiles = cutIntoTiles(geometry, options.tile).map((g) => this.addOne(g, kind, options, true));
+      tiles[0].userData.tiles = tiles;
       return tiles[0];
     }
     return this.addOne(geometry, kind, options, false);
@@ -313,6 +316,9 @@ export class BrushRenderer {
 
   /** Takes out a mesh added before (a building removed): from the scene, the sun's shadow, the silhouettes and the shelter. */
   remove(mesh: THREE.Mesh) {
+    // A mesh cut into tiles goes whole.
+    const tiles = mesh.userData.tiles as THREE.Mesh[] | undefined;
+    if (tiles) { for (const t of tiles) { t.userData.tiles = undefined; this.remove(t); } return; }
     this.scene.remove(mesh);
     this.casters = this.casters.filter((m) => m !== mesh);
     const i = this.twins.findIndex(([m]) => m === mesh);
@@ -583,7 +589,7 @@ export class BrushRenderer {
    * points across the screen, each traced down to the land and up again by what stands on it, bounds everything on
    * screen; the sun's view of them holds every shadow that can show, whatever off-screen throws it (a shadow and what
    * throws it fall on the same point of the map). Its size in steps of 4 m, so the texels' size changes only now and
-   * then (a zoom, a turn), and its edges on whole texels, so a pan doesn't make the shadows' edges crawl.
+   * then (a zoom, a turn, a hill), and its edges on whole texels, so a pan doesn't make the shadows' edges crawl.
    */
   private followView() {
     const c = this.sunCamera, v = this.view.camera;
@@ -604,14 +610,20 @@ export class BrushRenderer {
       p.copy(edge).addScaledVector(fwd, hit); take();
       p.copy(edge).addScaledVector(fwd, hit + LandHeights.TALL / fwd.y); take();
     }
-    // A little round it for the shadows' soft edges, and for the land between the points.
-    const w = Math.ceil((x1 - x0 + 6) / 4) * 4, h = Math.ceil((y1 - y0 + 6) / 4) * 4;
+    // A little round it for the shadows' soft edges, and for the land between the points. The size grows at once, in
+    // steps of 8 m, but shrinks only when well too big: the land under a pan changes what's needed a little, and every
+    // change of size moves every texel, so it mustn't flick back and forth.
+    const size = (have: number, need: number) => need > have || need < have - 16 ? Math.ceil(need / 8) * 8 : have;
+    const w = (this.shadowSize[0] = size(this.shadowSize[0], x1 - x0 + 6));
+    const h = (this.shadowSize[1] = size(this.shadowSize[1], y1 - y0 + 6));
     const tx = w / this.shadowTarget.width, ty = h / this.shadowTarget.height;
     c.left = Math.round(((x0 + x1) / 2 - w / 2) / tx) * tx; c.right = c.left + w;
     c.bottom = Math.round(((y0 + y1) / 2 - h / 2) / ty) * ty; c.top = c.bottom + h;
   }
   /** The land's heights, for followView: from the ground mesh, once it's there. */
   private land: LandHeights | null = null;
+  /** The shadow window's size across and up the map (metres), held between frames (followView). */
+  private shadowSize: [number, number] = [0, 0];
   /** Where the shadows fall from: the sun, turned towards overhead under cloud. */
   private shadowDir = new THREE.Vector3(0, 1, 0);
 
@@ -833,8 +845,8 @@ export class BrushRenderer {
  * (followView). Off the grid, and without a ground mesh, the land is flat at 0.
  */
 class LandHeights {
-  /** How tall what stands on the land can be and still catch a shadow worth drawing (trees, roofs). */
-  static readonly TALL = 9;
+  /** How tall what stands on the land can be and still catch a shadow worth drawing (trees, roofs, the windmill's sails). */
+  static readonly TALL = 16;
   static readonly CELL = 2;
   static readonly FLAT = new LandHeights(0, 0, 0, 0, new Float32Array(0), 0, 0);
   constructor(readonly x0: number, readonly z0: number, readonly nx: number, readonly nz: number, readonly max: Float32Array,
