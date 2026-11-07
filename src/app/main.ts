@@ -1,4 +1,5 @@
-import { PRESETS, lookAt } from '../renderer/look';
+import { hoursOf, type HourName } from '../renderer/look';
+import { CHARACTERS, clockHour, SEASONS, type Character, type Season } from '../renderer/season';
 import { BrushRenderer } from '../renderer/renderer';
 import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
@@ -15,7 +16,10 @@ import { TICK as WIND_TICK, type WindGoal, type WindSave } from '../wind/sim';
 import { WindView } from './windView';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
-//   view=0..3  zoom=16..192 (screen px per metre)  hour=0..24  x, z (camera target)  t (seconds: freeze the clock there)
+//   view=0..3  zoom=16..192 (screen px per metre)  x, z (camera target)  t (seconds: freeze the clock there)
+//   hour=0..24 (the game's clock), or dawn|noon|golden|sunset|night (that look in the season's day)
+//   season=spring|summer|autumn|winter (#13; none by default: the looks' own day, sun up 6 to 20)  character (the
+//     game's: mild|wet|dry|hot|gales|stormy|hard|highRiver)  sunrise, sunset (the game's clock hours; the season's by default)
 //   scene=farm|meadow  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   rhythm (how the gusts come: 0 rare and strong, 1 frequent and mild)  windMap (the living wind from above, #36)
@@ -97,7 +101,23 @@ for (const kind of ['ground', 'crop', 'grass'] as const) {
   if (params.get(kind) === 'live' || !renderer.setFields(kind, bakes[kind])) bakes[kind] = 0;
 }
 const bakeName = (kind: keyof typeof bakes) => (bakes[kind] ? `baked ${bakes[kind]}` : 'live');
-let hour = num('hour', 12);
+// The season (#13): the game sets it once per level. The demo's picker sets it again, as a new level would.
+const seasonParam = params.get('season'), characterParam = params.get('character');
+let season: Season | null = SEASONS.includes(seasonParam as Season) ? seasonParam as Season : null;
+const character: Character | null = CHARACTERS.includes(characterParam as Character) ? characterParam as Character : null;
+function sendSeason() {
+  if (!season) return;
+  renderer.setSeason({
+    season, character,
+    sunrise: params.has('sunrise') ? num('sunrise', 6) : undefined, sunset: params.has('sunset') ? num('sunset', 20) : undefined,
+  });
+}
+sendSeason();
+const HOUR_NAMES: Record<string, HourName> = { dawn: 'Dawn', noon: 'Noon', golden: 'Golden hour', sunset: 'Sunset', night: 'Night' };
+const hourParam = params.get('hour') ?? 'noon';
+let hour = hourParam in HOUR_NAMES ? hoursOf(renderer.day)[HOUR_NAMES[hourParam]] : Number(hourParam);
+/** The named hour the clock is on, if it's on one. */
+const namedHour = () => (Object.entries(hoursOf(renderer.day)) as [HourName, number][]).find(([, h]) => Math.abs(h - hour) < 0.01)?.[0];
 const windParam = params.get('wind');
 /** The wind the demo asks for (the game's goal, with the rhythm below): m/s, radians it blows towards, gustiness 0..1. */
 const wind = {
@@ -237,7 +257,7 @@ addEventListener('keydown', (e) => {
   else if (k === 'e') view.turn(1);
   else if (k === 'l') renderer.settings.lines = !renderer.settings.lines;
   else if (k === 's') renderer.settings.shadows = !renderer.settings.shadows;
-  else if (k >= '1' && k <= '5') hour = Object.values(PRESETS)[Number(k) - 1];
+  else if (k >= '1' && k <= '5') hour = Object.values(hoursOf(renderer.day))[Number(k) - 1];
   hud();
 });
 
@@ -245,13 +265,30 @@ const hudEl = document.getElementById('hud')!;
 function hud() {
   hudEl.innerHTML = '';
   refreshers.length = 0;
-  for (const [name, h] of Object.entries(PRESETS)) {
+  // The hour's buttons follow the season's day: noon is the middle of the game's day, and so on.
+  for (const [name, h] of Object.entries(hoursOf(renderer.day))) {
     const b = document.createElement('button');
     b.textContent = name;
+    b.title = clock(h);
     b.className = Math.abs(h - hour) < 0.01 ? 'on' : '';
     b.onclick = () => { hour = h; hud(); };
     hudEl.append(b);
   }
+  // The season (#13), as a new level would set it: the hour stays on its named look (noon stays noon), or on its clock.
+  const seasons = document.createElement('select');
+  for (const name of ['none', ...SEASONS]) seasons.append(new Option(name, name, false, name === (season ?? 'none')));
+  seasons.title = 'The level\'s season (none: the looks\' own day, the sun up 6 to 20)';
+  seasons.onchange = () => {
+    const was = namedHour();
+    season = seasons.value === 'none' ? null : seasons.value as Season;
+    if (season) sendSeason(); else renderer.setSeason(null);
+    if (was) hour = hoursOf(renderer.day)[was];
+    hud();
+  };
+  seasons.onkeydown = (e) => e.stopPropagation();
+  hudEl.append(Object.assign(document.createElement('label'), { textContent: 'Season' }), seasons);
+  const at = Object.assign(document.createElement('span'), { textContent: `${clock(hour)} · sun ${clock(renderer.day.sunrise)}–${clock(renderer.day.sunset)}` });
+  hudEl.append(at);
   const lines = document.createElement('button');
   lines.textContent = 'Lines'; lines.className = renderer.settings.lines ? 'on' : '';
   lines.onclick = () => { renderer.settings.lines = !renderer.settings.lines; hud(); };
@@ -352,6 +389,11 @@ function hud() {
   hudEl.append(slider('mud', 0, 1, 0.01, () => water.mud, waterSet((v) => { water.mud = v; }), share, true));
 }
 const timelineEl = document.createElement('span');
+/** A clock hour as 14:45. */
+function clock(h: number) {
+  const m = Math.round((((h % 24) + 24) % 24) * 60);
+  return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
 /** The weather controls' values, put back to what they show (the timeline moves them). */
 const refreshers: (() => void)[] = [];
 function slider(name: string, min: number, max: number, step: number, get: () => number, set: (v: number) => void, show: (v: number) => string, short = false) {
@@ -416,10 +458,12 @@ if (params.has('shot')) {
   // options.wind sets the wind, options.weather the weather (a preset's name, whole, or values over the demo's), and
   // options.timeline the scripted weather (whole) at a time (seconds, at a game speed and in a spell, the demo's by
   // default); all at once, unless ease is
-  // set: then they ease as the clock runs. options.hour sets the hour. Resolves once the frame is drawn.
+  // set: then they ease as the clock runs. options.hour sets the hour (the game's clock); options.dayHour draws an hour of
+  // the reference day in the season's (17.5, golden hour, at the season's golden hour), leaving the clock. Resolves once
+  // the frame is drawn.
   const draw = async (cam?: { x: number; z: number; zoom: number; view: number },
     options: {
-      hide?: MaterialKind[]; grain?: boolean; time?: number; hour?: number; wind?: Partial<typeof wind>;
+      hide?: MaterialKind[]; grain?: boolean; time?: number; hour?: number; dayHour?: number; wind?: Partial<typeof wind>;
       weather?: Partial<Weather> | WeatherName; timeline?: { time: number; speed?: number; spell?: SpellName }; ease?: boolean;
       water?: Partial<WaterState>;
     } = {}) => {
@@ -453,7 +497,7 @@ if (params.has('shot')) {
     for (const k of kinds) renderer.setVisible(k, !options.hide?.includes(k));
     const grain = renderer.settings.grain;
     if (options.grain === false) renderer.settings.grain = 0;
-    renderer.setLook(lookAt(hour));
+    renderer.setHour(options.dayHour !== undefined ? clockHour(options.dayHour, renderer.day) : hour);
     for (let i = 0; i < 2; i++) renderer.render(time);
     renderer.settings.grain = grain;
   };
@@ -471,7 +515,7 @@ async function profile(cases = defaultCases(), progress?: (row: ProfileRow, i: n
   await loaded;
   profiling = true;
   try {
-    return await runProfile(renderer, (t) => { renderer.setLook(lookAt(hour)); renderer.render(t); },
+    return await runProfile(renderer, (t) => { renderer.setHour(hour); renderer.render(t); },
       () => send(weather, true, 0), cases, progress);
   } finally { profiling = false; resize(); }
 }
@@ -523,7 +567,7 @@ function frame(now: number) {
   if (windMap) windView.draw(view.target.x, view.target.z, view.heading);
   // The game sends the clouds' drift a few times a second (with the weather); the renderer carries them on between.
   if (Math.floor(time * TICK) !== lastTick) { lastTick = Math.floor(time * TICK); send(sent, false, time); }
-  renderer.setLook(lookAt(hour));
+  renderer.setHour(hour);
   renderer.render(time);
   // Ready once a frame is drawn with everything loaded (the farm's shed comes after the first frames).
   if (++frames >= 3 && isLoaded && warm()) (window as unknown as { __ready: boolean }).__ready = true;

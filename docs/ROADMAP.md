@@ -23,7 +23,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   7. #18 dynamic water: a state the game drives (done 2026-11-03, #45 and #48: see Water);
   8. #11 rain and wet ground;
   9. #12 storms and lightning;
-  10. #13 seasons;
+  10. #13 seasons (the trees' look in a thread of its own; part 1, the hour following the game's sun, in review);
   11. #14 snow, frost and ice;
   12. #19 the water's own look, chosen under every weather.
 - **The demo on GitHub Pages** (#15, shipped 2026-10-30): https://celestiallemon.github.io/brush3d-renderer/main/, and a preview
@@ -168,6 +168,17 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   pixels at full heat, 'clear'). The dust's gusts ('strong') are a stopgap: they're hard to see in a thick storm, and the
   wind's gusts are to be rebuilt as fronts sweeping the land (#36). The demo's timeline has a dust storm blowing through.
   The haze's patches no longer swing when the wind turns (#36): a new set is laid along the new wind and fades in.
+
+- **Seasons (#13, in progress).** The developer's scope (2026-11-03): the trees' seasonal look (turning, bare limbs,
+  blossom, the bushes and hedges with them, fallen and flying leaves) is a separate thread; this one does the rest. The
+  decisions are on #13. Part 1: `renderer.setSeason({ season, character, sunrise, sunset })`, once per level, with the
+  game's sunrise and sunset (its table's by default: spring 6–19, summer 5–21, autumn 7–18, winter 8–16), and
+  `renderer.setHour(hour)` each frame. The hour's looks follow the game's sun (`src/renderer/season.ts`): its clock is
+  mapped onto the looks' own day (sun up 6 to 20), sunrise to sunrise, the middle of the game's day to noon, sunset to
+  sunset, the twilights keeping their hours. The sun is lowered to the season's noon height (summer 58°, spring and autumn
+  45°, winter 25°, the developer's pick of 18°, 25° and 32°), least near the horizon so dawn and golden hour
+  keep their light, and a winter sun's path is shorter. With no season set the frames are main's. Part 2, the season's
+  look for everything but the trees, is next.
 
 ### Motion and stability
 

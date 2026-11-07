@@ -12,7 +12,8 @@
 //   land and draining, at 3x; #18), flood-meadow (the same over the meadow; QUERY="scene=meadow"), stream-spate and
 //   stream-usual (the farm's stream close, in spate and as usual: the flow carrying the ripples), sunset and sunrise (the
 //   hour running from 16:00 past sunset, or from before dawn to 9:00, the camera still: QUERY="cloud=1&sunUnder=1" for the low sun
-//   under a cloud deck, #8)
+//   under a cloud deck, #8; in a season, QUERY="season=winter", the same stretch of its day, #13), day (first light to
+//   dusk, the camera still and wide: QUERY="season=winter" for the season's day, #13)
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
 // tools/browser.ts for the rest.
@@ -35,7 +36,7 @@ interface Move {
   timeline?: (t: number) => number; spell?: 'shower' | 'fog' | 'dust' | 'flood'; ease?: boolean; extra?: boolean;
   /** The water (#18): how far it stands over the usual (m), how fast it runs (times the usual), how muddy (0..1). */
   water?: (t: number) => { rise?: number; flow?: number; mud?: number };
-  /** The hour, if it moves. */
+  /** The hour, if it moves: on the reference day (16 to 20.5 for a sunset), drawn at that point of the season's day. */
   hour?: (t: number) => number;
 }
 /** The game's updates: a few a second (src/app/timeline.ts), so the weather comes in steps the renderer eases over. */
@@ -86,6 +87,9 @@ const MOVES: Record<string, Move> = {
   // The sun sinking (or rising) under the sky as QUERY has it (#8: cloud=1&sunUnder=1 for golden hour under a deck), the camera still.
   sunset: { seconds: 16, at: () => ({ x: -1, z: 4, zoom: 32, view: 0 }), hour: (t) => 16 + (4.5 * t) / 16, extra: true },
   sunrise: { seconds: 16, at: () => ({ x: -1, z: 4, zoom: 32, view: 0 }), hour: (t) => 5.5 + (3.5 * t) / 16, extra: true },
+  // A whole day, first light to dusk, the camera still and wide: in a season (QUERY="season=winter", #13) the sun's path
+  // and its height as the hour's looks follow the game's sunrise and sunset.
+  day: { seconds: 24, at: () => ({ x: -1, z: 4, zoom: 20, view: 0 }), hour: (t) => 5.2 + (16.3 * t) / 24, extra: true },
   'stream-usual': { seconds: 8, at: () => ({ x: -14, z: 20, zoom: 64, view: 0 }), water: () => ({ rise: 0, flow: 1, mud: 0 }), extra: true },
 };
 
@@ -116,7 +120,7 @@ try {
       const weather = move.cloud ? { cloud: move.cloud(t) } : i === 0 && !move.timeline ? {} : undefined;
       const water = move.water?.(t);
       const png = await page.evaluate(async (cam, time, wind, weather, timeline, ease, water, hour) => {
-        await (window as any).__draw(cam, { time, wind, weather, timeline, ease, water, hour });
+        await (window as any).__draw(cam, { time, wind, weather, timeline, ease, water, dayHour: hour });
         return document.querySelector('canvas')!.toDataURL('image/png');
       }, move.at(t), 3 + t, wind, weather, move.timeline ? { time: move.timeline(t), speed: 3, spell: move.spell ?? 'shower' } : undefined,
       !!move.ease && i > 0, water, move.hour?.(t));

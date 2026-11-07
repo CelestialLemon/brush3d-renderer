@@ -3,7 +3,8 @@ import { cutIntoTiles } from './tiles';
 import { CAMERA_DISTANCE, ViewCamera } from './camera';
 import { CloudMap, MIRROR } from './cloudMap';
 import { CLOUD_SHAPE, type CloudShape } from './clouds';
-import type { Look } from './look';
+import { lookAt, type Look } from './look';
+import { dayOf, REFERENCE_DAY, type Day, type SeasonSettings } from './season';
 import { CLOUD_DEPTH, CLOUD_NIGHT, gapCover, OVERCAST, overcastLook, skyShare, UNDER_CLOUD_FADE } from './overcast';
 import {
   createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
@@ -150,6 +151,8 @@ export class BrushRenderer {
   private underTarget: THREE.WebGLRenderTarget;
   private reflectTarget: THREE.WebGLRenderTarget;
   private look: Look | null = null;
+  private seasonSet: SeasonSettings | null = null;
+  private dayNow: Day = REFERENCE_DAY;
   /** The game's water as drawn (#18): its map, eased between updates, and the sheet drawn from it. */
   readonly water = new WaterField();
   private waterMesh: THREE.Mesh | null = null;
@@ -494,6 +497,23 @@ export class BrushRenderer {
   setLook(look: Look) { this.look = look; }
 
   /**
+   * The level's season (#13), set once per level: its sunrise and sunset (the game's, which its solar power follows), and
+   * from them the day the hour's looks follow (season.ts). Until it's set (or set to null), the looks keep the reference
+   * day's hours.
+   */
+  setSeason(season: SeasonSettings | null) {
+    this.seasonSet = season && { ...season };
+    this.dayNow = season ? dayOf(season) : REFERENCE_DAY;
+  }
+  /** The season as set, or null before setSeason. */
+  get season(): SeasonSettings | null { return this.seasonSet && { ...this.seasonSet }; }
+  /** The day the hour's looks follow: the season's, or the reference day's. */
+  get day(): Day { return this.dayNow; }
+
+  /** Sets the look at a clock hour of the season's day (look.ts's lookAt): what the game calls as its clock runs. */
+  setHour(hour: number) { this.look = lookAt(hour, this.dayNow); }
+
+  /**
    * Sets the light's uniforms from the hour's look under the weather as drawn. Three looks: the grade's (the post pass's
    * haze, sky and exposure) under the cover as eased; the light in the gaps between the clouds; and the light under a
    * cloud, the overcast look's, which each pixel mixes in by the cloud's shade there (CLOUD_LIGHT). With no cloud the
@@ -757,7 +777,7 @@ export class BrushRenderer {
   private cloudArea = false;
 
   render(time: number) {
-    if (!this.look) throw new Error('setLook before render');
+    if (!this.look) throw new Error('setHour (or setLook) before render');
     const t = this.timer;
     t?.mark('setup', false);
     const s = this.shared, w = this.wind;
