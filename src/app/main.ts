@@ -20,6 +20,7 @@ import { WindView } from './windView';
 //   hour=0..24 (the game's clock), or dawn|noon|golden|sunset|night (that look in the season's day)
 //   season=spring|summer|autumn|winter (#13; none by default: the looks' own day, sun up 6 to 20)  character (the
 //     game's: mild|wet|dry|hot|gales|stormy|hard|highRiver)  sunrise, sunset (the game's clock hours; the season's by default)
+//   The scene is built in the season (summer's with none): its crops, flowers and hay stand in for the game's.
 //   scene=farm|meadow  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   rhythm (how the gusts come: 0 rare and strong, 1 frequent and mild)  windMap (the living wind from above, #36)
@@ -57,8 +58,18 @@ const renderer = new BrushRenderer(canvas, {
 // On a high-DPI screen the frame is drawn at 1080p's pixel count and scaled up: the budget's, and to the developer's eye
 // on the MacBook no softer than 1440p's (#6, #28). Not with dpr or profile, which set the pixels themselves.
 if (!params.has('dpr') && !params.has('profile')) renderer.maxPixels = 1920 * 1080;
-const farmScene = farm ? buildFarm(renderer) : null;
-const scene = farmScene ?? buildMeadow(renderer);
+// The season (#13): the game sets it once per level, and the scene's contents are the game's for it (the demo's stand in).
+const seasonParam = params.get('season'), characterParam = params.get('character');
+const season: Season | null = SEASONS.includes(seasonParam as Season) ? seasonParam as Season : null;
+const character: Character | null = CHARACTERS.includes(characterParam as Character) ? characterParam as Character : null;
+if (season) {
+  renderer.setSeason({
+    season, character,
+    sunrise: params.has('sunrise') ? num('sunrise', 6) : undefined, sunset: params.has('sunset') ? num('sunset', 20) : undefined,
+  });
+}
+const farmScene = farm ? buildFarm(renderer, season ?? 'summer') : null;
+const scene = farmScene ?? buildMeadow(renderer, season ?? 'summer');
 /** Settles once the scene's models are in. */
 const loaded = farmScene?.ready ?? Promise.resolve();
 let isLoaded = false;
@@ -101,23 +112,36 @@ for (const kind of ['ground', 'crop', 'grass'] as const) {
   if (params.get(kind) === 'live' || !renderer.setFields(kind, bakes[kind])) bakes[kind] = 0;
 }
 const bakeName = (kind: keyof typeof bakes) => (bakes[kind] ? `baked ${bakes[kind]}` : 'live');
-// The season (#13): the game sets it once per level. The demo's picker sets it again, as a new level would.
-const seasonParam = params.get('season'), characterParam = params.get('character');
-let season: Season | null = SEASONS.includes(seasonParam as Season) ? seasonParam as Season : null;
-const character: Character | null = CHARACTERS.includes(characterParam as Character) ? characterParam as Character : null;
-function sendSeason() {
-  if (!season) return;
-  renderer.setSeason({
-    season, character,
-    sunrise: params.has('sunrise') ? num('sunrise', 6) : undefined, sunset: params.has('sunset') ? num('sunset', 20) : undefined,
-  });
-}
-sendSeason();
 const HOUR_NAMES: Record<string, HourName> = { dawn: 'Dawn', noon: 'Noon', golden: 'Golden hour', sunset: 'Sunset', night: 'Night' };
 const hourParam = params.get('hour') ?? 'noon';
 let hour = hourParam in HOUR_NAMES ? hoursOf(renderer.day)[HOUR_NAMES[hourParam]] : Number(hourParam);
 /** The named hour the clock is on, if it's on one. */
 const namedHour = () => (Object.entries(hoursOf(renderer.day)) as [HourName, number][]).find(([, h]) => Math.abs(h - hour) < 0.01)?.[0];
+/**
+ * The URL as things stand: the camera, the hour (by its name if it's on one), and the weather, wind, water and timeline
+ * as the controls have them, so a season's scene is built again under the same sky.
+ */
+function here() {
+  const next = new URLSearchParams(params), was = namedHour();
+  for (const k of ['weather', 'cloud', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase', 'hazeKind', 'timeline']) next.delete(k);
+  if (playing) next.set('timeline', String(speed));
+  else if (presetName) next.set('weather', presetName);
+  else {
+    for (const k of ['cloud', 'rain', 'snow', 'heat'] as const) next.set(k, String(weather[k]));
+    const h = weather.haze;
+    next.set('haze', String(h.amount)); next.set('hazeColor', h.color.toString(16).padStart(6, '0')); next.set('hazeTop', String(h.top));
+    if (h.base !== undefined) next.set('hazeBase', String(h.base));
+    if (h.kind) next.set('hazeKind', h.kind);
+  }
+  next.set('sunUnder', String(sunUnder));
+  next.set('wind', wind.speed.toFixed(2)); next.set('windDir', ((wind.direction * 180) / Math.PI).toFixed(1));
+  next.set('gust', String(wind.gust ?? 0.5)); next.set('rhythm', String(rhythm));
+  next.set('rise', String(water.rise)); next.set('flow', String(water.flow)); next.set('mud', String(water.mud));
+  next.set('view', String(view.view)); next.set('zoom', view.zoom.toFixed(1));
+  next.set('x', view.target.x.toFixed(2)); next.set('z', view.target.z.toFixed(2));
+  next.set('hour', was ? Object.keys(HOUR_NAMES).find((k) => HOUR_NAMES[k] === was)! : hour.toFixed(2));
+  return next;
+}
 const windParam = params.get('wind');
 /** The wind the demo asks for (the game's goal, with the rhythm below): m/s, radians it blows towards, gustiness 0..1. */
 const wind = {
@@ -274,16 +298,15 @@ function hud() {
     b.onclick = () => { hour = h; hud(); };
     hudEl.append(b);
   }
-  // The season (#13), as a new level would set it: the hour stays on its named look (noon stays noon), or on its clock.
+  // The season (#13), as a new level would set it: the scene is built again in it (its crops and flowers are the season's),
+  // keeping the camera, and the hour on its named look (noon stays noon) or its clock.
   const seasons = document.createElement('select');
   for (const name of ['none', ...SEASONS]) seasons.append(new Option(name, name, false, name === (season ?? 'none')));
-  seasons.title = 'The level\'s season (none: the looks\' own day, the sun up 6 to 20)';
+  seasons.title = 'The level\'s season (none: the looks\' own day, the sun up 6 to 20); the scene is built again in it';
   seasons.onchange = () => {
-    const was = namedHour();
-    season = seasons.value === 'none' ? null : seasons.value as Season;
-    if (season) sendSeason(); else renderer.setSeason(null);
-    if (was) hour = hoursOf(renderer.day)[was];
-    hud();
+    const next = here();
+    if (seasons.value === 'none') next.delete('season'); else next.set('season', seasons.value);
+    location.search = `?${next}`;
   };
   seasons.onkeydown = (e) => e.stopPropagation();
   hudEl.append(Object.assign(document.createElement('label'), { textContent: 'Season' }), seasons);

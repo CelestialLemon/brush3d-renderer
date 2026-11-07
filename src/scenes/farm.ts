@@ -16,6 +16,7 @@ import {
   C, MapLine, addFlowers, addMound, addReeds, addStone, addTuft, groundOf, growTree, smooth, treeWind, type Stream, type Tree,
 } from './kit';
 import { DRAG, type Obstacle } from '../wind/sim';
+import type { Season } from '../renderer/season';
 
 // A pastoral valley, about 176 m across, for trying the renderer's features on a big, full and varied scene. In its
 // middle, the working farm after the aerial shot in Dear Alice (0:37): a wheat field with a solar array, a track along it
@@ -226,6 +227,8 @@ const HIVES: [number, number][] = [[20.5, -7.6], [22, -7.9], [23.5, -8.2], [25, 
 /** Round bales: three on the old meadow, and a scatter on the hay meadow being cut. */
 const BALES: [number, number, number][] = [[-24, 9.6, 0.3], [-22.2, 10.8, 1.2], [-26, 11, 2.2],
   [-6, 66, 0.2], [-3.5, 67.4, 1.4], [14, 64.5, 0.6], [22, 68, 2.4], [24, 65.5, 0.1], [40, 67, 1.0], [52, 64, 2.0], [55, 66.5, 0.4]];
+/** The hay meadow's being cut only in summer (#13); the old meadow's three bales stand all year. */
+const balesNow = () => (SEASON === 'summer' ? BALES : BALES.slice(0, 3));
 const BARRELS: [number, number][] = [[12.9, -6.2], [13.5, -6.9], [51, 5.5], [51.8, 4.8]];
 const TABLE: [number, number] = [11, -7.5];
 // The first clump moved aside for the shed (#10), to a place where every bush still grows, so the rest are unchanged.
@@ -329,7 +332,19 @@ type Adder = Pick<BrushRenderer, 'add'>;
  */
 const TILE = 24;
 
-export function buildFarm(renderer: BrushRenderer): Farm {
+/**
+ * The season the farm is built in (#13). What's planted and how far it has grown is the game's; the demo stands in for it,
+ * so the preview reads as that season's farm: the wheat young and green in spring, ripe in summer (the scene as it was
+ * made), stubble in autumn and ploughed in winter; the barley and the sunflowers likewise; the hay cut only in summer;
+ * the wildflowers thinning out to none; the lavender in flower only in summer. The colours are the renderer's (setSeason).
+ */
+let SEASON: Season = 'summer';
+/** How far a crop has come: growing, ready (the scene's own), cut to stubble, or the field ploughed and bare. */
+type Stage = 'young' | 'ripe' | 'stubble' | 'bare';
+const STAGE: Record<Season, Stage> = { spring: 'young', summer: 'ripe', autumn: 'stubble', winter: 'bare' };
+
+export function buildFarm(renderer: BrushRenderer, season: Season = 'summer'): Farm {
+  SEASON = season;
   const r: Adder = { add: (g, kind, o = {}) => renderer.add(g, kind, { ...o, tile: TILE }) };
   terrain(r);
   crops(r);
@@ -429,8 +444,9 @@ function terrain(r: Adder) {
     const far = smooth(62, 84, Math.max(Math.abs(u), Math.abs(v)));
     c.lerp(C.emerald.clone().lerp(C.teal, 0.4), far * 0.35);
     // Under the wheat, gold stubble; round the orchard, alleys worn pale between the rows; the nursery in strips.
-    const inside = wheatInside(u, v);
-    c.lerp(C.wheatDeep, smooth(-0.6, 0.2, inside) * 0.8);
+    const inside = wheatInside(u, v), stage = STAGE[SEASON];
+    const ploughed = soil.clone().lerp(soilDark, (0.5 + 0.5 * Math.sin((v + 0.6 * Math.sin(u * 0.05)) * (2 * Math.PI / 0.9))) * 0.7);
+    c.lerp(stage === 'young' ? C.emerald.clone().lerp(C.moss, 0.5) : stage === 'bare' ? ploughed : C.wheatDeep, smooth(-0.6, 0.2, inside) * 0.8);
     if (inOrchard(u, v)) c.lerp(C.lime, (1 - rowNear(ROWS, x, z, 1.1)) * 0.35).lerp(C.dirt, (1 - rowNear(ROWS, x, z, 1.2)) * 0.12);
     if (inNursery(u, v)) {
       const row = rowNear(NURSERY, x, z, 0.9);
@@ -440,12 +456,18 @@ function terrain(r: Adder) {
     // ridge every 0.9 m); the hay meadow mown in pale and darker stripes, with windrows of cut hay; the lavender's and
     // the cabbages' rows on bare earth; the yard's packed earth; the garden's paths.
     const edge = (p: Plot) => smooth(-0.4, 0.6, plotInside(p, u, v));
-    c.lerp(C.emerald.clone().lerp(C.moss, 0.5), Math.max(edge(SUNFLOWERS), edge(BARLEY) * 0.6) * 0.7);
-    const furrow = 0.5 + 0.5 * Math.sin((v + 0.6 * Math.sin(u * 0.05)) * (2 * Math.PI / 0.9));
-    c.lerp(soil.clone().lerp(soilDark, furrow * 0.7), edge(PLOUGHED) * 0.95);
+    // Out of summer (#13): the sunflowers sown on bare earth in spring and ploughed in after them in winter; the barley
+    // cut to stubble in autumn and ploughed in winter; the ploughed field drilled and green in spring.
+    if (stage === 'ripe') c.lerp(C.emerald.clone().lerp(C.moss, 0.5), Math.max(edge(SUNFLOWERS), edge(BARLEY) * 0.6) * 0.7);
+    else {
+      c.lerp(stage === 'stubble' ? C.emerald.clone().lerp(C.moss, 0.5) : ploughed, edge(SUNFLOWERS) * 0.9);
+      c.lerp(stage === 'young' ? C.emerald.clone().lerp(C.moss, 0.5) : stage === 'stubble' ? C.wheatDeep : ploughed, edge(BARLEY) * 0.85);
+    }
+    c.lerp(ploughed, edge(PLOUGHED) * 0.95);
+    if (stage === 'young') c.lerp(C.meadow.clone().lerp(C.moss, 0.4), edge(PLOUGHED) * (0.5 + 0.3 * Math.sin(u * (2 * Math.PI / 0.9))));
     const stripe = Math.sin((u + 1.5 * Math.sin(v * 0.08)) * (2 * Math.PI / 7)) > 0 ? 1 : 0;
     const windrow = Math.exp(-(((((u + 1.5 * Math.sin(v * 0.08)) % 7 + 7) % 7 - 3.5) / 0.45) ** 2));
-    c.lerp(mown.clone().lerp(C.meadow, stripe * 0.5), edge(HAY) * 0.6).lerp(hay, edge(HAY) * windrow * 0.75);
+    if (SEASON === 'summer') c.lerp(mown.clone().lerp(C.meadow, stripe * 0.5), edge(HAY) * 0.6).lerp(hay, edge(HAY) * windrow * 0.75);
     const rows = 0.5 + 0.5 * Math.cos(v * (2 * Math.PI / 1.7));
     c.lerp(soil.clone().lerp(C.moss, 0.25 + rows * 0.3), edge(LAVENDER) * 0.75);
     c.lerp(soil.clone().lerp(C.emerald, rows * 0.35), edge(CABBAGES) * 0.8);
@@ -587,7 +609,7 @@ function cropField(r: Adder, s: CropSpec) {
     const e3 = g.vertex({ x: tip.x + lean * 0.3, y: tip.y + 0.12, z: tip.z }, up, gold, paint, [0, 0], [1, seed]);
     g.tri(d2, c2, e2); g.tri(d2, e2, e3); g.tri(d2, e3, e1);
   }
-  r.add(g.build(), 'grass', { castShadow: false });
+  r.add(g.build(), 'grass', { castShadow: false, seasonal: false });
 }
 
 /**
@@ -596,35 +618,47 @@ function cropField(r: Adder, s: CropSpec) {
  * are clumps in rows (see beds).
  */
 function crops(r: Adder) {
-  cropField(r, {
+  const stage = STAGE[SEASON];
+  // Out of summer (#13): young green blades in spring, a short stubble of straw in autumn, nothing in winter (ploughed).
+  const young = { base: srgb(0x7cb04a), deep: srgb(0x5a9442), tip: srgb(0xa8c860), root: srgb(0x4e7e38), stalkTip: srgb(0x9cc45a) };
+  const stubble = { base: srgb(0xe0c47a), deep: srgb(0xb89048), tip: srgb(0xeedc9c), root: srgb(0xa08a4a), stalks: 0, banding: 0.9 };
+  if (stage !== 'bare') cropField(r, {
     u0: WHEAT_LEFT - 1, u1: CORE, v0: 4, v1: CORE, inside: wheatInside, tall: 0.8,
     base: C.wheat, deep: C.wheatDeep, tip: C.wheatTip, root: C.wheatRoot, rows: 1.7, banding: 0.7, stalks: 2600, seed: 5,
+    ...(stage === 'young' ? { ...young, tall: 0.4, stalks: 1400 } : stage === 'stubble' ? { ...stubble, tall: 0.14 } : {}),
   });
-  cropField(r, {
+  if (stage !== 'bare') cropField(r, {
     ...BARLEY, u0: BARLEY.u0 - 1, u1: BARLEY.u1 + 1, v0: BARLEY.v0 - 1, v1: BARLEY.v1 + 1, inside: (u, v) => plotInside(BARLEY, u, v), tall: 0.7,
     base: srgb(0x9cbc4a), deep: srgb(0x6e9a3e), tip: srgb(0xd2d070), root: srgb(0x5e8a3a), rows: 2.2, banding: 0.5, stalks: 1800,
     stalkTip: srgb(0xc8cc6a), seed: 6,
+    ...(stage === 'young' ? { ...young, tall: 0.35, stalks: 1000 } : stage === 'stubble' ? { ...stubble, tall: 0.12 } : {}),
   });
+  // The sunflowers: in flower in summer, gone over in autumn (the petals dropped, the heads dark and hung), not yet sown in
+  // spring and ploughed in by winter.
+  if (stage === 'young' || stage === 'bare') return;
+  const over = stage === 'stubble';
   const SUN = SUNFLOWERS;
   const inside = (u: number, v: number) => plotInside(SUN, u, v);
   cropField(r, {
     u0: SUN.u0 - 1, u1: SUN.u1 + 1, v0: SUN.v0 - 1, v1: SUN.v1 + 1, inside, tall: 1.35,
     base: srgb(0x4e8a3a), deep: srgb(0x2f6a3a), tip: srgb(0x7aa83e), root: srgb(0x3e6e36), rows: 3.6, banding: 0.6, stalks: 0, seed: 7,
+    ...(over ? { base: srgb(0x7a7040), deep: srgb(0x4e4a2c), tip: srgb(0x9a8a50), root: srgb(0x50502e) } : {}),
   });
   // The heads: a ring of yellow petals round a dark brown disc, each a dab, in rows 0.75 m apart, a head every 0.55 m.
   const heads = new MeshBuilder('foliage');
   const rand = rng(171);
-  const petal = srgb(0xf6c234), disc = srgb(0x6a4026), leaf = srgb(0x5a9a3c);
+  const petal = srgb(0xf6c234), disc = srgb(over ? 0x4a3020 : 0x6a4026), leaf = srgb(over ? 0x8a7a44 : 0x5a9a3c);
   for (let v = SUN.v0 + 0.6; v < SUN.v1; v += 0.75) for (let u = SUN.u0 + 0.4 + (rand() - 0.5) * 0.3; u < SUN.u1; u += 0.55 + (rand() - 0.5) * 0.12) {
     const uu = u + (rand() - 0.5) * 0.15, vv = v + (rand() - 0.5) * 0.12, d = inside(uu, vv);
     if (d < 0.3) continue;
     const [x, z] = W(uu, vv), h = height(x, z) + 1.35 * smooth(0, 1.1, d) + 0.15 + rand() * 0.25;
     // Turned to the morning: a little towards -u and up.
-    const [nx, nz] = W(-0.4, -0.5), nrm = new THREE.Vector3(nx, 0.8, nz).normalize();
+    const [nx, nz] = W(-0.4, -0.5), nrm = new THREE.Vector3(nx, over ? -0.1 : 0.8, nz).normalize();
     const p = new THREE.Vector3(x, h, z);
     if (rand() < 0.3) addDabAt(heads, p.clone().add(new THREE.Vector3(0, -0.2, 0)), nrm, leaf.clone().offsetHSL(0, 0, (rand() - 0.5) * 0.08), 0.2, rand());
-    addDabAt(heads, p, nrm, petal.clone().offsetHSL((rand() - 0.5) * 0.02, 0, (rand() - 0.5) * 0.08), 0.17 + rand() * 0.04, rand());
-    addDabAt(heads, p.clone().add(new THREE.Vector3(0, 0.02, 0)), nrm, disc.clone().offsetHSL(0, 0, (rand() - 0.5) * 0.06), 0.075 + rand() * 0.02, rand());
+    const petalColour = petal.clone().offsetHSL((rand() - 0.5) * 0.02, 0, (rand() - 0.5) * 0.08), size = 0.17 + rand() * 0.04, seed = rand();
+    if (!over) addDabAt(heads, p, nrm, petalColour, size, seed);
+    addDabAt(heads, p.clone().add(new THREE.Vector3(0, 0.02, 0)), nrm, disc.clone().offsetHSL(0, 0, (rand() - 0.5) * 0.06), (0.075 + rand() * 0.02) * (over ? 1.4 : 1), rand());
   }
   r.add(heads.build(), 'foliage', { castShadow: true, cover: 'none' });
 }
@@ -896,7 +930,7 @@ const TREES_GROWN: Tree[] = [];
 /** Places kept open: the crates, the table, the bales, the hives. */
 function clear(x: number, z: number) {
   const [u, v] = M(x, z);
-  return [...[...CRATES, ...EMPTY_CRATES, BARROW, ...BALES].map(([cu, cv]) => [cu, cv]), ...BASKETS, ...HIVES, ...BARRELS, TABLE]
+  return [...[...CRATES, ...EMPTY_CRATES, BARROW, ...balesNow()].map(([cu, cv]) => [cu, cv]), ...BASKETS, ...HIVES, ...BARRELS, TABLE]
     .some(([cu, cv]) => Math.hypot(u - cu, v - cv) < 2.2);
 }
 
@@ -924,6 +958,13 @@ function beds(r: Adder) {
   const at = (u: number, v: number) => { const [x, z] = W(u, v); return { x, z, y: height(x, z) }; };
   // Lavender: rows 1.7 m apart along u, a cushion every 0.9 m, purple going blue in the hollows, grey-green at the foot.
   const lav = srgb(0x9a78c8), lavDeep = srgb(0x6a58a8), lavFoot = srgb(0x7a9070);
+  // In flower only in summer (#13): out of it, grey-green cushions, budding in spring, the spent spikes a faded grey-mauve
+  // in autumn.
+  if (SEASON !== 'summer') {
+    const leaf = srgb(0x8a9c86), faded = SEASON === 'spring' ? lav : SEASON === 'autumn' ? srgb(0x9a8e9c) : leaf;
+    const k = SEASON === 'spring' ? 0.15 : SEASON === 'autumn' ? 0.45 : 0;
+    lav.copy(leaf).lerp(faded, k); lavDeep.copy(srgb(0x667a6c)).lerp(faded, k * 0.5);
+  }
   for (let v = LAVENDER.v0 + 1; v < LAVENDER.v1; v += 1.7) for (let u = LAVENDER.u0 + 0.6; u < LAVENDER.u1; u += 0.9 + (rand() - 0.5) * 0.1) {
     if (plotInside(LAVENDER, u, v) < 0.3) continue;
     const p = at(u + (rand() - 0.5) * 0.1, v);
@@ -959,14 +1000,16 @@ function beds(r: Adder) {
       if (kind === 3) {
         // Tomatoes on canes: a cane, the plant a tall clump on it, red fruit.
         frames.addGeometry(new THREE.BoxGeometry(0.035, 1.3, 0.035), new THREE.Matrix4().makeTranslation(x, p.y + 0.85, z), C.fence, [0, 1, 0, 0]);
-        addMound(leaves, x, p.y + 0.3, z, 0.25, 0.95, srgb(0x4e8a3a), srgb(0x3e6e36), 16, rand, C.apple);
+        // The tomatoes are summer's and autumn's; the canes stand bare the rest of the year (#13).
+        if (SEASON === 'summer' || SEASON === 'autumn') addMound(leaves, x, p.y + 0.3, z, 0.25, 0.95, srgb(0x4e8a3a), srgb(0x3e6e36), 16, rand, C.apple);
       } else {
         const g = greens[(kind + Math.floor(rand() * 2)) % greens.length];
         addMound(leaves, x, p.y + 0.24, z, kind === 1 ? 0.27 : 0.2, kind === 1 ? 0.26 : 0.22, g.clone().offsetHSL(0, 0, (rand() - 0.5) * 0.06), g.clone().multiplyScalar(0.75), 9, rand);
       }
     }
   });
-  r.add(leaves.build(), 'foliage', { cover: 'none' });
+  // Their leaves take the season's colour (#13), as the grass does.
+  r.add(leaves.build(), 'foliage', { cover: 'none', seasonal: true });
   r.add(frames.build(), 'ink');
 }
 
@@ -1033,7 +1076,7 @@ function goods(r: Adder) {
     b.addGeometry(new THREE.ConeGeometry(0.48, 0.18, 4, 1).rotateY(Math.PI / 4 + yaw), new THREE.Matrix4().makeTranslation(...local(0, top + 0.09, 0).toArray()), C.ceramic, [0, 1, 0, 0]);
   });
   // Round hay bales, lying on their sides on the cut meadow.
-  for (const [u, v, yaw] of BALES) {
+  for (const [u, v, yaw] of balesNow()) {
     const local = frameAt(u, v, yaw), r = 0.62, hay = srgb(0xe2bf6a).offsetHSL((rand() - 0.5) * 0.02, 0, (rand() - 0.5) * 0.06);
     b.addGeometry(new THREE.CylinderGeometry(r, r, 1.15, 18).rotateX(Math.PI / 2).rotateY(yaw), new THREE.Matrix4().makeTranslation(...local(0, r - 0.05, 0).toArray()), hay, [2, 1, 0, 0]);
   }
@@ -1185,7 +1228,9 @@ function grass(r: Adder) {
     addTuft(underShed(x, z) ? dropped : g, ground, x, z, 0.18 + lush * 0.32, tuftColor(x, z), rand);
   }
   const palette = [srgb(0xf08bb0), srgb(0xf7f2e4), srgb(0xf5cf3e), srgb(0xa77ad8), srgb(0xe8574a)];
-  for (let d = 0; d < 380; d++) {
+  // Thinning out from summer's to none in winter (#13).
+  const drifts = { spring: 300, summer: 380, autumn: 120, winter: 0 }[SEASON];
+  for (let d = 0; d < drifts; d++) {
     // Thicker round the windmill and in the pastures.
     let [cu, cv] = [(rand() * 2 - 1) * LAND, (rand() * 2 - 1) * LAND];
     if (d % 4 === 0) { cu = -40 + (rand() - 0.5) * 30; cv = 50 + (rand() - 0.5) * 24; }
