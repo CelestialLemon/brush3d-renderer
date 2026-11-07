@@ -120,7 +120,8 @@ vec2 screenOf(vec3 p, out float z) {
 // Where a drop falling down its slanted path (at height y it is over g - slant (y - base)) from \`top\` first meets the
 // cover a map holds: stepping down the path to the first point under the cover, then halving the step between it and
 // the last point over it. The steps are about a metre apart across the land (so a panel's edge isn't stepped over) and
-// two up and down; straight down, one look. Far below the land if it meets none.
+// two up and down; straight down, one look. Far below the land if it meets none. A path that grazes the downwind edge of
+// cover between two steps (a strip under a metre, in a wind) gets by, as rain blows in under an eave.
 float coverAlong(highp sampler2D map, vec2 g, vec2 slant, float base, float top) {
   if (dot(slant, slant) < 1e-4) return shelterHeightIn(map, vec3(g.x, 0.0, g.y));
   float over = top;
@@ -172,7 +173,10 @@ void main() {
   vec2 s0 = screenOf(vec3(g.x, base, g.y), z0);
   vec2 top0 = g - slant * (top - base);
   vec2 s1 = screenOf(vec3(top0.x, top, top0.y), z1);
-  if (any(greaterThan(min(s0, s1), vec2(1.05))) || any(lessThan(max(s0, s1), vec2(-1.05)))) return;
+  // Its widest stroke or its splash may reach past the path's ends by up to this much (px).
+  float pxPerMetre = projectionMatrix[0][0] * uScreen.x * 0.5;
+  vec2 reach = 1.0 + 2.0 * max(0.65 * uRainStroke.y + 1.0, max(uRainShape.w * pxPerMetre, 3.0)) / uScreen;
+  if (any(greaterThan(min(s0, s1), reach)) || any(lessThan(max(s0, s1), -reach))) return;
 
   // Where it stops: there, or a roof, or (some of the time) a crown, along the way.
   float stop = base;
@@ -186,7 +190,6 @@ void main() {
   }
   float drop = top - stop;
   float length_ = uRainStroke.x * (0.8 + 0.4 * fract(rnd.z * 3.7));
-  float pxPerMetre = projectionMatrix[0][0] * uScreen.x * 0.5;
   vec2 half_ = uScreen * 0.5;
 
   // Lit as rain is where it is: by the sky, a little by the sun, as bright as the light there.
@@ -433,11 +436,11 @@ export class Rain {
     const L = this.look, r = shown ? THREE.MathUtils.clamp(rain, 0, 1) : 0;
     const speed = THREE.MathUtils.lerp(L.speed[0], L.speed[1], r);
     const dt = time - this.last;
-    // On from where it was, a long gap (a paused tab) as a frame's worth. Back in time (a tool going back to draw a
-    // moment again) or the first frame: from the clock, so the same time draws the same rain however it was reached in
-    // steady rain (while the rain changes, how it got there counts: the tools draw their frames in a set order).
+    // On from where it was, a gap of over a second (a paused tab) as a frame's worth. Back in time (a tool going back to
+    // draw a moment again) or the first frame: from the clock. So in steady rain the same time draws the same rain,
+    // however the tools' frames reached it (while the rain changes, how it got there counts: they draw in a set order).
     if (!(dt >= 0)) this.fallen = speed * time;
-    else this.fallen += speed * Math.min(dt, 0.1);
+    else this.fallen += speed * (dt <= 1 ? dt : 0.1);
     this.last = time;
     const splash = L.splash[2] * (L.speed[0] + L.speed[1]) * 0.5;
     const cycle = COLUMN * 1.15 + Math.max(L.stroke[0] * 1.2, splash) + 1;
