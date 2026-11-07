@@ -176,16 +176,19 @@ pops in a gale (`tools/pops.ts`, 0 patches).
 
 ### Falling rain (#11)
 
-The budget's 1.5 ms line. The strokes are one instanced draw in the main view (up to 32,768 drops, a quad each for the
-stroke and its splash), see-through paint into the colour target that leaves the depth and normals alone, so the post
-pass draws no ink lines round them and needs nothing new; the veil and the rings are a few lines more in the post pass and
-the water's shader. Not in the shadow, reflection, under-water or silhouette passes. How many drops are drawn follows how
-hard it rains and the zoom (about as many strokes on screen at any zoom), and `settings.fallingShare` cuts it (the
-quality knob: 1 full, about a third reduced) without changing a stroke's look. On the MacBook Air (M4, uncapped frame,
-the farm at 1080p in a storm, look A): 18.68 ms with the rain against 18.83 without, inside the noise. Still to read on the
-laptop: `?profile&weather=storm` on the PR's preview, the `no rain` line.
-Crawl (`AB=2 tools/motion.ts`, the farm in a storm, 1 px pan): the same with the rain and without (soft 0.169 both); pops
-in a gale at the shed (`tools/pops.ts`): 0 patches.
+The budget's 1.5 ms line. The strokes are one instanced draw in the main view (a quad each for the stroke and its
+splash), see-through paint into the colour target that leaves the depth and normals alone, so the post pass draws no
+ink lines round them and needs nothing new; the veil and the rings are a few lines more in the post pass and the water's
+shader. Not in the shadow, reflection, under-water or silhouette passes. The drops belong to 8 m cells of the world and
+only the cells the view can see (and a margin the wind can slant a stroke across) are drawn: a few thousand drops at
+any zoom. How many a cell shows follows how hard it rains and the zoom (about as many strokes on screen at any zoom),
+and `settings.fallingShare` cuts it (the quality knob: 1 full, about a third reduced) without changing a stroke's look.
+In a wind, each drop traces its slanted path through the roof and crown maps (up to 12 reads of each, in the vertex
+shader); straight down it's one. On the MacBook Air (M4, uncapped frame, the farm at 1080p in a storm, look B): 19.23
+ms with the rain against 18.97 without, about the noise. Still to read on the laptop: `?profile&weather=storm` on the
+PR's preview, the `no rain` line.
+Crawl (`AB=2 tools/motion.ts`, the farm in a storm, 1 px pan): the same with the rain and without (soft 0.168 against
+0.169); pops in a gale at the shed (`tools/pops.ts`): none with looks B and C, 3 small ones (20 px) in 40 moments with A.
 
 ### Mist and fog (#9)
 

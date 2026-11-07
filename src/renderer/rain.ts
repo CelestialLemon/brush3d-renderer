@@ -66,14 +66,23 @@ export type RainLookName = keyof typeof RAIN_LOOKS;
 
 /** The zoom (screen px a metre) the looks' density and width are set at: the demo's usual framing. */
 export const REFERENCE_ZOOM = 44;
-/** How many drops there are; how many show is a share of them. */
-const DROPS = 32768;
-/** The side of the square round the camera's target the drops fall in (m), wide enough for the farthest zoom. */
-const BOX = 160;
-/** How high over where it stops a drop starts (m): over the tallest crown. */
+/** The most drops drawn at once: far more than any view needs (a few thousand), a guard against a huge screen. */
+const MAX_DROPS = 65536;
+/**
+ * The side of a cell of land (m). The drops belong to cells keyed to the world, each cell its own handful, and those on
+ * the land the view can see (and a margin round it) are drawn: the same drop falls in the same place whichever cells
+ * are drawn, so panning or zooming never moves one.
+ */
+const CELL = 8;
+/** How high over where it stops a drop starts (m): over the tallest crown; and the most, with its jitter. */
 const COLUMN = 16;
-/** The share of drops, by rank, a drop fades in over as the rain grows. */
-const RANK_FADE = 0.02;
+const COLUMN_TOP = COLUMN * 1.15;
+/** A drop fades in over this much of a drop a cell as the rain grows (by its rank in the cell). */
+const RANK_FADE = 0.3;
+/** How far the wind slants a stroke at most (horizontal metres a metre of fall). */
+const MAX_SLANT = 1.2;
+/** How far the land in view can lie under and over the camera's target (m), for the cells to draw. */
+const LAND_BELOW = 8, LAND_ABOVE = 8;
 
 /** The drops' light: pale, lit by the sky more than the sun, as rain catches the light. Linear. */
 const RAIN_BASE = '0.78, 0.82, 0.86';
@@ -86,18 +95,18 @@ ${CLOUD_LIGHT}
 ${PAINT}
 ${WIND_GLSL}
 ${SHELTER_GLSL}
-attribute vec4 aDrop;    // its rank (which drops show first), and three random numbers
 attribute vec3 aCorner;  // x across (-1, 1); y along the stroke (0 its tail, 1 its head) or up the splash (-1, 1); z 0 the stroke, 1 the splash
 uniform vec2 uScreen;
 uniform vec3 uViewTarget;
-uniform vec4 uRain;        // x the share of drops shown (by rank), y how far the rain has fallen (m), z a drop's cycle (m), w how fast it falls (m/s)
+uniform vec4 uRainCells;   // the cells drawn: x, y the first (world cell), z how many across, w how many in all
+uniform vec4 uRain;        // x the drops a cell shown (by rank), y how far the rain has fallen (m), z a drop's cycle (m), w how fast it falls (m/s)
 uniform vec4 uRainStroke;  // its length (m), width (px), softness, opacity
 uniform vec4 uRainShape;   // its taper, how far the wind slants it, the splash's shape, the splash's size (m)
 uniform float uRainSplash; // how far a drop would fall while it splashes (m)
 varying vec4 vShape;       // the stroke: px across, px along from the tail, its length and half its width in px. The splash: its corner, its shape, its age (0..1)
 varying vec4 vColor;       // its colour, and how opaque
 varying float vPart;       // 0 the stroke, 1 the splash
-const float BOX = ${BOX.toFixed(1)};
+const float CELL = ${CELL.toFixed(1)};
 const float COLUMN = ${COLUMN.toFixed(1)};
 const float RANK_FADE = ${RANK_FADE};
 // Starting high over the land, a drop fades in over its first few metres, so none appears out of nothing.
@@ -108,33 +117,47 @@ vec2 screenOf(vec3 p, out float z) {
   z = c.z / c.w;
   return c.xy / c.w;
 }
-// The top of the cover along a drop's slanted path (where it is at height y: g - slant (y - base)), found by stepping
-// to the height the map has there and looking again.
-float coverAlong(highp sampler2D map, vec2 g, vec2 slant, float base) {
-  float y = shelterHeightIn(map, vec3(g.x, 0.0, g.y));
-  for (int i = 0; i < 2; i++) {
-    vec2 at = g - slant * max(y - base, 0.0);
-    y = shelterHeightIn(map, vec3(at.x, 0.0, at.y));
+// Where a drop falling down its slanted path (at height y it is over g - slant (y - base)) from \`top\` first meets the
+// cover a map holds: stepping down the path to the first point under the cover, then halving the step between it and
+// the last point over it. Straight down, one look. Far below the land if it meets none.
+float coverAlong(highp sampler2D map, vec2 g, vec2 slant, float base, float top) {
+  if (dot(slant, slant) < 1e-4) return shelterHeightIn(map, vec3(g.x, 0.0, g.y));
+  float over = top;
+  for (int i = 0; i <= 8; i++) {
+    float y = mix(top, base, float(i) / 8.0);
+    vec2 at = g - slant * (y - base);
+    if (shelterHeightIn(map, vec3(at.x, 0.0, at.y)) < y) { over = y; continue; }
+    if (i == 0) return top;
+    float under = y;
+    for (int j = 0; j < 3; j++) {
+      float m = 0.5 * (over + under);
+      vec2 am = g - slant * (m - base);
+      if (shelterHeightIn(map, vec3(am.x, 0.0, am.y)) < m) over = m; else under = m;
+    }
+    return under;
   }
-  return y;
+  return -1e9;
 }
 
 void main() {
   gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   vShape = vec4(0.0); vColor = vec4(0.0); vPart = aCorner.z;
-  float show = clamp((uRain.x - aDrop.x) / RANK_FADE, 0.0, 1.0);
+  // Which drop: its cell of the world and its place among the cell's (its rank: the first ones show in the lightest
+  // rain), and its own four random numbers, all from those, so a drop is the same whichever cells are drawn.
+  int cells = int(uRainCells.w), across_ = int(uRainCells.z);
+  int index = gl_InstanceID % cells, slot = gl_InstanceID / cells;
+  vec2 cell = uRainCells.xy + vec2(float(index % across_), float(index / across_));
+  vec2 seed = cell + float(slot) * vec2(61.7, -37.3);
+  vec4 rnd = vec4(hash12(seed), hash12(seed + 19.19), hash12(seed + 47.7), hash12(seed + 83.3));
+  float show = clamp((uRain.x - float(slot) - rnd.x * (1.0 - RANK_FADE)) / RANK_FADE, 0.0, 1.0);
   if (show <= 0.0) return;
-  // Where it is in its fall, and where it lands this time round: somewhere new each fall, keyed to the world (the box
-  // wraps round the camera's target, and the drops near its edge, out of sight, fade).
-  float u = uRain.y / uRain.z + aDrop.y * 37.0;
+  // Where it is in its fall, and where it lands this time round: somewhere new in its cell each fall.
+  float u = uRain.y / uRain.z + rnd.y * 37.0;
   float round_ = mod(floor(u), 4096.0), fallen = fract(u) * uRain.z;
-  vec2 h = hash22(vec2(aDrop.z * 4093.0 + round_ * 1.618, aDrop.w * 3967.0 + round_ * 0.7071));
-  vec2 rel = mod(h * BOX - uViewTarget.xz + BOX * 0.5, BOX) - BOX * 0.5;
-  vec2 g = uViewTarget.xz + rel;
-  float edge = 1.0 - smoothstep(0.4 * BOX, 0.48 * BOX, max(abs(rel.x), abs(rel.y)));
+  vec2 g = (cell + hash22(vec2(rnd.z * 4093.0 + round_ * 1.618, rnd.w * 3967.0 + round_ * 0.7071))) * CELL;
   // Slanted by the wind where it lands: blown along at the wind's speed as it falls.
   vec2 slant = windGround(g) / max(uRain.w, 1.0) * uRainShape.y;
-  slant *= min(1.0, 1.2 / max(length(slant), 1e-4));
+  slant *= min(1.0, ${MAX_SLANT.toFixed(2)} / max(length(slant), 1e-4));
   // Off the screen: nothing to do.
   float z0, z1;
   vec2 s0 = screenOf(vec3(g.x, uViewTarget.y - 20.0, g.y), z0);
@@ -149,17 +172,17 @@ void main() {
   bool wet = sheet.z > -${(HIDDEN_DIVE * 0.5).toFixed(3)} && sheet.x > land;
   float base = wet ? sheet.x : land;
   float stop = base;
-  float roof = coverAlong(uShelterFull, g, slant, base);
+  float top = base + COLUMN * (0.85 + 0.3 * fract(rnd.y * 5.13));
+  float roof = coverAlong(uShelterFull, g, slant, base, top);
   if (roof > stop) { stop = roof; wet = false; }
   bool caught = false;
-  if (aDrop.w < ${PARTIAL_COVER.toFixed(2)}) {
-    float crown = coverAlong(uShelterPartial, g, slant, base);
+  if (rnd.w < ${PARTIAL_COVER.toFixed(2)}) {
+    float crown = coverAlong(uShelterPartial, g, slant, base, top);
     // Lost among the leaves somewhere under the crown's top.
-    if (crown > stop) { stop = max(crown - fract(aDrop.z * 7.31) * 2.0, stop); caught = true; }
+    if (crown > stop) { stop = max(crown - fract(rnd.z * 7.31) * 2.0, stop); caught = true; }
   }
-  float top = base + COLUMN * (0.85 + 0.3 * fract(aDrop.y * 5.13));
   float drop = top - stop;
-  float length_ = uRainStroke.x * (0.8 + 0.4 * fract(aDrop.z * 3.7));
+  float length_ = uRainStroke.x * (0.8 + 0.4 * fract(rnd.z * 3.7));
   float pxPerMetre = projectionMatrix[0][0] * uScreen.x * 0.5;
   vec2 half_ = uScreen * 0.5;
 
@@ -167,7 +190,7 @@ void main() {
   vec3 mid = vec3(g.x, stop + 1.0, g.y);
   cloudAt(mid);
   vec3 col = exposeHere(vec3(${RAIN_BASE}) * mix(skyTint(), sunTint(), 0.3));
-  float alpha = show * edge;
+  float alpha = show;
 
   if (aCorner.z < 0.5) {
     // The stroke: its head falling from the top to where it stops, its tail a stroke's length behind, both stopping there.
@@ -180,12 +203,14 @@ void main() {
     float len = length(d);
     vec2 dir = len > 1e-3 ? d / len : vec2(0.0, -1.0), across = vec2(-dir.y, dir.x);
     // Each a little wider or narrower, fainter or stronger than the next, as a brush lays them.
-    float hw = 0.5 * uRainStroke.y * (0.7 + 0.6 * fract(aDrop.w * 11.3)), pad = hw + 1.0;
+    float hw = 0.5 * uRainStroke.y * (0.7 + 0.6 * fract(rnd.w * 11.3)), pad = hw + 1.0;
     float t = aCorner.y;
     vec2 sp = mix(sa, sb, t) + dir * (t * 2.0 - 1.0) * pad + across * aCorner.x * pad;
     gl_Position = vec4(sp / half_, mix(za, zb, t), 1.0);
     vShape = vec4(aCorner.x * pad, t * len + (t * 2.0 - 1.0) * pad, len, hw);
-    vColor = vec4(col, alpha * uRainStroke.w * (0.65 + 0.35 * fract(aDrop.z * 17.9)) * smoothstep(0.0, FADE_IN, fallen));
+    // Fading as it shortens into what it hit, so its round end doesn't linger and blink out.
+    float left = smoothstep(0.0, 0.4 * length_, tail - head);
+    vColor = vec4(col, alpha * uRainStroke.w * (0.65 + 0.35 * fract(rnd.z * 17.9)) * smoothstep(0.0, FADE_IN, fallen) * left);
   } else {
     // The splash, where it landed, for a moment after: not on the water (the water's rings are its splash) nor in a crown.
     float age = (fallen - drop) / uRainSplash;
@@ -266,8 +291,8 @@ void main() {
 
 /**
  * Rings on the water where the drops land (#11), for the water's shader: in cells keyed to the world, each now and then
- * a ring spreads from somewhere new and fades, and how many cells have one each time is how hard it rains (so a ring
- * starts or doesn't, never pops). Floodwater too. Needs NOISE; the uniforms are Rain's.
+ * a ring spreads from somewhere new and fades, and how many cells have one each time is how hard it rains (a ring
+ * fades as the rain changes, never pops). Floodwater too. Needs NOISE; the uniforms are Rain's.
  */
 export const RAIN_RINGS_GLSL = /* glsl */ `
 uniform vec4 uRings;     // x the share of cells with a ring each time, y the widest ring (m), z the line's width (m), w how strong
@@ -285,14 +310,17 @@ float rainRings(vec2 xz) {
     float h = hash12(c * 1.37 + 0.5);
     float beat = uTime * (0.9 + 0.5 * h) + h * 9.0;
     float k = floor(beat), life = fract(beat);
-    if (hash12(c * 3.1 + mod(k, 512.0) * 0.731) > uRings.x) continue;
+    // Whether this cell rings this time, faded over a band of the share rather than switched, so a ring already spreading
+    // as the rain eases off or sets in fades rather than blinks.
+    float on = clamp((uRings.x - hash12(c * 3.1 + mod(k, 512.0) * 0.731) * 0.85) / 0.15, 0.0, 1.0);
+    if (on <= 0.0) continue;
     vec2 r = hash22(c + mod(k, 512.0) * vec2(7.13, 3.71));
     vec2 centre = (c + 0.2 + 0.6 * r) * cell;
     float d = length(xz - centre), rad = life * uRings.y * (0.6 + 0.4 * r.x);
     float fade = (1.0 - life) * (1.0 - life) * smoothstep(0.0, 0.06, life);
     float ring = exp(-pow((d - rad) / w, 2.0)) * fade;
     float dot_ = exp(-pow(d / (w * 1.6), 2.0)) * (1.0 - smoothstep(0.0, 0.3, life));
-    sum += ring + dot_ * uRingsDot;
+    sum += (ring + dot_ * uRingsDot) * on;
   }
   return min(sum, 1.0) * uRings.w * far;
 }
@@ -323,8 +351,11 @@ float rainVeil(vec2 ndc, float depth) {
 }
 `;
 
-/** The drops: per drop, its rank and three random numbers; per corner, where on the stroke or the splash it is. */
-function dropsGeometry(count: number): THREE.InstancedBufferGeometry {
+/**
+ * The drops: per corner, where on the stroke or the splash it is. Which drop an instance is (its cell, its rank there,
+ * its random numbers) the vertex shader works out from the instance's number and the cells drawn.
+ */
+function dropsGeometry(): THREE.InstancedBufferGeometry {
   const g = new THREE.InstancedBufferGeometry();
   // The stroke's four corners, then the splash's.
   const corners = new Float32Array([-1, 0, 0, 1, 0, 0, -1, 1, 0, 1, 1, 0, -1, -1, 1, 1, -1, 1, -1, 1, 1, 1, 1, 1]);
@@ -332,11 +363,6 @@ function dropsGeometry(count: number): THREE.InstancedBufferGeometry {
   // three wants a position; the corners are all the vertex shader reads.
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(24), 3));
   g.setIndex([0, 1, 2, 2, 1, 3, 4, 5, 6, 6, 5, 7]);
-  const drops = new Float32Array(count * 4);
-  let s = 0x2545f491;
-  const rand = () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return (s >>> 0) / 4294967296; };
-  for (let i = 0; i < count; i++) drops.set([(i + 0.5) / count, rand(), rand(), rand()], i * 4);
-  g.setAttribute('aDrop', new THREE.InstancedBufferAttribute(drops, 4));
   g.instanceCount = 0;
   // Nothing to bound: an empty box, so the shelter map's bounds of the scene leave it out.
   g.boundingBox = new THREE.Box3();
@@ -347,6 +373,7 @@ function dropsGeometry(count: number): THREE.InstancedBufferGeometry {
 /** The rain as drawn: the drops' mesh, and the uniforms for the drops, the water's rings and the post pass's veil. */
 export class Rain {
   readonly uniforms = {
+    uRainCells: { value: new THREE.Vector4(0, 0, 1, 1) },
     uRain: { value: new THREE.Vector4(0, 0, 1, 8) },
     uRainStroke: { value: new THREE.Vector4() },
     uRainShape: { value: new THREE.Vector4() },
@@ -365,9 +392,12 @@ export class Rain {
   /** How far the rain has fallen (m), from which each drop's place in its fall is worked out. */
   private fallen = 0;
   private last = NaN;
+  private box = new THREE.Box3();
+  private corner = new THREE.Vector3();
+  private forward = new THREE.Vector3();
 
   constructor(shared: SharedUniforms, shelter: Record<string, THREE.IUniform>) {
-    const geometry = dropsGeometry(DROPS);
+    const geometry = dropsGeometry();
     const material = new THREE.ShaderMaterial({
       glslVersion: THREE.GLSL3,
       uniforms: { ...shared, ...shelter, ...this.uniforms },
@@ -392,37 +422,61 @@ export class Rain {
   /**
    * Each frame, before drawing: `rain` how hard it rains (0..1, eased), `zoom` the camera's (screen px a metre), `px`
    * the pixels drawn a screen pixel, `share` the quality's share of the drops, `shown` whether things in the air are
-   * drawn at all, and the wind as a whole (m/s, towards), with the camera's right in the world.
+   * drawn at all, the wind as a whole (m/s, towards), and the view's camera (as it is this frame) and the height of
+   * the land at its target.
    */
-  update(time: number, rain: number, zoom: number, px: number, share: number, shown: boolean, wind: THREE.Vector2, right: THREE.Vector3) {
+  update(time: number, rain: number, zoom: number, px: number, share: number, shown: boolean, wind: THREE.Vector2,
+    camera: THREE.OrthographicCamera, groundY: number) {
     const L = this.look, r = shown ? THREE.MathUtils.clamp(rain, 0, 1) : 0;
     const speed = THREE.MathUtils.lerp(L.speed[0], L.speed[1], r);
     const dt = time - this.last;
-    // A jump back or a long gap (a tool's frames, a paused tab): from the clock, so the same time draws the same rain.
-    this.fallen = dt >= 0 && dt <= 1 ? this.fallen + speed * dt : speed * time;
+    // On from where it was, a long gap (a paused tab) as a frame's worth. Back in time (a tool going back to draw a
+    // moment again) or the first frame: from the clock, so the same time draws the same rain however it was reached in
+    // steady rain (while the rain changes, how it got there counts: the tools draw their frames in a set order).
+    if (!(dt >= 0)) this.fallen = speed * time;
+    else this.fallen += speed * Math.min(dt, 0.1);
     this.last = time;
     const splash = L.splash[2] * (L.speed[0] + L.speed[1]) * 0.5;
     const cycle = COLUMN * 1.15 + Math.max(L.stroke[0] * 1.2, splash) + 1;
     // The screen holds about as many strokes at any zoom: fewer a square metre as the camera draws back. A shower
     // (0.6) shows most of a storm's strokes, so that it reads as rain: the count rises fastest in light rain.
     const perArea = L.density * r ** 0.6 * Math.min((zoom / REFERENCE_ZOOM) ** 2, 4) * share;
-    const shownShare = Math.min(1, (perArea * BOX * BOX) / DROPS);
+    const perCell = perArea * CELL * CELL;
+    // The cells to draw: the land the view sees, between the lowest land and the tops of the columns over the highest,
+    // and as far round it as the wind can slant a stroke (a drop landing out of sight can fall through the view).
     const u = this.uniforms;
-    u.uRain.value.set(shownShare, this.fallen % (cycle * 4096), cycle, speed);
+    const slant = Math.min(MAX_SLANT, (wind.length() / Math.max(speed, 1)) * L.slant * 1.5 + 0.1);
+    const box = this.box.makeEmpty();
+    const fwd = this.forward.set(0, 0, -1).transformDirection(camera.matrixWorld);
+    for (const y of [groundY - LAND_BELOW, groundY + LAND_ABOVE + COLUMN_TOP]) {
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const p = this.corner.set(sx, sy, 0).unproject(camera);
+        p.addScaledVector(fwd, (y - p.y) / fwd.y);
+        box.expandByPoint(p);
+      }
+    }
+    const pad = slant * (COLUMN_TOP + LAND_ABOVE) + 2;
+    const x0 = Math.floor((box.min.x - pad) / CELL), z0 = Math.floor((box.min.z - pad) / CELL);
+    const across = Math.floor((box.max.x + pad) / CELL) - x0 + 1, deep = Math.floor((box.max.z + pad) / CELL) - z0 + 1;
+    const cells = across * deep;
+    const slots = Math.min(Math.ceil(perCell), Math.floor(MAX_DROPS / cells));
+    u.uRainCells.value.set(x0, z0, across, cells);
+    u.uRain.value.set(perCell, this.fallen % (cycle * 4096), cycle, speed);
     u.uRainStroke.value.set(L.stroke[0], L.stroke[1] * Math.sqrt(zoom / REFERENCE_ZOOM) * px, L.stroke[2], L.stroke[3]);
     u.uRainShape.value.set(L.taper, L.slant, L.splash[0], L.splash[1]);
     u.uRainSplash.value = splash;
     const g = this.mesh.geometry as THREE.InstancedBufferGeometry;
-    g.instanceCount = Math.min(DROPS, Math.ceil(shownShare * DROPS) + 1);
-    this.mesh.visible = shownShare > 0;
+    g.instanceCount = cells * slots;
+    this.mesh.visible = slots > 0;
     // Rings: more of the cells ring as it rains harder.
     u.uRings.value.set(Math.min(1, r * 1.1), L.rings[0], L.rings[1], L.rings[2] * Math.min(1, 0.4 + r));
     u.uRingsDot.value = L.rings[3];
     // The veil: streaks falling down the screen as fast as the drops, slanted by the wind across it, and its sheets
     // drifting down slower. Offsets in the noise's cells, which repeat every FOG_NOISE_CELLS, so they wrap unseen.
     const v = this.veil;
-    const across = wind.x * right.x + wind.y * right.z, down = this.fallen * Math.cos(Math.PI / 6);
-    v.uRainVeil.value.set(L.veil[0] * r, (down / L.veil[2]) % FOG_NOISE_CELLS, (across * L.slant) / (speed * Math.cos(Math.PI / 6)), L.veil[3]);
+    const right = this.corner.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    const sideways = wind.x * right.x + wind.y * right.z, down = this.fallen * Math.cos(Math.PI / 6);
+    v.uRainVeil.value.set(L.veil[0] * r, (down / L.veil[2]) % FOG_NOISE_CELLS, (sideways * L.slant) / (speed * Math.cos(Math.PI / 6)), L.veil[3]);
     v.uRainVeilShape.value.set(L.veil[1], L.veil[2], L.veil[4], ((down * 0.25) / L.veil[4]) % FOG_NOISE_CELLS);
   }
 

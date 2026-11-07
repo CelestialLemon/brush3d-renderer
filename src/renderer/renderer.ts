@@ -852,7 +852,6 @@ export class BrushRenderer {
   }
   private cloudArea = false;
   private windNowVector = new THREE.Vector2();
-  private rightNow = new THREE.Vector3();
 
   render(time: number) {
     if (!this.look) throw new Error('setHour (or setLook) before render');
@@ -896,7 +895,7 @@ export class BrushRenderer {
     // The rain, with the weather as drawn and the view as it is now.
     this.rain.update(time, this.weather.rain, this.view.zoom, this.pixelRatio / this.screenRatio, this.settings.fallingShare,
       this.settings.falling && this.rainShown, this.windNowVector.copy(s.uWindDir.value).multiplyScalar(s.uWindSpeed.value),
-      this.rightNow.setFromMatrixColumn(cam.matrixWorld, 0).normalize());
+      cam, this.view.target.y);
     this.scene.updateMatrixWorld();
     for (const [mesh, twin] of this.twins) twin.matrixWorld.copy(mesh.matrixWorld);
     const gl = this.gl;
