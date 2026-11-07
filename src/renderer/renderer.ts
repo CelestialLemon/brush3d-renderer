@@ -12,6 +12,7 @@ import {
 } from './materials';
 import { fogNoiseTexture, litFog } from './fog';
 import { POST_FRAG, POST_VERT } from './post';
+import { Rain } from './rain';
 import { ShelterMap, type Cover } from './shelter';
 import type { PassTimer } from './timer';
 import { WeatherState, type Weather } from './weather';
@@ -69,13 +70,21 @@ export interface Settings {
    * Draw the things in the air (FALLING): off leaves them out, so the stability tools can measure the land under a storm.
    */
   falling: boolean;
+  /**
+   * The share of the falling strokes drawn (rain's, snow's to come): 1 at full quality, about a third reduced. It cuts how
+   * many there are, not their look.
+   */
+  fallingShare: number;
   /** Show the shelter map over the frame: what's under cover, and the map from above in the corner. */
   shelterDebug: boolean;
 }
 
-/** The kinds in the air, which settings.falling leaves out: the leaves the wind lifts (rain and snow to come).
- * Dust is drawn in the haze (post.ts), keyed to the world like a fog's patches, so it stays. */
-export const FALLING: readonly MaterialKind[] = ['debris'];
+/** What the renderer draws, by kind: the scene's materials, and the rain (rain.ts), which is the renderer's own. */
+export type DrawnKind = MaterialKind | 'rain';
+
+/** The kinds in the air, which settings.falling leaves out: the leaves the wind lifts and the rain, with its veil and
+ * rings (snow to come). Dust is drawn in the haze (post.ts), keyed to the world like a fog's patches, so it stays. */
+export const FALLING: readonly DrawnKind[] = ['debris', 'rain'];
 
 /** How a mesh takes part in the passes. */
 export interface MeshOptions {
@@ -116,7 +125,7 @@ export class BrushRenderer {
   readonly scene = new THREE.Scene();
   readonly view = new ViewCamera();
   readonly shared: SharedUniforms = createSharedUniforms();
-  readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true, falling: true, shelterDebug: false };
+  readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true, falling: true, fallingShare: 1, shelterDebug: false };
   width = 1; height = 1;
   /** Device pixels per CSS pixel asked for (see RendererOptions): the screen's pixels, which the zoom counts in. */
   readonly screenRatio: number;
@@ -182,6 +191,10 @@ export class BrushRenderer {
    * call shelter.changed() after moving cover; adding a mesh or showing or hiding a kind does it already.
    */
   readonly shelter: ShelterMap;
+  /** The falling rain (#11): its strokes, and the uniforms for its veil and the water's rings. */
+  readonly rain: Rain;
+  /** Whether the rain is shown (setVisible), apart from whether it's raining. */
+  private rainShown = true;
   /** The cloud field's shade over the land, drawn each frame the clouds move (#8). */
   readonly cloudMap: CloudMap;
   /** The cloud field again, coarser and further out: the sky the water and the solar glass mirror (MIRROR). */
@@ -212,6 +225,8 @@ export class BrushRenderer {
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
     });
     this.shelter = new ShelterMap(options.shelterSize ?? 1024);
+    this.rain = new Rain(this.shared, this.shelter.uniforms);
+    this.scene.add(this.rain.mesh);
     this.cloudMap = new CloudMap(this.shared);
     this.skyMap = new CloudMap({ uCloudMap: this.shared.uSkyMap, uCloudRect: this.shared.uSkyRect }, MIRROR.size);
     this.underTarget = half();
@@ -238,6 +253,7 @@ export class BrushRenderer {
         uShimmer: { value: new THREE.Vector2() },
         tDustA: { value: this.dust.a }, tDustB: { value: this.dust.b }, uDustBlend: { value: 0 },
         uDustGrid: { value: this.dust.grid }, uDustOn: { value: 0 }, uDustColor: { value: new THREE.Color() }, uDustReach: { value: 4.5 },
+        ...this.rain.veil,
       },
     });
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.post));
@@ -285,6 +301,8 @@ export class BrushRenderer {
         main: sceneMaterial(kind, this.shared), depth: depthMaterial(kind, this.shared),
         prepass: prepassMaterial(kind, this.shared), mirrorPrepass: prepassMaterial(kind, this.shared, true),
       };
+      // The rain's rings on the water, fewer under cover.
+      if (kind === 'water') Object.assign(m.main.uniforms, this.shelter.uniforms, this.rain.uniforms);
       this.materials.set(kind, m);
     }
     return m.main;
@@ -326,7 +344,8 @@ export class BrushRenderer {
     mesh.userData.reflect = options.reflect ?? kind !== 'water';
     mesh.userData.fields = options.fields;
     mesh.userData.cover = options.cover ?? (kind === 'ink' ? 'full' : kind === 'foliage' ? 'partial' : 'none');
-    if (mesh.userData.cover !== 'none') this.shelter.changed();
+    // (The ground too: the shelter's map of the land, where the rain lands.)
+    if (mesh.userData.cover !== 'none' || kind === 'ground') this.shelter.changed();
     if (kind === 'ground') this.cloudArea = false;
     this.scene.add(mesh);
     if (kind === 'ground') { this.setHazeGround(); this.land = null; }
@@ -351,7 +370,7 @@ export class BrushRenderer {
     this.casters = this.casters.filter((m) => m !== mesh);
     const i = this.twins.findIndex(([m]) => m === mesh);
     if (i >= 0) { this.silhouettes.remove(this.twins[i][1]); this.twins.splice(i, 1); }
-    if (mesh.userData.cover !== 'none') this.shelter.changed();
+    if (mesh.userData.cover !== 'none' || mesh.userData.kind === 'ground') this.shelter.changed();
     if (mesh.userData.kind === 'ground') { this.setHazeGround(); this.cloudArea = false; this.land = null; }
   }
 
@@ -452,7 +471,8 @@ export class BrushRenderer {
   }
 
   /** Shows or hides every mesh of a kind (for A/B comparisons). */
-  setVisible(kind: MaterialKind, visible: boolean) {
+  setVisible(kind: DrawnKind, visible: boolean) {
+    if (kind === 'rain') { this.rainShown = visible; return; }
     if (kind === 'water') {
       this.waterShown = visible;
       if (this.waterMesh) this.waterMesh.visible = visible && this.water.any;
@@ -461,7 +481,7 @@ export class BrushRenderer {
     for (const o of this.scene.children) {
       if (o.userData.kind !== kind || o.visible === visible) continue;
       o.visible = visible;
-      if (o.userData.cover !== 'none') this.shelter.changed();
+      if (o.userData.cover !== 'none' || kind === 'ground') this.shelter.changed();
     }
   }
 
@@ -653,6 +673,7 @@ export class BrushRenderer {
     u.tDustA.value = f.a; u.tDustB.value = f.b; u.uDustBlend.value = f.blend; u.uDustOn.value = f.any ? 1 : 0;
     u.uDustReach.value = f.look.top + 0.5;
     litFog(u.uDustColor.value, FRESH_DUST.clone().lerp(w.hazeColor, w.dust), s.uSunColor.value, s.uSkyColor.value);
+    this.rain.setVeilColor((out, base) => litFog(out, base, s.uSunColor.value, s.uSkyColor.value));
   }
 
   private updateSunCamera() {
@@ -787,8 +808,12 @@ export class BrushRenderer {
 
   /** Draws the shelter map: the cover meshes with their sun-shadow materials, from above, the wind stilled. */
   private drawShelter() {
+    // The roofs and crowns, and the land (the ground) for where the rain lands.
     const cover = this.scene.children.filter((o): o is THREE.Mesh => (o as THREE.Mesh).isMesh && o.userData.cover !== undefined)
-      .map((mesh) => ({ mesh, cover: mesh.userData.cover as Cover, depth: this.materials.get(mesh.userData.kind)!.depth }));
+      .map((mesh) => ({
+        mesh, cover: mesh.userData.kind === 'ground' ? 'land' as const : mesh.userData.cover as Cover,
+        depth: this.materials.get(mesh.userData.kind)!.depth,
+      }));
     const ground = this.scene.children.find((o) => o.userData.kind === 'ground' && o.userData.fields);
     const s = this.shared;
     this.shelter.draw(this.gl, this.scene, cover, ground?.userData.fields ?? null, () => {
@@ -826,6 +851,8 @@ export class BrushRenderer {
     this.skyMap.draw(this.gl, this.weather.clouds, this.cloudShape);
   }
   private cloudArea = false;
+  private windNowVector = new THREE.Vector2();
+  private rightNow = new THREE.Vector3();
 
   render(time: number) {
     if (!this.look) throw new Error('setHour (or setLook) before render');
@@ -866,6 +893,10 @@ export class BrushRenderer {
     pu.uCamRight.value.setFromMatrixColumn(cam.matrixWorld, 0).multiplyScalar(cam.right);
     pu.uCamUp.value.setFromMatrixColumn(cam.matrixWorld, 1).multiplyScalar(cam.top);
     pu.uCamFwd.value.setFromMatrixColumn(cam.matrixWorld, 2).negate();
+    // The rain, with the weather as drawn and the view as it is now.
+    this.rain.update(time, this.weather.rain, this.view.zoom, this.pixelRatio / this.screenRatio, this.settings.fallingShare,
+      this.settings.falling && this.rainShown, this.windNowVector.copy(s.uWindDir.value).multiplyScalar(s.uWindSpeed.value),
+      this.rightNow.setFromMatrixColumn(cam.matrixWorld, 0).normalize());
     this.scene.updateMatrixWorld();
     for (const [mesh, twin] of this.twins) twin.matrixWorld.copy(mesh.matrixWorld);
     const gl = this.gl;

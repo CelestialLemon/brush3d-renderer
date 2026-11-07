@@ -145,9 +145,10 @@ change, so it costs nothing measurable. With `sunUnder` 0 (the default) frames a
 
 ### The shelter map (#10)
 
-Two depth maps of the land from straight above, 1024² each (10 MB, with the byte a texel of colour a target must have):
-the highest roof over each point (the inked things, solar panels among them) and the highest crown (the leaves, drawn
-at rest). Rain and snow will stop at them (#11, #14).
+Three depth maps of the land from straight above, 1024² each (15 MB, with the byte a texel of colour a target must have):
+the highest roof over each point (the inked things, solar panels among them), the highest crown (the leaves, drawn
+at rest) and the ground itself, where a drop in the open lands (#11). Rain and snow stop at them (#11, #14). The third
+map adds the ground's draw to a redraw, a few hundred thousand triangles at most (the numbers below are from before it).
 Nothing in them moves, so they're drawn only when cover changes (a building placed or removed, a kind shown or hidden):
 **no cost on an ordinary frame**. RX 570, 1080p storm, GPU ms, the map drawn every frame to time it
 (`1080p storm, shelter every frame` in `node tools/profile.ts` and `?profile`):
@@ -172,6 +173,19 @@ desktop's CPU (a run of one colour, a tuft's blades, is turned once), and the me
 the game sent them are kept beside them (12 bytes a vertex, about 18 MB on the farm), only once a season has been set.
 Crawl (`AB=2 tools/motion.ts`, farm noon) is the same in every season as today's (soft 0.50 to 0.55, 0.53 today), and no
 pops in a gale (`tools/pops.ts`, 0 patches).
+
+### Falling rain (#11)
+
+The budget's 1.5 ms line. The strokes are one instanced draw in the main view (up to 32,768 drops, a quad each for the
+stroke and its splash), see-through paint into the colour target that leaves the depth and normals alone, so the post
+pass draws no ink lines round them and needs nothing new; the veil and the rings are a few lines more in the post pass and
+the water's shader. Not in the shadow, reflection, under-water or silhouette passes. How many drops are drawn follows how
+hard it rains and the zoom (about as many strokes on screen at any zoom), and `settings.fallingShare` cuts it (the
+quality knob: 1 full, about a third reduced) without changing a stroke's look. On the MacBook Air (M4, uncapped frame,
+the farm at 1080p in a storm, look A): 18.68 ms with the rain against 18.83 without, inside the noise. Still to read on the
+laptop: `?profile&weather=storm` on the PR's preview, the `no rain` line.
+Crawl (`AB=2 tools/motion.ts`, the farm in a storm, 1 px pan): the same with the rain and without (soft 0.169 both); pops
+in a gale at the shed (`tools/pops.ts`): 0 patches.
 
 ### Mist and fog (#9)
 
