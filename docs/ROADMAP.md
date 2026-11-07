@@ -182,7 +182,8 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   reeds, and the leaves of flowers and garden plants take the season's colour, turned once per level (a hue shift within
   a green window, so earths, crops and flowers keep theirs; `MeshOptions.seasonal`); the season's light is a base coat on
   the hour's look; the game's character words shift the grass (a dry summer golden, a wet one lusher, a hard winter
-  drabber). Candidates `?seasonLook=a|b` and `?winterGrass=pale|straw`. The demo's scenes stand in for the game's crops by
+  drabber). The developer's picks (2026-11-07): the look near the game's turf with a gentle light (not the bolder painted
+  one), winter's grass a dormant straw-olive (not bleached pale, which read as frost). The demo's scenes stand in for the game's crops by
   season (young, ripe, stubble, ploughed; the wildflowers thinning out; the lavender in flower only in summer).
 
 ### Motion and stability

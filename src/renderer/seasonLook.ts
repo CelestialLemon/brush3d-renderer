@@ -12,9 +12,9 @@ import type { Character, Season, SeasonSettings } from './season';
 // - The light is a tint on the hour's look by day (its sun, sky, rim and haze multiplied, its shade's and lit band's hues
 //   leaned), so dawn stays pink and golden hour gold in every season, and the night is the same moonlight.
 //
-// Candidates for the developer (#13), switched by SEASON_PICK: 'a' close to Soil-n-Silo's seasonal turf, gentle light;
-// 'b' painted, bolder colour and light. Winter's grass, either: 'pale' (bleached, near the game's frost-pale turf) or
-// 'straw' (dormant straw-olive, for #14's frost to whiten).
+// The developer's picks (#13, 2026-11-07), from two looks and two winter grasses: the look close to Soil-n-Silo's seasonal
+// turf with a gentle light (the other was painted, bolder), so the weather has room on top; winter's grass dormant
+// straw-olive (the other was bleached pale, which read as frost on a clear day: #14's frost whitens it).
 
 /**
  * How the season turns a green, in OKLab (lightness 0..1, chroma, hue in degrees): its hue shifted by `shift` (towards gold
@@ -29,55 +29,29 @@ interface Light {
   sun: [number, number, number]; sky: [number, number, number]; haze: [number, number, number];
   shadeHue: number; shadeTurn: number; shadeDepth: number; litLean: number; hazeDensity: number; saturation: number;
 }
-export interface SeasonRecipe { turn: Record<Season, Turn>; light: Record<Season, Light> }
-
 const NONE: Turn = { shift: 0, chroma: 1, light: 0 };
 const PLAIN: Light = { sun: [1, 1, 1], sky: [1, 1, 1], haze: [1, 1, 1], shadeHue: 215, shadeTurn: 0, shadeDepth: 0, litLean: 1, hazeDensity: 1, saturation: 1 };
 
-/** The candidates (see the header). Summer's colours are the scenes' own. */
-export const SEASON_LOOKS: Record<'a' | 'b', SeasonRecipe> = {
-  // Close to the game's turf (Soil-n-Silo's ground.ts), as it turns from its summer's: spring's about 10° greener and 15%
-  // richer, autumn's 17° to gold, 30% duller and a little darker. A gentle light.
-  a: {
-    turn: {
-      spring: { shift: 9, chroma: 1.13, light: 0.015 },
-      summer: NONE,
-      autumn: { shift: -19, chroma: 0.7, light: -0.03 },
-      winter: NONE, // WINTER_GRASS
-    },
-    light: {
-      spring: { ...PLAIN, sun: [0.99, 1, 1.02], haze: [0.97, 1, 1.02], shadeHue: 205, shadeTurn: 0.15, hazeDensity: 0.85, saturation: 1.03 },
-      summer: { ...PLAIN, sun: [1.02, 1, 0.97], haze: [1.03, 1, 0.95], litLean: 1.15, hazeDensity: 1.1 },
-      autumn: { ...PLAIN, sun: [1.04, 0.99, 0.9], haze: [1.05, 0.99, 0.9], shadeHue: 285, shadeTurn: 0.15, litLean: 1.3, hazeDensity: 1.15 },
-      winter: { ...PLAIN, sun: [0.96, 0.99, 1.06], sky: [0.96, 0.99, 1.06], haze: [0.95, 0.99, 1.07], shadeHue: 255, shadeTurn: 0.3, shadeDepth: 0.02, litLean: 0.6, saturation: 0.94 },
-    },
-  },
-  // Painted: each season's colour and light pushed further.
-  b: {
-    turn: {
-      spring: { shift: 13, chroma: 1.24, light: 0.03 },
-      summer: { shift: -6, chroma: 1.02, light: 0.01 },
-      autumn: { shift: -32, chroma: 0.85, light: -0.02 },
-      winter: NONE,
-    },
-    light: {
-      spring: { ...PLAIN, sun: [0.98, 1, 1.03], sky: [0.98, 1.01, 1.02], haze: [0.94, 1.01, 1.03], shadeHue: 200, shadeTurn: 0.3, hazeDensity: 0.75, saturation: 1.07 },
-      summer: { ...PLAIN, sun: [1.04, 1, 0.94], haze: [1.06, 1, 0.9], shadeHue: 225, shadeTurn: 0.1, litLean: 1.3, hazeDensity: 1.2, saturation: 1.02 },
-      autumn: { ...PLAIN, sun: [1.08, 0.98, 0.84], sky: [1.03, 0.99, 0.95], haze: [1.1, 0.98, 0.82], shadeHue: 290, shadeTurn: 0.3, shadeDepth: 0.02, litLean: 1.6, hazeDensity: 1.3, saturation: 1.05 },
-      winter: { ...PLAIN, sun: [0.93, 0.98, 1.1], sky: [0.92, 0.98, 1.12], haze: [0.9, 0.98, 1.12], shadeHue: 260, shadeTurn: 0.5, shadeDepth: 0.04, litLean: 0.4, hazeDensity: 0.9, saturation: 0.9 },
-    },
-  },
+/**
+ * How each season turns the greens, from summer's (the scenes' own). Close to the game's turf (Soil-n-Silo's ground.ts), as
+ * it turns from its summer's: spring's about 10° greener and 15% richer, autumn's 17° to gold, 30% duller and a little
+ * darker; winter's dormant straw-olive, 30° to gold, its chroma half.
+ */
+const TURN: Record<Season, Turn> = {
+  spring: { shift: 9, chroma: 1.13, light: 0.015 },
+  summer: NONE,
+  autumn: { shift: -19, chroma: 0.7, light: -0.03 },
+  winter: { shift: -30, chroma: 0.52, light: 0.02 },
 };
 
-/** Winter's grass, the candidates (#13): bleached pale (the game's winter turf: its chroma a third, 0.1 lighter), or
- * dormant straw-olive. */
-export const WINTER_GRASS: Record<'pale' | 'straw', Turn> = {
-  pale: { shift: -4, chroma: 0.32, light: 0.1 },
-  straw: { shift: -30, chroma: 0.52, light: 0.02 },
+/** Each season's light, a gentle tint: spring's fresh and clear, summer's warm and hazy, autumn's gold with violet shade,
+ * winter's cool and pale. */
+const LIGHT: Record<Season, Light> = {
+  spring: { ...PLAIN, sun: [0.99, 1, 1.02], haze: [0.97, 1, 1.02], shadeHue: 205, shadeTurn: 0.15, hazeDensity: 0.85, saturation: 1.03 },
+  summer: { ...PLAIN, sun: [1.02, 1, 0.97], haze: [1.03, 1, 0.95], litLean: 1.15, hazeDensity: 1.1 },
+  autumn: { ...PLAIN, sun: [1.04, 0.99, 0.9], haze: [1.05, 0.99, 0.9], shadeHue: 285, shadeTurn: 0.15, litLean: 1.3, hazeDensity: 1.15 },
+  winter: { ...PLAIN, sun: [0.96, 0.99, 1.06], sky: [0.96, 0.99, 1.06], haze: [0.95, 0.99, 1.07], shadeHue: 255, shadeTurn: 0.3, shadeDepth: 0.02, litLean: 0.6, saturation: 0.94 },
 };
-
-/** Which candidates are drawn: the demo's switch until the developer picks (then the rest come out). */
-export const SEASON_PICK: { look: keyof typeof SEASON_LOOKS; winterGrass: keyof typeof WINTER_GRASS } = { look: 'a', winterGrass: 'straw' };
 
 /**
  * How a character shifts the turn (the game's words): a dry or hot season parches the grass towards gold (a summer's most),
@@ -96,11 +70,9 @@ function withCharacter(t: Turn, season: Season, c: Character | null | undefined)
   }
 }
 
-/** The turn the season gives greens, by the picked candidates. */
+/** The turn the season gives greens. */
 export function seasonTurn(s: SeasonSettings | null): Turn {
-  if (!s) return NONE;
-  const base = s.season === 'winter' ? WINTER_GRASS[SEASON_PICK.winterGrass] : SEASON_LOOKS[SEASON_PICK.look].turn[s.season];
-  return withCharacter(base, s.season, s.character);
+  return s ? withCharacter(TURN[s.season], s.season, s.character) : NONE;
 }
 
 const smooth = THREE.MathUtils.smoothstep;
@@ -158,7 +130,7 @@ const leanAngle = (a: number, b: number, t: number) => a + ((((b - a) % 360) + 5
 /** The hour's look with the season's light laid on it, by day (the night's moonlight is every season's). */
 export function seasonLight(look: Look, s: SeasonSettings | null): Look {
   if (!s) return look;
-  const k = SEASON_LOOKS[SEASON_PICK.look].light[s.season], w = 1 - look.night;
+  const k = LIGHT[s.season], w = 1 - look.night;
   if (w <= 0) return look;
   tint(look.sunColor, k.sun, w); tint(look.rimColor, k.sun, w); tint(look.skyColor, k.sky, w); tint(look.hazeColor, k.haze, w);
   tint(look.skyTop, k.sky, w); tint(look.skyBottom, k.haze, w);
