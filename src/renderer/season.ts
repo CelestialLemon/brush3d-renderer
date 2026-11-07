@@ -41,17 +41,11 @@ export const SEASON_SUN: Record<Season, { sunrise: number; sunset: number }> = {
 
 /**
  * How high the sun climbs at noon, degrees. Summer's is the hour's looks' own (look.ts); spring and autumn are a
- * temperate equinox's. Winter's is a choice between candidates (WINTER_SUN), set by the demo until the developer picks.
+ * temperate equinox's. Winter's is the developer's pick (#13, 2026-11-07) from 18° (a real northern winter's, about
+ * 50°N), 25° and 32°: low enough that shadows stay long all day, about twice as long as things are tall at noon,
+ * without the day looking like dusk.
  */
-export const SUN_HEIGHT: Record<Season, number> = { spring: 45, summer: 58, autumn: 45, winter: 25 };
-
-/**
- * The winter sun's height at noon, candidates for the developer (#13): "low" is a real northern winter's (about 50°N),
- * shadows two to three times as long as things are tall all day; "mid" between; "gentle" keeps a little of the day's
- * height, shadows under twice as long.
- */
-export const WINTER_SUN = { low: 18, mid: 25, gentle: 32 } as const;
-export type WinterSun = keyof typeof WINTER_SUN;
+export const SUN_HEIGHT: Readonly<Record<Season, number>> = { spring: 45, summer: 58, autumn: 45, winter: 25 };
 
 /**
  * How far the sun's bearing swings from noon's over the day, of summer's: a winter sun rises and sets nearer the south,

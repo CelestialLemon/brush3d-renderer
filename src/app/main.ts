@@ -1,5 +1,5 @@
 import { hoursOf, type HourName } from '../renderer/look';
-import { CHARACTERS, clockHour, SEASONS, SUN_HEIGHT, WINTER_SUN, type Character, type Season, type WinterSun } from '../renderer/season';
+import { CHARACTERS, clockHour, SEASONS, type Character, type Season } from '../renderer/season';
 import { BrushRenderer } from '../renderer/renderer';
 import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
@@ -20,7 +20,6 @@ import { WindView } from './windView';
 //   hour=0..24 (the game's clock), or dawn|noon|golden|sunset|night (that look in the season's day)
 //   season=spring|summer|autumn|winter (#13; none by default: the looks' own day, sun up 6 to 20)  character (the
 //     game's: mild|wet|dry|hot|gales|stormy|hard|highRiver)  sunrise, sunset (the game's clock hours; the season's by default)
-//   winterSun=low|mid|gentle (the winter sun's height at noon, candidates for #13: 18°, 25°, 32°; mid by default)
 //   scene=farm|meadow  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   rhythm (how the gusts come: 0 rare and strong, 1 frequent and mild)  windMap (the living wind from above, #36)
@@ -106,9 +105,7 @@ const bakeName = (kind: keyof typeof bakes) => (bakes[kind] ? `baked ${bakes[kin
 const seasonParam = params.get('season'), characterParam = params.get('character');
 let season: Season | null = SEASONS.includes(seasonParam as Season) ? seasonParam as Season : null;
 const character: Character | null = CHARACTERS.includes(characterParam as Character) ? characterParam as Character : null;
-let winterSun: WinterSun = (params.get('winterSun') ?? '') in WINTER_SUN ? params.get('winterSun') as WinterSun : 'mid';
 function sendSeason() {
-  SUN_HEIGHT.winter = WINTER_SUN[winterSun];
   if (!season) return;
   renderer.setSeason({
     season, character,
@@ -290,16 +287,6 @@ function hud() {
   };
   seasons.onkeydown = (e) => e.stopPropagation();
   hudEl.append(Object.assign(document.createElement('label'), { textContent: 'Season' }), seasons);
-  const sun = Object.assign(document.createElement('button'), { textContent: `winter sun: ${winterSun}` });
-  sun.title = 'The winter sun\'s height at noon (#13 candidates): low 18° (a real northern winter), mid 25°, gentle 32°';
-  sun.onclick = () => {
-    const names = Object.keys(WINTER_SUN) as WinterSun[], was = namedHour();
-    winterSun = names[(names.indexOf(winterSun) + 1) % names.length];
-    sendSeason();
-    if (was) hour = hoursOf(renderer.day)[was];
-    hud();
-  };
-  hudEl.append(sun);
   const at = Object.assign(document.createElement('span'), { textContent: `${clock(hour)} · sun ${clock(renderer.day.sunrise)}–${clock(renderer.day.sunset)}` });
   hudEl.append(at);
   const lines = document.createElement('button');

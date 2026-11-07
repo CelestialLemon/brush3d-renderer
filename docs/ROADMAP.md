@@ -176,7 +176,7 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   `renderer.setHour(hour)` each frame. The hour's looks follow the game's sun (`src/renderer/season.ts`): its clock is
   mapped onto the looks' own day (sun up 6 to 20), sunrise to sunrise, the middle of the game's day to noon, sunset to
   sunset, the twilights keeping their hours. The sun is lowered to the season's noon height (summer 58°, spring and autumn
-  45°, winter's candidates 18°, 25° and 32°, `?winterSun=low|mid|gentle`), least near the horizon so dawn and golden hour
+  45°, winter 25°, the developer's pick of 18°, 25° and 32°), least near the horizon so dawn and golden hour
   keep their light, and a winter sun's path is shorter. With no season set the frames are main's. Part 2, the season's
   look for everything but the trees, is next.
 
