@@ -119,12 +119,14 @@ vec2 screenOf(vec3 p, out float z) {
 }
 // Where a drop falling down its slanted path (at height y it is over g - slant (y - base)) from \`top\` first meets the
 // cover a map holds: stepping down the path to the first point under the cover, then halving the step between it and
-// the last point over it. Straight down, one look. Far below the land if it meets none.
+// the last point over it. The steps are about a metre apart across the land (so a panel's edge isn't stepped over) and
+// two up and down; straight down, one look. Far below the land if it meets none.
 float coverAlong(highp sampler2D map, vec2 g, vec2 slant, float base, float top) {
   if (dot(slant, slant) < 1e-4) return shelterHeightIn(map, vec3(g.x, 0.0, g.y));
   float over = top;
-  for (int i = 0; i <= 8; i++) {
-    float y = mix(top, base, float(i) / 8.0);
+  int steps = int(clamp(ceil((top - base) * max(length(slant), 0.5)), 8.0, 24.0));
+  for (int i = 0; i <= steps; i++) {
+    float y = mix(top, base, float(i) / float(steps));
     vec2 at = g - slant * (y - base);
     if (shelterHeightIn(map, vec3(at.x, 0.0, at.y)) < y) { over = y; continue; }
     if (i == 0) return top;
@@ -158,21 +160,22 @@ void main() {
   // Slanted by the wind where it lands: blown along at the wind's speed as it falls.
   vec2 slant = windGround(g) / max(uRain.w, 1.0) * uRainShape.y;
   slant *= min(1.0, ${MAX_SLANT.toFixed(2)} / max(length(slant), 1e-4));
-  // Off the screen: nothing to do.
-  float z0, z1;
-  vec2 s0 = screenOf(vec3(g.x, uViewTarget.y - 20.0, g.y), z0);
-  vec2 top0 = g - slant * (COLUMN + 30.0);
-  vec2 s1 = screenOf(vec3(top0.x, uViewTarget.y + COLUMN + 20.0, top0.y), z1);
-  if (any(greaterThan(min(s0, s1), vec2(1.1))) || any(lessThan(max(s0, s1), vec2(-1.1)))) return;
-
-  // Where it stops: the land, or the water over it, or a roof, or (some of the time) a crown.
+  // Where it would stop in the open: the land, or the water over it.
   float land = landTop(vec3(g.x, 0.0, g.y));
   if (land < -1e3) return;
   vec3 sheet = waterSheet(g);
   bool wet = sheet.z > -${(HIDDEN_DIVE * 0.5).toFixed(3)} && sheet.x > land;
   float base = wet ? sheet.x : land;
-  float stop = base;
   float top = base + COLUMN * (0.85 + 0.3 * fract(rnd.y * 5.13));
+  // Off the screen, its whole path (a straight line, so between its ends): nothing more to do.
+  float z0, z1;
+  vec2 s0 = screenOf(vec3(g.x, base, g.y), z0);
+  vec2 top0 = g - slant * (top - base);
+  vec2 s1 = screenOf(vec3(top0.x, top, top0.y), z1);
+  if (any(greaterThan(min(s0, s1), vec2(1.05))) || any(lessThan(max(s0, s1), vec2(-1.05)))) return;
+
+  // Where it stops: there, or a roof, or (some of the time) a crown, along the way.
+  float stop = base;
   float roof = coverAlong(uShelterFull, g, slant, base, top);
   if (roof > stop) { stop = roof; wet = false; }
   bool caught = false;
