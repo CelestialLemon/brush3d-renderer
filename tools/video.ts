@@ -13,7 +13,8 @@
 //   stream-usual (the farm's stream close, in spate and as usual: the flow carrying the ripples), sunset and sunrise (the
 //   hour running from 16:00 past sunset, or from before dawn to 9:00, the camera still: QUERY="cloud=1&sunUnder=1" for the low sun
 //   under a cloud deck, #8; in a season, QUERY="season=winter", the same stretch of its day, #13), day (first light to
-//   dusk, the camera still and wide: QUERY="season=winter" for the season's day, #13)
+//   dusk, the camera still and wide: QUERY="season=winter" for the season's day, #13), lightning (strikes then distant
+//   flickers: QUERY="weather=storm&flashLook=b&flashes=gentle", #12)
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
 // tools/browser.ts for the rest.
@@ -38,6 +39,8 @@ interface Move {
   water?: (t: number) => { rise?: number; flow?: number; mud?: number };
   /** The hour, if it moves: on the reference day (16 to 20.5 for a sunset), drawn at that point of the season's day. */
   hour?: (t: number) => number;
+  /** Lightning, standing in for the game (#12): strikes as [time, x, z] and distant flickers' times. */
+  lightning?: { strikes?: [number, number, number][]; flickers?: number[] };
 }
 /** The game's updates: a few a second (src/app/timeline.ts), so the weather comes in steps the renderer eases over. */
 const tick = (t: number) => Math.floor(t * 4) / 4;
@@ -93,6 +96,12 @@ const MOVES: Record<string, Move> = {
   // A whole day, first light to dusk, the camera still and wide: in a season (QUERY="season=winter", #13) the sun's path
   // and its height as the hour's looks follow the game's sunrise and sunset.
   day: { seconds: 24, at: () => ({ x: -1, z: 4, zoom: 20, view: 0 }), hour: (t) => 5.2 + (16.3 * t) / 24, extra: true },
+  // Lightning (#12): a few strikes over the farm, then distant flickers; the look and the setting by QUERY's flashLook,
+  // boltLook, glowLook, farLook and flashes, the storm by QUERY="weather=storm".
+  lightning: {
+    seconds: 9, at: () => ({ x: -1, z: 4, zoom: 32, view: 0 }), extra: true,
+    lightning: { strikes: [[0.8, 5, 2], [2.6, -8, -4], [3.1, 2, 9], [4.8, -3, 1]], flickers: [6.1, 7.4, 8.1] },
+  },
   'stream-usual': { seconds: 8, at: () => ({ x: -14, z: 20, zoom: 64, view: 0 }), water: () => ({ rise: 0, flow: 1, mud: 0 }), extra: true },
 };
 
@@ -122,6 +131,15 @@ try {
       const wind = move.wind ? { speed: move.wind(t) } : i === 0 ? {} : undefined;
       const weather = move.cloud ? { cloud: move.cloud(t) } : i === 0 && !move.timeline ? {} : undefined;
       const water = move.water?.(t);
+      // Lightning runs on real seconds: here the frame's, so the video's flashes are at the right moments.
+      const bolts = move.lightning?.strikes?.filter(([at]) => at >= t && at < t + 1 / FPS).map(([, x, z]) => ({ x, z })) ?? [];
+      const flickers = move.lightning?.flickers?.filter((at) => at >= t && at < t + 1 / FPS).length ?? 0;
+      await page.evaluate((now, bolts, flickers) => {
+        const r = (window as any).__renderer;
+        r.lightning.clock = () => now;
+        for (const b of bolts) r.strike(b);
+        for (let n = 0; n < flickers; n++) r.flicker();
+      }, 1000 + t, bolts, flickers);
       const png = await page.evaluate(async (cam, time, wind, weather, timeline, ease, water, hour) => {
         await (window as any).__draw(cam, { time, wind, weather, timeline, ease, water, dayHour: hour });
         return document.querySelector('canvas')!.toDataURL('image/png');

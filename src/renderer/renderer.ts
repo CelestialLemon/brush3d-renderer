@@ -12,6 +12,7 @@ import {
 } from './materials';
 import { fogNoiseTexture, litFog } from './fog';
 import { POST_FRAG, POST_VERT } from './post';
+import { Lightning, type Flicker, type Strike } from './lightning';
 import { Rain } from './rain';
 import { ShelterMap, type Cover } from './shelter';
 import type { PassTimer } from './timer';
@@ -193,6 +194,8 @@ export class BrushRenderer {
   readonly shelter: ShelterMap;
   /** The falling rain (#11): its strokes, and the uniforms for its veil and the water's rings. */
   readonly rain: Rain;
+  /** Lightning (#12): the game says where and when (strike, flicker); the player's flash setting is lightning.setting. */
+  readonly lightning = new Lightning();
   /** Whether the rain is shown (setVisible), apart from whether it's raining. */
   private rainShown = true;
   /** The cloud field's shade over the land, drawn each frame the clouds move (#8). */
@@ -254,6 +257,7 @@ export class BrushRenderer {
         tDustA: { value: this.dust.a }, tDustB: { value: this.dust.b }, uDustBlend: { value: 0 },
         uDustGrid: { value: this.dust.grid }, uDustOn: { value: 0 }, uDustColor: { value: new THREE.Color() }, uDustReach: { value: 4.5 },
         ...this.rain.veil,
+        ...this.lightning.post, uShadowMap: this.shared.uShadowMap, uShadowMatrix: this.shared.uShadowMatrix,
       },
     });
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.post));
@@ -292,6 +296,18 @@ export class BrushRenderer {
    * game's updates; 'immediate' puts them there at once (a level loading, a screenshot).
    */
   setWeather(weather: Weather, immediate = false) { this.weather.set(weather, immediate); }
+
+  /**
+   * A lightning strike where the game says, now (#12): a bolt, a flash of the whole picture (within the flash limits,
+   * whatever the game asks: see lightning.ts) and a glow where it landed. The land's height unless y is given.
+   */
+  strike(strike: Strike) {
+    const land = (this.land ??= LandHeights.from(this.scene)) ?? LandHeights.FLAT;
+    this.lightning.strike(strike, (x, z) => land.at(x, z), this.view.target, this.view.heading);
+  }
+
+  /** Distant lightning, now (#12): the scene softly lit, no bolt. The game calls each one. */
+  flicker(flicker?: Flicker) { this.lightning.flicker(flicker); }
 
   /** The shared material of a kind (one per renderer, so meshes of a kind batch their state). */
   material(kind: MaterialKind) {
@@ -642,6 +658,9 @@ export class BrushRenderer {
     s.uCloudLit.value.copy(look.skyBottom).lerp(warm, 0.7 * THREE.MathUtils.lerp(0.15, 1, dim));
     s.uSkyClosed.value = gap;
     u.uExposure.value = grade.exposure; u.uSaturation.value = grade.saturation; u.uNightShift.value = grade.nightShift; u.uShadeHue.value = rad(grade.shadeHue);
+    // Lightning, over the hour and the weather (and before the fog takes its colour from the light).
+    this.lightning.light(s);
+    if (this.lightning.aiming) this.shadowDir.copy(this.lightning.boltLight);
     this.applyFog();
     u.uShimmer.value.set(heatShare(look, w.heat) * HEAT.shimmer, this.shared.uTime.value);
     this.updateSunCamera();
@@ -735,8 +754,11 @@ export class BrushRenderer {
     // steps of 8 m, but shrinks only when well too big: the land under a pan changes what's needed a little, and every
     // change of size moves every texel, so it mustn't flick back and forth.
     const size = (have: number, need: number) => need > have || need < have - 16 ? Math.ceil(need / 8) * 8 : have;
-    const w = (this.shadowSize[0] = size(this.shadowSize[0], x1 - x0 + 6));
-    const h = (this.shadowSize[1] = size(this.shadowSize[1], y1 - y0 + 6));
+    // A flash aimed at the bolt keeps its own, so the sun's shadow comes back to exactly where it was.
+    const aimed = this.lightning.aiming, held = aimed ? this.flashShadowSize : this.shadowSize;
+    if (!aimed) this.flashShadowSize = [0, 0];
+    const w = (held[0] = size(held[0], x1 - x0 + 6));
+    const h = (held[1] = size(held[1], y1 - y0 + 6));
     const tx = w / this.shadowTarget.width, ty = h / this.shadowTarget.height;
     c.left = Math.round(((x0 + x1) / 2 - w / 2) / tx) * tx; c.right = c.left + w;
     c.bottom = Math.round(((y0 + y1) / 2 - h / 2) / ty) * ty; c.top = c.bottom + h;
@@ -745,6 +767,7 @@ export class BrushRenderer {
   private land: LandHeights | null = null;
   /** The shadow window's size across and up the map (metres), held between frames (followView). */
   private shadowSize: [number, number] = [0, 0];
+  private flashShadowSize: [number, number] = [0, 0];
   /** Where the shadows fall from: the sun, turned towards overhead under cloud. */
   private shadowDir = new THREE.Vector3(0, 1, 0);
 
@@ -852,6 +875,7 @@ export class BrushRenderer {
   }
   private cloudArea = false;
   private windNowVector = new THREE.Vector2();
+  private lightningCompiled = false;
 
   render(time: number) {
     if (!this.look) throw new Error('setHour (or setLook) before render');
@@ -874,6 +898,10 @@ export class BrushRenderer {
     if (this.water.settle(time) && this.waterMesh) this.waterMesh.visible = false;
     s.uMirrorY.value = this.water.mirror;
     s.uWaterHigh.value = this.water.any ? this.water.wetHigh : -1e6;
+    // The land's height, known before a strike is asked for (see strike): worked out on the first frame, not during one.
+    this.land ??= LandHeights.from(this.scene);
+    if (!this.lightningCompiled) { this.lightning.precompile(this.gl, this.view.camera); this.lightningCompiled = true; }
+    this.lightning.update(this.view.target, this.view.zoom, this.width, this.height, this.gbuffer.textures[1]);
     this.applyLook(this.look);
     const grounded: THREE.Object3D[] = [];
     if (!this.settings.falling) {
@@ -981,6 +1009,8 @@ export class BrushRenderer {
     u.uLineWidth.value = THREE.MathUtils.clamp(0.6 + this.view.zoom / 48, 0.8, 2.2) * this.pixelRatio * 0.75;
     gl.render(this.postScene, this.postCamera);
     if (this.settings.shelterDebug) this.shelter.drawOverlay(gl, this.gbuffer.textures[1], this.view.camera, this.width, this.height);
+    t?.mark('bolt', this.lightning.active);
+    this.lightning.draw(gl, cam, u.uHazeColor.value);
     for (const o of grounded) o.visible = true;
     t?.endFrame();
   }

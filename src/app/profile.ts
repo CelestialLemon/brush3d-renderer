@@ -18,6 +18,8 @@ export interface ProfileCase {
   shelter?: boolean;
   /** The weather, if not the demo's. */
   weather?: Weather;
+  /** Hold a strike at its brightest in every frame (#12): the cost of a flash, a bolt and a glow together. */
+  lightning?: boolean;
 }
 export interface ProfileRow {
   label: string; width: number; height: number;
@@ -29,7 +31,7 @@ export interface ProfileRow {
   uncapped: number;
 }
 
-export const PASSES = ['setup', 'shelter', 'clouds', 'shadow', 'under', 'reflect', 'main', 'post'];
+export const PASSES = ['setup', 'shelter', 'clouds', 'shadow', 'under', 'reflect', 'main', 'post', 'bolt'];
 const KINDS: DrawnKind[] = ['ground', 'paint', 'grass', 'foliage', 'crop', 'ink', 'water', 'debris', 'rain'];
 const STORM = WIND_SCALE.storm;
 
@@ -43,6 +45,7 @@ export function defaultCases(): ProfileCase[] {
   }
   for (const k of KINDS) cases.push({ label: `1080p storm, no ${k}`, width: 1920, height: 1080, wind: STORM, hide: [k] });
   cases.push({ label: '1080p storm, shelter every frame', width: 1920, height: 1080, wind: STORM, shelter: true });
+  cases.push({ label: '1080p storm, a strike at its brightest', width: 1920, height: 1080, wind: STORM, lightning: true });
   cases.push({ label: '1080p storm, fog', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS.fog });
   cases.push({ label: '1080p storm, dust', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS.dust });
   cases.push({ label: '1080p storm, heat wave', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS['heat-wave'] });
@@ -79,6 +82,8 @@ export async function runProfile(
       const wind = steadyWind(c.wind, (31 * Math.PI) / 180);
       renderer.setWind(wind, wind, 0);
       for (const k of KINDS) renderer.setVisible(k, !c.hide?.includes(k));
+      const clock = renderer.lightning.clock;
+      if (c.lightning) { renderer.lightning.clock = () => 0.02; renderer.strike({ x: renderer.view.target.x, z: renderer.view.target.z, seed: 7 }); }
       const frame = (t: number) => { if (c.shelter) renderer.shelter.changed(); draw(t); };
       // Warm up: shaders, the new targets' memory, the GPU's clocks.
       for (let f = 0; f < 20; f++) { frame((time += 1 / 60)); if (f % 5 === 4) { sync(); await nextFrame(); } }
@@ -104,6 +109,7 @@ export async function runProfile(
       for (let f = 0; f < n; f++) frame((time += 1 / 60));
       sync();
       const row: ProfileRow = { label: c.label, width: c.width, height: c.height, gpu, cpu, uncapped: (performance.now() - start) / n };
+      renderer.lightning.clock = clock;
       rows.push(row);
       progress(row, i);
     }

@@ -1,6 +1,7 @@
 import { hoursOf, type HourName } from '../renderer/look';
 import { CHARACTERS, clockHour, SEASONS, type Character, type Season } from '../renderer/season';
 import { BrushRenderer, type DrawnKind } from '../renderer/renderer';
+import { lightningHud, setupLightning } from './lightning';
 import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
@@ -105,6 +106,7 @@ renderer.settings.prepass = num('prepass', 1) !== 0;
 renderer.settings.waterScissor = num('scissor', 1) !== 0;
 renderer.settings.equalDepth = num('equal', 1) !== 0;
 renderer.settings.shelterDebug = params.has('shelter') && params.get('shelter') !== '0';
+setupLightning(renderer);
 // The ground's brush, baked at load into a 2048² texture: the developer's pick (#6, #23), the same to the eye as live
 // and as 4096², at a quarter of 4096's memory. The grass's and crops' brush by place, 1024² at seven angles a scale.
 const bakes = { ground: 2048, crop: 1024, grass: 1024 };
@@ -340,6 +342,7 @@ function hud() {
   const info = document.createElement('span');
   info.textContent = 'drag to pan · wheel to zoom · Q/E to turn';
   hudEl.append(info);
+  lightningHud(hudEl, renderer, hud);
 
   // The weather: a preset, its values, and the timeline standing in for the game. Moving a value stops the timeline.
   hudEl.append(Object.assign(document.createElement('div'), { className: 'break' }));
