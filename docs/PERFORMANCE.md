@@ -180,9 +180,9 @@ frame at 1080p in a storm on the RX 570 (GPU ms): 14.4 with no season, spring 13
 to draw in the sun's shadow). The seasonal crowns have more colour between their strokes than summer's, so those strokes
 have a crisper edge (`CRISP_EDGE`, materials.ts), which keeps the shimmer at or below today's trees (`AB=2 tools/motion.ts`,
 `>8` share at a 1 px pan, farm zoom 40: no season 1.84%, spring 1.58%, autumn 1.67%, winter 0.88%). Pops in a gale: none
-from the trees. The one exception is the spring meadow in a gale, a single 18-pixel flip between a grass blade and a crop
-stroke at the corner of the bed beside the blossom tree (one of 40 moments): the crown's different shape shelters the
-wind a little differently there.
+from the trees' strokes. The one exception is the spring meadow in a gale: a single 18-pixel flicker on the corner of the
+bed beside the blossom tree (one of 40 moments, gone with `shadows=0`), a rocking branch's shadow edge landing a little
+differently from summer's.
 
 ### Falling rain (#11)
 

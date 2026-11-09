@@ -213,6 +213,8 @@ void main() {
 
 /** Added to a foliage dab's aPaint.x (its colour drift, under 2 otherwise) to give it crisper edges: see FOLIAGE_VERT. */
 export const CRISP_EDGE = 2;
+/** Added to a foliage dab's aPaint.x to mark it as wood (#13's winter twigs): it moves only with its tree. */
+export const STIFF_STROKE = 4;
 
 /**
  * Foliage dabs: each card is a quad centred on `position`, turned to face whichever camera draws it (the view or the sun),
@@ -244,7 +246,8 @@ void main() {
   // across the view (see acrossView).
   float s = uWindSpeed, seed = aCard.w;
   float g = windGust(aTree.z > 0.0 ? aTree.xy : wc.xz);
-  float amp = min(0.004 + 0.045 * s / (s + 12.0), 0.15 * aCard.z) * (0.7 + 0.6 * g);
+  float leafy = aPaint.x >= ${STIFF_STROKE.toFixed(1)} ? 0.0 : 1.0;  // wood neither flutters nor turns over
+  float amp = leafy * min(0.004 + 0.045 * s / (s + 12.0), 0.15 * aCard.z) * (0.7 + 0.6 * g);
   float ph = uWindFlutter * (0.8 + 0.4 * fract(seed * 7.13)) + seed * 40.0;
   vec3 flutter = (windDir3() * sin(ph) + vec3(-uWindDir.y, 0.0, uWindDir.x) * 0.5 * sin(ph * 1.31 + seed * 9.0)
     + vec3(0.0, 0.5 * cos(ph * 0.87 + seed * 21.0), 0.0)) * amp;
@@ -254,7 +257,7 @@ void main() {
   // time, in waves that travel with the gusts, so no dab blinks.
   float windward = smoothstep(-0.3, 0.6, -dot(normalize(mat3(modelMatrix) * normal), windDir3()));
   float turn = g + 0.35 * sin(uWindFlutter * 0.13 * (0.8 + 0.4 * fract(seed * 3.7)) + seed * 51.0);
-  vFlash = smoothstep(0.35, 0.8, windForce()) * smoothstep(0.55, 0.95, turn) * (0.35 + 0.65 * windward);
+  vFlash = leafy * smoothstep(0.35, 0.8, windForce()) * smoothstep(0.55, 0.95, turn) * (0.35 + 0.65 * windward);
   vec3 world = wc.xyz + (right * c.x + up * c.y) * aCard.z;
   vWorldPos = world + tree;
   vRestPos = rest;
@@ -268,7 +271,8 @@ void main() {
   vCardPx = aCard.z * projectionMatrix[0][0] * uScreen.x * 0.5;
   // Spring's and autumn's strokes (#13, aPaint.x raised by CRISP_EDGE) have crisper edges: their brighter colours make the
   // part-covered pixels along an edge, which change as the camera moves a pixel, shimmer more than green leaves'.
-  if (aPaint.x >= ${CRISP_EDGE.toFixed(1)}) { vPaint.x -= ${CRISP_EDGE.toFixed(1)}; vCardPx *= 1.8; }
+  if (aPaint.x >= ${STIFF_STROKE.toFixed(1)}) vPaint.x -= ${STIFF_STROKE.toFixed(1)};
+  else if (aPaint.x >= ${CRISP_EDGE.toFixed(1)}) { vPaint.x -= ${CRISP_EDGE.toFixed(1)}; vCardPx *= 1.8; }
   place(world + drawnShift(tree));
 }
 `;

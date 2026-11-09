@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { MeshBuilder, rng, srgb, type Paint } from './builder';
 import { C, addDab, growTree, smooth, type Ground, type Tree } from './kit';
-import { CRISP_EDGE } from '../renderer/materials';
+import { CRISP_EDGE, STIFF_STROKE } from '../renderer/materials';
 import type { BrushRenderer } from '../renderer/renderer';
 import type { Season } from '../renderer/season';
 import { TREE_BEND, type TreeSpec } from '../renderer/trees';
@@ -287,7 +287,7 @@ export class Grove {
           const dir = new THREE.Vector3(s2 * Math.cos(phi) * 1.12, u < 0 ? u * 0.55 : u, s2 * Math.sin(phi) * 1.12);
           const depth = 0.55 + r() * 0.5, p = k.c.clone().addScaledVector(dir, k.r * depth);
           const c = plum.clone().lerp(brown, r() * 0.7).multiplyScalar(1 - (u < 0 ? 0.25 : 0));
-          addDab(this.twigs, p, dir.clone().normalize(), c.offsetHSL(0, 0, u * 0.03), (0.07 + r() * 0.08) * dabScale, r(), [0.5, 0.2 + r() * 0.14, Math.PI / 2 + (r() - 0.5) * 1.8, 0.2]);
+          addDab(this.twigs, p, dir.clone().normalize(), c.offsetHSL(0, 0, u * 0.03), (0.07 + r() * 0.08) * dabScale, r(), [0.5 + STIFF_STROKE, 0.2 + r() * 0.14, Math.PI / 2 + (r() - 0.5) * 1.8, 0.2]);
         }
       }
       this.mark(wood0, twigs0, t, y0, s, 0.4 * s);
@@ -313,7 +313,7 @@ export class Grove {
           const j = randomUnit(r).multiplyScalar((0.12 + r() * 0.26) * s).add(UP.clone().multiplyScalar(willow ? -0.5 * s * r() : 0.1 * s * r()));
           const p = tip.p.clone().add(j).addScaledVector(tip.dir, 0.15 * s);
           const c = twig.clone().lerp(srgb(0x7e685e), r() * 0.8).offsetHSL((r() - 0.5) * 0.02, 0, (r() - 0.5) * 0.04);
-          if (look === 'a' && t.kind === 'broadleaf') addDab(this.twigs, p, tip.dir, c, (0.05 + r() * 0.07) * dabScale, r(), [0.5, 0.2 + r() * 0.12, Math.PI / 2 + (r() - 0.5) * (willow ? 0.4 : 2.2), 0.15]);
+          if (look === 'a' && t.kind === 'broadleaf') addDab(this.twigs, p, tip.dir, c, (0.05 + r() * 0.07) * dabScale, r(), [0.5 + STIFF_STROKE, 0.2 + r() * 0.12, Math.PI / 2 + (r() - 0.5) * (willow ? 0.4 : 2.2), 0.15]);
           if (cling && r() < 0.5) addDab(this.twigs, p, tip.dir, rust.clone().offsetHSL((r() - 0.5) * 0.03, 0, (r() - 0.5) * 0.06), (0.09 + r() * 0.06) * dabScale, r(), [0.5, 0.6, -1, 0.4]);
         }
       }
