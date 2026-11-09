@@ -21,7 +21,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
      depth, a rolling head), and for the game to query. It grew out of #9: dust's gusts didn't read (done 2026-11-03,
      #41 to #44: see Wind);
   7. #18 dynamic water: a state the game drives (done 2026-11-03, #45 and #48: see Water);
-  8. #11 rain and wet ground;
+  8. #11 rain and wet ground (the falling rain done 2026-11-09, #53: see Weather; wet ground is open);
   9. #12 storms and lightning;
   10. #13 seasons (the trees' look in a thread of its own; parts 1 and 2, the hour following the game's sun and the season's look for the rest, merged 2026-11-07 as #51 and #52);
   11. #14 snow, frost and ice;
@@ -168,6 +168,15 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   pixels at full heat, 'clear'). The dust's gusts ('strong') are a stopgap: they're hard to see in a thick storm, and the
   wind's gusts are to be rebuilt as fronts sweeping the land (#36). The demo's timeline has a dust storm blowing through.
   The haze's patches no longer swing when the wind turns (#36): a new set is laid along the new wind and fades in.
+
+- **Falling rain (#11, part 1, #53; wet ground is open).** Painted strokes, not a field of particles (`src/renderer/rain.ts`):
+  long, fine, crisp strokes, a fine streaked veil over the distance (in the post pass), crowns of ticks where drops land
+  and thin crisp rings on the water, flood water too ('B', the developer's pick of three). How hard it rains sets how
+  many strokes, how fast they fall and the veil; the wind and its gusts slant them. Each drop belongs to an 8 m patch of
+  the world, so none jumps as the camera moves, and about as many show on screen at any zoom. Drops stop at roofs and
+  (some of the time) crowns, traced along their slanted path through the shelter map, which gained a third map, the land
+  itself. `settings.fallingShare` is the quality knob (fewer strokes, the same look); `falling=0` leaves it all out.
+  Snow (#14) can reuse the patches, the stops and the count. Costs in `docs/PERFORMANCE.md`.
 
 - **Seasons (#13, all but the trees done 2026-11-07, #51 and #52; the trees' look is open).** The developer's scope (2026-11-03): the trees' seasonal look (turning, bare limbs,
   blossom, the bushes and hedges with them, fallen and flying leaves) is a separate thread; this one does the rest. The
