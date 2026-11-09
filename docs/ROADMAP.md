@@ -22,7 +22,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
      #41 to #44: see Wind);
   7. #18 dynamic water: a state the game drives (done 2026-11-03, #45 and #48: see Water);
   8. #11 rain and wet ground (the falling rain done 2026-11-09, #53: see Weather; wet ground is open);
-  9. #12 storms and lightning;
+  9. #12 storms and lightning (the lightning in #55: see Weather; the storm look is open);
   10. #13 seasons (the trees' look in a thread of its own; parts 1 and 2, the hour following the game's sun and the season's look for the rest, merged 2026-11-07 as #51 and #52);
   11. #14 snow, frost and ice;
   12. #19 the water's own look, chosen under every weather.
@@ -178,6 +178,17 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   itself. `settings.fallingShare` is the quality knob (fewer strokes, the same look); `falling=0` leaves it all out.
   Snow (#14) can reuse the patches, the stops and the count. Costs in `docs/PERFORMANCE.md`.
 
+- **Lightning (#12, #55; the storm look is open).** The game says where and when: `renderer.strike({ x, z })` and
+  `renderer.flicker()` (distant lightning, the developer's call: the game calls each one, #12). The renderer draws a bolt, a
+  flash of the whole picture, and a glow where it landed (`src/renderer/lightning.ts`). The flash is laid over the finished
+  picture, the last thing done to a pixel, so it can't lift one by more than its limit whatever the hour or the exposure; no
+  pass or shader is added when one starts (no hitch), and a frame with no lightning is byte for byte what it was.
+  `lightning.setting` is the player's: `full`, `gentle` (one soft swell) or `off` (the picture doesn't light up; the bolt and
+  glow show, dim). Safety is the default, not a setting (Sol's calibration, #12): at most two flashes in any second, 0.6 s
+  apart, and two in any ten seconds, on a real-seconds clock a sped-up game can't outrun; a strike held back still shows its
+  bolt and glow, and nothing is queued. `tools/flash.ts` measures it on the finished frames, by the published tests (WCAG 2.2
+  2.3.1); it isn't a certified test, and the game's own frames would want one before release. `FLASH_LIMIT` is the one line to
+  loosen if a heavy storm feels short of flashes.
 - **Seasons (#13, all but the trees done 2026-11-07, #51 and #52; the trees' look is open).** The developer's scope (2026-11-03): the trees' seasonal look (turning, bare limbs,
   blossom, the bushes and hedges with them, fallen and flying leaves) is a separate thread; this one does the rest. The
   decisions are on #13. Part 1: `renderer.setSeason({ season, character, sunrise, sunset })`, once per level, with the
