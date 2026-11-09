@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { MeshBuilder, rng, srgb, type Paint } from './builder';
 import { C, addDab, growTree, smooth, type Ground, type Tree } from './kit';
+import { CRISP_EDGE } from '../renderer/materials';
 import type { BrushRenderer } from '../renderer/renderer';
 import type { Season } from '../renderer/season';
 import { TREE_BEND, type TreeSpec } from '../renderer/trees';
@@ -175,7 +176,7 @@ function crown(leaves: MeshBuilder, masses: Mass[], dabScale: number, tint: (m: 
         const nrm = toCrown.multiplyScalar(0.55).addScaledVector(dir.clone().normalize(), 0.45).normalize();
         const inner = layer.inner ? 1 : Math.max(0, (0.85 - depth) / 0.25) * 0.5 + (u < -0.25 ? 0.4 : 0);
         const size = (layer.size[0] + r() * layer.size[1]) * dabScale * fineness;
-        addDab(leaves, p, nrm, strokeColor(tint(k, nrm, layer.inner === 1), nrm, Math.min(inner, 1), r), size, r(), [0.7, 0.45 + r() * 0.35, -1, 0.7]);
+        addDab(leaves, p, nrm, strokeColor(tint(k, nrm, layer.inner === 1), nrm, Math.min(inner, 1), r), size, r(), [0.7 + CRISP_EDGE, 0.45 + r() * 0.35, -1, 0.7]);
       }
     }
   }
@@ -304,7 +305,7 @@ export class Grove {
       const cling = look === 'c' && t.kind === 'broadleaf' && pick(t, 5) < 0.4;
       for (const tip of tips) {
         if (tip.order < Math.max(1, maxOrder - 1)) continue;
-        const n = willow ? 5 : tip.order >= maxOrder ? 3 : 1;
+        const n = willow ? 4 : tip.order >= maxOrder ? 2 : 1;
         for (let i = 0; i < n; i++) {
           const j = randomUnit(r).multiplyScalar((0.12 + r() * 0.26) * s).add(UP.clone().multiplyScalar(willow ? -0.5 * s * r() : 0.1 * s * r()));
           const p = tip.p.clone().add(j).addScaledVector(tip.dir, 0.15 * s);

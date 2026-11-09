@@ -211,6 +211,9 @@ void main() {
 }
 `;
 
+/** Added to a foliage dab's aPaint.x (its colour drift, under 2 otherwise) to give it crisper edges: see FOLIAGE_VERT. */
+export const CRISP_EDGE = 2;
+
 /**
  * Foliage dabs: each card is a quad centred on `position`, turned to face whichever camera draws it (the view or the sun),
  * so the sun's shadow map sees the same clumps the eye does. `normal` is the canopy's (the crown's form and the branch
@@ -263,6 +266,9 @@ void main() {
   vCard = aCard;
   // Screen pixels per unit of the card, for its edge's antialiasing (orthographic: the same everywhere on screen).
   vCardPx = aCard.z * projectionMatrix[0][0] * uScreen.x * 0.5;
+  // Spring's and autumn's strokes (#13, aPaint.x raised by CRISP_EDGE) have crisper edges: their brighter colours make the
+  // part-covered pixels along an edge, which change as the camera moves a pixel, shimmer more than green leaves'.
+  if (aPaint.x >= ${CRISP_EDGE.toFixed(1)}) { vPaint.x -= ${CRISP_EDGE.toFixed(1)}; vCardPx *= 1.8; }
   place(world + drawnShift(tree));
 }
 `;
