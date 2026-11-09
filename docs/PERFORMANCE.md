@@ -174,6 +174,16 @@ the game sent them are kept beside them (12 bytes a vertex, about 18 MB on the f
 Crawl (`AB=2 tools/motion.ts`, farm noon) is the same in every season as today's (soft 0.50 to 0.55, 0.53 today), and no
 pops in a gale (`tools/pops.ts`, 0 patches).
 
+The trees' seasons (#13, part 3) are models built once at level load: a winter or autumn level builds its own in place
+of summer's (load about 5% longer on the farm in autumn, slightly shorter in winter), and nothing is added per frame. A
+frame at 1080p in a storm on the RX 570 (GPU ms): 14.4 with no season, spring 13.7, autumn 14.6, winter 9.8 (no leaves
+to draw in the sun's shadow). The seasonal crowns have more colour between their strokes than summer's, so those strokes
+have a crisper edge (`CRISP_EDGE`, materials.ts), which keeps the shimmer at or below today's trees (`AB=2 tools/motion.ts`,
+`>8` share at a 1 px pan, farm zoom 40: no season 1.84%, spring 1.58%, autumn 1.67%, winter 0.88%). Pops in a gale: none
+from the trees. The one exception is the spring meadow in a gale, a single 18-pixel flip between a grass blade and a crop
+stroke at the corner of the bed beside the blossom tree (one of 40 moments): the crown's different shape shelters the
+wind a little differently there.
+
 ### Falling rain (#11)
 
 The budget's 1.5 ms line. The strokes are one instanced draw in the main view (a quad each for the stroke and its

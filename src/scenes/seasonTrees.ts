@@ -25,7 +25,7 @@ export interface TreeLooks {
   /** Autumn's palette. a: mellow golds. b: vivid reds. c: a patchwork, branches turning apart. */
   turn: 'a' | 'b' | 'c';
   /** Blossom. a: white with a touch of pink. b: pinker, with more young leaf. */
-  blossom: 'a' | 'b';
+  blossom: 'a' | 'b' | 'c';
   /** Fallen leaves and petals. a: a scatter under the crowns. b: drifts. off: none. */
   fallen: 'a' | 'b' | 'off';
 }
@@ -217,9 +217,12 @@ function turnColour(green: THREE.Color, p: number, look: TreeLooks['turn']) {
   return stops[stops.length - 1][1].clone();
 }
 
+// 'c' has less blue in the petals: pale pink shows the violet of a low sun's shade, so it stays peach at golden hour.
 const BLOSSOM = (look: TreeLooks['blossom']) => look === 'b'
   ? { white: srgb(0xefc8d0), pink: srgb(0xe08fa8), leafShare: 0.4 }
-  : { white: srgb(0xf2d6d0), pink: srgb(0xe8a6b0), leafShare: 0.3 };
+  : look === 'c'
+    ? { white: srgb(0xf8e6c8), pink: srgb(0xf0b08c), leafShare: 0.3 }
+    : { white: srgb(0xf2d6d0), pink: srgb(0xe8a6b0), leafShare: 0.3 };
 const FRESH = srgb(0x9acd55);
 
 /** A bush's masses, as summer's: a low row of two or three on a stub of trunk. */
