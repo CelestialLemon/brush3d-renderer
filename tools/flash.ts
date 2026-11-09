@@ -47,7 +47,7 @@ for (const [query, hour] of [[farm, 22], [meadow, 12]] as const) for (const sett
 }
 for (const look of ['a', 'b', 'c'] as const) for (const hour of [17.5, 22]) runs.push({ name: `farm ${hour}h full, looks ${look}`, query: farm, hour, setting: 'full', seconds: 5, fps: 30, plan: 'natural', look });
 for (const look of ['b', 'c'] as const) for (const setting of ['gentle', 'off'] as const) runs.push({ name: `farm 22h ${setting}, looks ${look}`, query: farm, hour: 22, setting, seconds: 5, fps: 30, plan: 'natural', look });
-for (const zoom of [16, 192]) for (const setting of ['full', 'gentle', 'off'] as const) for (const look of ['a', 'b'] as const) runs.push({ name: `farm 22h ${setting}, looks ${look}, zoom ${zoom}`, query: farm, hour: 22, setting, seconds: 5, fps: 30, plan: 'natural', look, zoom });
+for (const zoom of [16, 192]) for (const setting of ['full', 'gentle', 'off'] as const) for (const look of ['a', 'b', 'c'] as const) runs.push({ name: `farm 22h ${setting}, looks ${look}, zoom ${zoom}`, query: farm, hour: 22, setting, seconds: 5, fps: 30, plan: 'natural', look, zoom });
 for (const view of [1, 2, 3]) runs.push({ name: `farm 22h full, view ${view}`, query: farm, hour: 22, setting: 'full', seconds: 5, fps: 30, plan: 'natural', look: 'b', view });
 for (const fps of [45, 60]) runs.push({ name: `farm 22h full, every frame at ${fps} fps`, query: farm, hour: 22, setting: 'full', seconds: 4, fps, plan: 'spam' });
 runs.push({ name: 'farm 22h full, every frame, uneven', query: farm, hour: 22, setting: 'full', seconds: 5, fps: 30, plan: 'spam', jitter: 0.03 });
@@ -100,8 +100,9 @@ function analyse(cells: Float32Array[], times: number[], CW: number, CH: number)
     let lo = v[0], hi = v[0], loAt = 0, hiAt = 0, dir = 0;
     for (let j = 1; j < v.length; j++) {
       const c = v[j];
-      if (c < lo) { lo = c; loAt = j; }
-      if (c > hi) { hi = c; hiAt = j; }
+      // Equal counts: after a flat stretch a change begins at its end, not at its start.
+      if (c <= lo) { lo = c; loAt = j; }
+      if (c >= hi) { hi = c; hiAt = j; }
       if (dir <= 0 && c - lo >= 0.1 && lo < 0.8) { moves.push(times[loAt]); dir = 1; hi = lo = c; hiAt = loAt = j; }
       else if (dir >= 0 && hi - c >= 0.1 && c < 0.8) { moves.push(times[hiAt]); dir = -1; lo = hi = c; hiAt = loAt = j; }
     }
@@ -139,7 +140,7 @@ function analyse(cells: Float32Array[], times: number[], CW: number, CH: number)
   return { perSecond: inWindow(whole, 1), perFive: inWindow(whole, 5), perTen: inWindow(whole, 10), quarterPerSecond, localPerSecond, areaOver3 };
 }
 
-/** The test has to be able to fail: patches out of step with each other flashing 5 times a second, and a thin sliver doing it. */
+/** The test has to be able to fail: patches out of step flashing 5 times a second, a burst after a quiet start, and a thin sliver that must pass. */
 function selfTest() {
   const CW = 30, CH = 30, frames = 90, times = Array.from({ length: frames }, (_, i) => i / 30);
   const make = (patch: (x: number, y: number) => boolean) => Array.from({ length: frames }, (_, f) => {
@@ -151,7 +152,13 @@ function selfTest() {
     return c;
   });
   const scattered = analyse(make((x, y) => (x + y) % 5 < 2), times, CW, CH), sliver = analyse(make((x) => x === 3), times, CW, CH);
-  if (scattered.perSecond !== 0 || scattered.areaOver3 <= 0.25 || sliver.areaOver3 > 0.25) throw new Error(`flash.ts's self-test failed: ${JSON.stringify({ scattered, sliver })}`);
+  // Scattered patches, still until 1.5 s, then four flashes in 0.6 s: each has to be dated when it happens.
+  const burst = analyse(Array.from({ length: frames }, (_, f) => {
+    const c = new Float32Array(CW * CH).fill(0.2), on = [1.5, 1.7, 1.9, 2.1].some((s) => f / 30 >= s - 1e-6 && f / 30 < s + 0.07);
+    for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) if (on && (x + y) % 5 < 2) c[y * CW + x] = 0.4;
+    return c;
+  }), times, CW, CH);
+  if (scattered.perSecond !== 0 || scattered.areaOver3 <= 0.25 || sliver.areaOver3 > 0.25 || burst.localPerSecond !== 4 || burst.areaOver3 <= 0.25) throw new Error(`flash.ts's self-test failed: ${JSON.stringify({ scattered, sliver, burst })}`);
 }
 
 /** In the page: a switch to draw a frame with no lightning, and a log of what the governor admits. */

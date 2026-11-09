@@ -190,6 +190,15 @@ PR's preview, the `no rain` line.
 Crawl (`AB=2 tools/motion.ts`, the farm in a storm, 1 px pan): the same with the rain and without (soft 0.168 against
 0.169); pops in a gale at the shed (`tools/pops.ts`): none.
 
+### Lightning (#12)
+
+A strike adds no pass and compiles nothing when it lands: the bolt's program is compiled on the first frame, the flash and the
+glow are a branch in the post pass, and a frame with no lightning is byte for byte what it was. On the RX 570 at 1080p in a
+storm, at the flash's brightest, with the bolt and a glow: the farm's frame 14.33 ms to 14.53, the meadow's 5.23 to 5.39 (post
++0.13, the bolt 0.014: 0.14 added), inside the line's 0.15. It's on every pixel for the third of a second a flash lasts, and on nothing
+but the glow's few metres while the glow fades. The laptop's numbers are the developer's to take: `?profile`, the case "1080p
+storm, a strike at its brightest". A strike's own work on the CPU is about 1 to 2 ms, once (`strike()`, building the bolt).
+
 ### Mist and fog (#9)
 
 In the post pass: each pixel's place in the world rebuilt from its depth, and the fog summed in four steps up the view's
