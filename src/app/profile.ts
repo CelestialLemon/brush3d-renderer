@@ -83,7 +83,13 @@ export async function runProfile(
       renderer.setWind(wind, wind, 0);
       for (const k of KINDS) renderer.setVisible(k, !c.hide?.includes(k));
       const clock = renderer.lightning.clock;
-      if (c.lightning) { renderer.lightning.clock = () => 0.02; renderer.strike({ x: renderer.view.target.x, z: renderer.view.target.z, seed: 7 }); }
+      if (c.lightning) {
+        // Struck now, then held just after: the flash at its height, the bolt lit and the glow rising.
+        const t = clock();
+        renderer.lightning.clock = () => t;
+        renderer.strike({ x: renderer.view.target.x, z: renderer.view.target.z, seed: 7 });
+        renderer.lightning.clock = () => t + 0.03;
+      }
       const frame = (t: number) => { if (c.shelter) renderer.shelter.changed(); draw(t); };
       // Warm up: shaders, the new targets' memory, the GPU's clocks.
       for (let f = 0; f < 20; f++) { frame((time += 1 / 60)); if (f % 5 === 4) { sync(); await nextFrame(); } }

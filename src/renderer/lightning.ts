@@ -268,7 +268,6 @@ export class Lightning {
   strike(s: Strike, ground: (x: number, z: number) => number, view: THREE.Vector3, heading: number) {
     const now = this.clock(), strength = THREE.MathUtils.clamp(s.strength ?? 1, 0, 1), y = s.y ?? ground(s.x, s.z);
     const seed = s.seed ?? (this.seed = (this.seed * 48271) % 2147483647);
-    this.strikePoint.set(s.x, y, s.z);
     // The bolt and the glow, whatever the setting and whether the picture may flash: each is small on the screen, and a
     // strike must show where it landed (it's the game's event).
     if (now - this.lastBolt >= LOCAL_GAP[this.setting]) {
@@ -286,7 +285,11 @@ export class Lightning {
     // A strike far from the view lights the picture less.
     const scale = strength * (1 - 0.6 * THREE.MathUtils.smoothstep(Math.hypot(s.x - view.x, s.z - view.z), 30, 200));
     if (this.setting === 'full') {
-      if (this.governor.admit(now)) this.flash = { start: now, shape: FULL, weight: FULL_PEAK * scale, strike: true };
+      if (this.governor.admit(now)) {
+        this.flash = { start: now, shape: FULL, weight: FULL_PEAK * scale, strike: true };
+        // Only a flash let through moves the light: one held back mustn't move the one still fading.
+        this.strikePoint.set(s.x, y, s.z);
+      }
     } else if (!this.flash || now - this.flash.start >= pulseEnd(this.flash.shape)) {
       // One swell at a time: a strike during one neither restarts nor lengthens it.
       this.flash = { start: now, shape: GENTLE, weight: GENTLE_PEAK * scale, strike: false };
