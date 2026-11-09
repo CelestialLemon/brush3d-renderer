@@ -5,7 +5,7 @@ import { CloudMap, MIRROR } from './cloudMap';
 import { CLOUD_SHAPE, type CloudShape } from './clouds';
 import { lookAt, type Look } from './look';
 import { dayOf, REFERENCE_DAY, type Day, type SeasonSettings } from './season';
-import { seasonLight, seasonTurn, turnColours } from './seasonLook';
+import { LEAF_STORM, seasonLight, seasonTurn, turnColours } from './seasonLook';
 import { CLOUD_DEPTH, CLOUD_NIGHT, gapCover, OVERCAST, overcastLook, skyShare, UNDER_CLOUD_FADE } from './overcast';
 import {
   createSharedUniforms, depthMaterial, basisBakeMaterial, groundBakeMaterial, prepassMaterial, sceneMaterial, WATER_REACH, type MaterialKind, type SharedUniforms,
@@ -19,7 +19,7 @@ import type { PassTimer } from './timer';
 import { WeatherState, type Weather } from './weather';
 import { airLook, HEAT, heatShare } from './air';
 import { GOLDEN, goldenLook, goldenShape, goldenShare } from './golden';
-import { leafStorm, WindField, WindState } from './wind';
+import { colourLeafStorm, leafStorm, WindField, WindState } from './wind';
 import { DustField, type DustSource } from './dust';
 import { TreeSprings, type TreeSpec } from './trees';
 import { WATER_EASE, WaterField, type WaterMap } from './water';
@@ -169,6 +169,8 @@ export class BrushRenderer {
   private reflectTarget: THREE.WebGLRenderTarget;
   private look: Look | null = null;
   private seasonSet: SeasonSettings | null = null;
+  /** The leaves in the air (the wind's), which take the season's colours. */
+  private debris!: THREE.Mesh;
   private dayNow: Day = REFERENCE_DAY;
   /** The geometries the season turns (MeshOptions.seasonal), and how many meshes in the scene draw each. */
   private seasonal = new Map<THREE.BufferGeometry, number>();
@@ -264,7 +266,7 @@ export class BrushRenderer {
     this.silhouettes.visible = false;
     this.scene.add(this.silhouettes);
     // Leaves in the air, for strong winds: the renderer's own, round wherever the camera is.
-    this.add(leafStorm(), 'debris', { castShadow: false });
+    this.debris = this.add(leafStorm(), 'debris', { castShadow: false });
   }
 
   /**
@@ -564,6 +566,7 @@ export class BrushRenderer {
     this.dayNow = season ? dayOf(season) : REFERENCE_DAY;
     // Its colours, turned once here (the season holds all level): from each mesh's own, as the game sent them.
     for (const g of this.seasonal.keys()) this.turn(g);
+    colourLeafStorm(this.debris.geometry, season ? LEAF_STORM[season.season] : null);
   }
   /** A seasonal geometry's mesh is taken out: with its last, its colours go back to the game's. */
   private unseason(geometry: THREE.BufferGeometry) {

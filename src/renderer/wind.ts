@@ -318,5 +318,25 @@ export function leafStorm(count = 5000): THREE.BufferGeometry {
   g.setAttribute('aCard', new THREE.Float32BufferAttribute(card, 4));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setIndex(new THREE.Uint32BufferAttribute(index, 1));
+  g.userData.colours = col.slice();
   return g;
+}
+
+/**
+ * Turns the leaves in the air to a season's colours (#13, once per level; no season: back to the ones they were built with).
+ * Each leaf keeps its own place in the colours (a share through them chosen once), so a level's leaves don't jump between
+ * looks; the palette's colours are sRGB.
+ */
+export function colourLeafStorm(g: THREE.BufferGeometry, palette: readonly number[] | null) {
+  const attr = g.getAttribute('color') as THREE.BufferAttribute;
+  const out = attr.array as Float32Array;
+  if (!palette) { out.set(g.userData.colours as number[]); attr.needsUpdate = true; return; }
+  let a = 0x51ed2701;
+  const rand = () => { a = (a + 0x6d2b79f5) >>> 0; let t = Math.imul(a ^ (a >>> 15), a | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const colours = palette.map((c) => new THREE.Color(c));
+  for (let i = 0; i < out.length; i += 12) {
+    const c = colours[Math.floor(rand() * colours.length)].clone().offsetHSL((rand() - 0.5) * 0.03, 0, (rand() - 0.5) * 0.08);
+    for (let k = 0; k < 4; k++) { out[i + k * 3] = c.r; out[i + k * 3 + 1] = c.g; out[i + k * 3 + 2] = c.b; }
+  }
+  attr.needsUpdate = true;
 }

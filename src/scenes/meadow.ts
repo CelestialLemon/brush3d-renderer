@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import type { BrushRenderer } from '../renderer/renderer';
 import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
-import { C, addFlowers, addReeds, addStone, addTuft, groundOf, growTree, smooth, treeWind, type Stream, type Tree } from './kit';
+import { C, addFlowers, addReeds, addStone, addTuft, groundOf, smooth, treeWind, type Stream, type Tree } from './kit';
 import type { Obstacle } from '../wind/sim';
 import type { Season } from '../renderer/season';
+import { DEFAULT_TREE_LOOKS, Grove, dressFor, type Dress, type TreeLooks } from './seasonTrees';
 
 // The first slice: a corner of a farm in a meadow. A stream, a field of wheat, three trees (two broadleaf, one with fruit,
 // and a blue-green cypress), long grass and wildflowers, and one solar panel, the only inked thing.
@@ -82,9 +83,12 @@ export interface Meadow {
  * wildflowers thinning out to none.
  */
 let SEASON: Season = 'summer';
+/** How the trees are dressed for the season (seasonTrees.ts); none in summer, or with no season set. */
+let DRESS: Dress | null = null;
 
-export function buildMeadow(r: BrushRenderer, season: Season = 'summer'): Meadow {
+export function buildMeadow(r: BrushRenderer, season: Season = 'summer', treeLooks: TreeLooks = DEFAULT_TREE_LOOKS): Meadow {
   SEASON = season;
+  DRESS = dressFor(season, treeLooks, (x, z) => streamDistance(x, z) > 1.6 && !(x > FIELD.x0 - 0.2 && x < FIELD.x1 + 0.2 && z > FIELD.z0 - 0.2 && z < FIELD.z1 + 0.2));
   terrain(r);
   field(r);
   trees(r);
@@ -200,11 +204,9 @@ function field(r: BrushRenderer) {
 }
 
 function trees(r: BrushRenderer) {
-  const wood = new MeshBuilder('paint');
-  const leaves = new MeshBuilder('foliage');
-  for (const t of TREES) growTree(wood, leaves, ground, t, rng(t.seed));
-  r.add(wood.build(), 'paint');
-  r.add(leaves.build(), 'foliage');
+  const grove = new Grove(DRESS);
+  for (const t of TREES) grove.grow(ground, t, rng(t.seed));
+  grove.addTo(r);
 }
 
 /** Long grass in tufts, thick where the meadow is lush and by the water, with wildflowers in drifts. */

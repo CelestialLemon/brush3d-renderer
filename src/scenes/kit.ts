@@ -56,7 +56,12 @@ export interface Tree {
   /** Fruit dabs, for fruit trees and orchard bushes, and how thickly they hang (1 by default). */
   fruit?: THREE.Color;
   fruitDensity?: number;
+  /** Where it grows, for its seasons (#13, seasonTrees.ts): nothing changes with no season set. */
+  form?: TreeForm;
 }
+
+/** Where a tree grows, for its seasons: woods (some stay green), orchards (blossom), hedges and thickets (bulky twigs), the pond's willows. */
+export type TreeForm = 'wood' | 'orchard' | 'hedge' | 'thicket' | 'shrub' | 'willow' | 'sapling';
 
 /**
  * A tree as the wind meets it (#36): its crown's footprint, slowing the ground air that blows through it. Bushes and

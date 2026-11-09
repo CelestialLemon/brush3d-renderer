@@ -141,3 +141,14 @@ export function seasonLight(look: Look, s: SeasonSettings | null): Look {
   look.saturation *= 1 + (k.saturation - 1) * w;
   return look;
 }
+
+/**
+ * The leaves in the air (#2) in each season, from the trees' own (#13): spring's young leaves and blossom, autumn's golds
+ * and russets, winter's few dry browns. None for summer, whose are the leaves' own.
+ */
+export const LEAF_STORM: Readonly<Record<Season, readonly number[] | null>> = {
+  spring: [0x9acd55, 0x87bf46, 0xc7dc7a, 0xf4e6dc, 0xeec0c8],
+  summer: null,
+  autumn: [0xd4a32e, 0xc9702a, 0xa33d2a, 0x9aa83e, 0xb88a3a, 0xc08a34],
+  winter: [0x8a6b4a, 0x705a42, 0xa08966],
+};
