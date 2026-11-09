@@ -35,10 +35,10 @@ export function setupLightning(renderer: BrushRenderer) {
   schedule(renderer);
 }
 
-/** A strike at this many screen pixels from the middle of the view, on the land under it. */
+/** A strike at this many CSS pixels from the middle of the view, on the land under it (the zoom counts screen pixels). */
 function strikeAt(renderer: BrushRenderer, px: number, py: number) {
-  const v = renderer.view, yaw = v.heading;
-  const across = px / v.zoom, along = py / v.zoom / Math.sin(PITCH);
+  const v = renderer.view, yaw = v.heading, perPixel = renderer.screenRatio / v.zoom;
+  const across = px * perPixel, along = py * perPixel / Math.sin(PITCH);
   renderer.strike({
     x: v.target.x + Math.cos(yaw) * across - Math.sin(yaw) * along,
     z: v.target.z - Math.sin(yaw) * across - Math.cos(yaw) * along,
