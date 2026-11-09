@@ -342,12 +342,12 @@ export class Grove {
       crownBase = Math.max(fork.y - y0, 0.2);
     }
     if (!masses.length) masses = [{ c: base.clone().add(new THREE.Vector3(0, 1.6 * s, 0)), r: 0.7 * s, tone: r() }];
-    if (spring) this.dressSpring(t, masses, dabScale, green, r, dress);
+    if (spring) this.dressSpring(t, masses, dabScale, green, r, dress, ground);
     else this.dressAutumn(t, masses, dabScale, green, r, dress, ground);
     this.mark(wood0, twigs0, t, y0, s, crownBase, leaves0);
   }
 
-  private dressSpring(t: Tree, masses: Mass[], dabScale: number, green: THREE.Color, r: () => number, dress: Dress) {
+  private dressSpring(t: Tree, masses: Mass[], dabScale: number, green: THREE.Color, r: () => number, dress: Dress, ground: Ground) {
     const fresh = green.clone().lerp(FRESH, 0.55);
     const orchard = t.kind === 'fruit' || t.form === 'orchard';
     const wild = !orchard && ((t.form === 'hedge' && pick(t, 6) < 0.14) || (t.form === 'wood' && pick(t, 6) < 0.09));
@@ -360,7 +360,7 @@ export class Grove {
       }
       return (blossom && inner ? fresh.clone().lerp(srgb(0xb88a78), 0.45) : fresh.clone()).offsetHSL((k.tone - 0.5) * 0.04, 0, (k.tone - 0.5) * 0.04);
     }, blossom ? 0.92 : 0.85, r, blossom ? 0.78 : 1);
-    if (blossom && dress.looks.fallen !== 'off') this.fall(t, masses, r, dress, () => bl.white.clone().lerp(bl.pink, r()), 0.025);
+    if (blossom && dress.looks.fallen !== 'off') this.fall(t, masses, r, dress, () => bl.white.clone().lerp(bl.pink, r()), 0.025, ground);
   }
 
   private dressAutumn(t: Tree, masses: Mass[], dabScale: number, green: THREE.Color, r: () => number, dress: Dress, ground: Ground) {
@@ -375,7 +375,7 @@ export class Grove {
   }
 
   /** Leaves or petals fallen under a tree: `density` a dab per square metre, thicker near the trunk. */
-  private fall(t: Tree, masses: Mass[], r: () => number, dress: Dress, colour: () => THREE.Color, density: number, ground?: Ground) {
+  private fall(t: Tree, masses: Mass[], r: () => number, dress: Dress, colour: () => THREE.Color, density: number, ground: Ground) {
     const reach = masses.reduce((a, k) => Math.max(a, Math.hypot(k.c.x - t.x, k.c.z - t.z) + k.r), 0.5) * 1.15;
     const n = Math.round(Math.PI * reach * reach * density * (dress.looks.fallen === 'b' ? 3.2 : 1) * 16);
     for (let i = 0; i < n; i++) {
@@ -383,7 +383,7 @@ export class Grove {
       const x = t.x + Math.cos(a) * d, z = t.z + Math.sin(a) * d;
       if (!dress.canFall(x, z)) continue;
       const size = 0.05 + r() * 0.04;
-      const y = (ground?.height(x, z) ?? 0) + 0.03 + size * 0.4;
+      const y = ground.height(x, z) + 0.03 + size * 0.4;
       addDab(this.litter, new THREE.Vector3(x, y, z), UP, colour(), size, r(), [0.4, 0.55, -1, 0.15]);
     }
   }

@@ -263,9 +263,6 @@ void main() {
   vCard = aCard;
   // Screen pixels per unit of the card, for its edge's antialiasing (orthographic: the same everywhere on screen).
   vCardPx = aCard.z * projectionMatrix[0][0] * uScreen.x * 0.5;
-  // A thin stroke (winter's twigs, #13: nothing else is drawn this thin) stays at least a pixel and a bit across, as grass
-  // blades do: narrower it would blink between pixels as the camera moves.
-  if (aPaint.y < 0.3) vPaint.y = max(aPaint.y, 0.7 / vCardPx);
   place(world + drawnShift(tree));
 }
 `;
