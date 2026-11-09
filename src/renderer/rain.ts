@@ -24,7 +24,7 @@ import { WIND_GLSL } from './wind';
 // their number further, not their look.
 // Snow (#14) can fall the same way: the column, the stops and the ranks are what any falling thing needs.
 
-/** A look for the rain: the candidates the developer picks between (?rainLook). */
+/** How the rain looks: what snow (#14) can set its own of. */
 export interface RainLook {
   /** Drops a square metre at the heaviest rain, at the reference zoom (REFERENCE_ZOOM). */
   density: number;
@@ -36,35 +36,25 @@ export interface RainLook {
   speed: [light: number, heavy: number];
   /** How far the wind slants it: 1 as far as a real drop. */
   slant: number;
-  /** The splash: its shape (0 a soft dab, 1 a crown of ticks, 2 a few beads), its size (m), how long it lasts (s). */
-  splash: [shape: number, size: number, time: number];
+  /** The splash (a crown of ticks): its size (m), how long it lasts (s). */
+  splash: [size: number, time: number];
   /** The veil: how thick at the heaviest, its streaks' width (m) and length (m), how crisp they are (0..1), its sheets' size (m). */
   veil: [strength: number, across: number, along: number, crisp: number, sheets: number];
-  /** The rings: the widest (m), the line's width (m), how strong at the heaviest, the drop's dot at the centre (0..1). */
-  rings: [size: number, width: number, strength: number, dot: number];
+  /** The rings: the widest (m), the line's width (m), how strong at the heaviest. */
+  rings: [size: number, width: number, strength: number];
 }
 
-export const RAIN_LOOKS = {
-  // A: long, wide, very soft and few: washes of rain. The veil a haze lifting in broad sheets; the splash a soft dab;
-  // the rings soft and wide.
-  a: {
-    density: 0.12, stroke: [3.0, 6, 1, 0.34], taper: 0.7, speed: [6, 9], slant: 0.6, splash: [0, 0.4, 0.28],
-    veil: [0.32, 1.0, 10, 0.15, 22], rings: [0.5, 0.06, 0.4, 0],
-  },
-  // B: long and fine, crisper and more of them. A fine streaked veil, crowns of ticks where they land, thin crisp rings.
-  b: {
-    density: 0.18, stroke: [2.0, 1.4, 0.3, 0.42], taper: 0.5, speed: [7, 10], slant: 0.7, splash: [1, 0.28, 0.2],
-    veil: [0.26, 0.3, 6, 0.6, 12], rings: [0.32, 0.022, 0.5, 0],
-  },
-  // C: shorter, tapering dashes, as from a brush. A hatched veil, beads where they land, rings round a dot.
-  c: {
-    density: 0.16, stroke: [1.1, 3.2, 0.5, 0.55], taper: 0.9, speed: [6, 9], slant: 0.6, splash: [2, 0.32, 0.3],
-    veil: [0.3, 0.6, 2.8, 0.45, 14], rings: [0.36, 0.04, 0.45, 1],
-  },
-} satisfies Record<string, RainLook>;
-export type RainLookName = keyof typeof RAIN_LOOKS;
+/**
+ * The rain's look, the developer's pick (#11, PR #53, 2026-11-09) of three: long, fine strokes, crisp and many; a fine
+ * streaked veil; crowns of ticks where they land; thin, crisp rings. (Not picked: long, wide, very soft washes with a
+ * hazy veil and soft dabs; shorter tapering brush dashes with a hatched veil, beads and rings round a dot.)
+ */
+export const RAIN_LOOK: RainLook = {
+  density: 0.18, stroke: [2.0, 1.4, 0.3, 0.42], taper: 0.5, speed: [7, 10], slant: 0.7, splash: [0.28, 0.2],
+  veil: [0.26, 0.3, 6, 0.6, 12], rings: [0.32, 0.022, 0.5],
+};
 
-/** The zoom (screen px a metre) the looks' density and width are set at: the demo's usual framing. */
+/** The zoom (screen px a metre) the look's density and width are set at: the demo's usual framing. */
 export const REFERENCE_ZOOM = 44;
 /** The most drops drawn at once: far more than any view needs (a few thousand), a guard against a huge screen. */
 const MAX_DROPS = 65536;
@@ -101,9 +91,9 @@ uniform vec3 uViewTarget;
 uniform vec4 uRainCells;   // the cells drawn: x, y the first (world cell), z how many across, w how many in all
 uniform vec4 uRain;        // x the drops a cell shown (by rank), y how far the rain has fallen (m), z a drop's cycle (m), w how fast it falls (m/s)
 uniform vec4 uRainStroke;  // its length (m), width (px), softness, opacity
-uniform vec4 uRainShape;   // its taper, how far the wind slants it, the splash's shape, the splash's size (m)
+uniform vec3 uRainShape;   // its taper, how far the wind slants it, the splash's size (m)
 uniform float uRainSplash; // how far a drop would fall while it splashes (m)
-varying vec4 vShape;       // the stroke: px across, px along from the tail, its length and half its width in px. The splash: its corner, its shape, its age (0..1)
+varying vec4 vShape;       // the stroke: px across, px along from the tail, its length and half its width in px. The splash: its corner, and its age (0..1) in w
 varying vec4 vColor;       // its colour, and how opaque
 varying float vPart;       // 0 the stroke, 1 the splash
 const float CELL = ${CELL.toFixed(1)};
@@ -175,7 +165,7 @@ void main() {
   vec2 s1 = screenOf(vec3(top0.x, top, top0.y), z1);
   // Its widest stroke or its splash may reach past the path's ends by up to this much (px).
   float pxPerMetre = projectionMatrix[0][0] * uScreen.x * 0.5;
-  vec2 reach = 1.0 + 2.0 * max(0.65 * uRainStroke.y + 1.0, max(uRainShape.w * pxPerMetre, 3.0)) / uScreen;
+  vec2 reach = 1.0 + 2.0 * max(0.65 * uRainStroke.y + 1.0, max(uRainShape.z * pxPerMetre, 3.0)) / uScreen;
   if (any(greaterThan(min(s0, s1), reach)) || any(lessThan(max(s0, s1), -reach))) return;
 
   // Where it stops: there, or a roof, or (some of the time) a crown, along the way.
@@ -226,9 +216,9 @@ void main() {
     vec3 toCam = vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
     float z;
     vec2 sc = screenOf(vec3(at.x, stop + 0.05, at.y) + toCam * 0.3, z) * half_;
-    float size = max(uRainShape.w * pxPerMetre, 3.0);
+    float size = max(uRainShape.z * pxPerMetre, 3.0);
     gl_Position = vec4((sc + aCorner.xy * size) / half_, z, 1.0);
-    vShape = vec4(aCorner.xy, uRainShape.z, age);
+    vShape = vec4(aCorner.xy, 0.0, age);
     vColor = vec4(col, alpha * min(1.0, uRainStroke.w * 1.6));
   }
 }
@@ -237,7 +227,7 @@ void main() {
 const RAIN_FRAG = /* glsl */ `
 precision highp float;
 uniform vec4 uRainStroke;
-uniform vec4 uRainShape;
+uniform vec3 uRainShape;
 varying vec4 vShape;
 varying vec4 vColor;
 varying float vPart;
@@ -261,30 +251,16 @@ void main() {
     a = lineCover(length(vec2(vShape.x, vShape.y - along)), max(w, 0.6), uRainStroke.z) * thin * taper;
   } else {
     vec2 q = vShape.xy;
-    float age = vShape.w, shape = vShape.z;
+    float age = vShape.w;
     float grow = smoothstep(0.0, 0.25, age), fade = (1.0 - age) * (1.0 - age);
-    if (shape < 0.5) {
-      // A soft dab, flat on the ground, widening.
-      float r = length(q * vec2(1.0, 2.2)) / mix(0.45, 1.0, grow);
-      a = (1.0 - smoothstep(0.4, 1.0, r)) * 0.7;
-    } else if (shape < 1.5) {
-      // A crown: a few short ticks thrown up and out from where it landed.
-      vec2 o = q - vec2(0.0, -0.55);
-      float r = length(o), ang = atan(o.x, o.y);
-      float k = clamp(floor(ang / 0.5 + 0.5), -2.0, 2.0);
-      float off = abs(ang - k * 0.5) * r;
-      float reach = mix(0.35, 1.05, grow);
-      a = (1.0 - smoothstep(0.05, 0.12, off)) * smoothstep(reach - 0.5, reach - 0.3, r) * (1.0 - smoothstep(reach - 0.1, reach, r));
-      a *= step(abs(ang), 1.3);
-    } else {
-      // Beads: a few drops thrown up, rising and falling.
-      a = 0.0;
-      for (int i = 0; i < 3; i++) {
-        float fi = float(i) - 1.0;
-        vec2 c = vec2(fi * 0.55 * grow, -0.5 + (0.8 - abs(fi) * 0.3) * sin(age * 3.1416));
-        a = max(a, 1.0 - smoothstep(0.12, 0.24, length((q - c) * vec2(1.0, 1.3))));
-      }
-    }
+    // A crown: a few short ticks thrown up and out from where it landed.
+    vec2 o = q - vec2(0.0, -0.55);
+    float r = length(o), ang = atan(o.x, o.y);
+    float k = clamp(floor(ang / 0.5 + 0.5), -2.0, 2.0);
+    float off = abs(ang - k * 0.5) * r;
+    float reach = mix(0.35, 1.05, grow);
+    a = (1.0 - smoothstep(0.05, 0.12, off)) * smoothstep(reach - 0.5, reach - 0.3, r) * (1.0 - smoothstep(reach - 0.1, reach, r));
+    a *= step(abs(ang), 1.3);
     a *= fade * smoothstep(0.0, 0.2, age);
   }
   a *= vColor.a;
@@ -302,7 +278,6 @@ void main() {
  */
 export const RAIN_RINGS_GLSL = /* glsl */ `
 uniform vec4 uRings;     // x the share of cells with a ring each time, y the widest ring (m), z the line's width (m), w how strong
-uniform float uRingsDot; // the drop's dot at the centre, 0..1
 float rainRings(vec2 xz) {
   float cell = uRings.y * 2.0;
   vec2 q = xz / cell, i = floor(q);
@@ -325,8 +300,7 @@ float rainRings(vec2 xz) {
     float d = length(xz - centre), rad = life * uRings.y * (0.6 + 0.4 * r.x);
     float fade = (1.0 - life) * (1.0 - life) * smoothstep(0.0, 0.06, life);
     float ring = exp(-pow((d - rad) / w, 2.0)) * fade;
-    float dot_ = exp(-pow(d / (w * 1.6), 2.0)) * (1.0 - smoothstep(0.0, 0.3, life));
-    sum += (ring + dot_ * uRingsDot) * on;
+    sum += ring * on;
   }
   return min(sum, 1.0) * uRings.w * far;
 }
@@ -382,10 +356,9 @@ export class Rain {
     uRainCells: { value: new THREE.Vector4(0, 0, 1, 1) },
     uRain: { value: new THREE.Vector4(0, 0, 1, 8) },
     uRainStroke: { value: new THREE.Vector4() },
-    uRainShape: { value: new THREE.Vector4() },
+    uRainShape: { value: new THREE.Vector3() },
     uRainSplash: { value: 1 },
     uRings: { value: new THREE.Vector4(0, 0.4, 0.04, 0) },
-    uRingsDot: { value: 0 },
   };
   /** For the post pass. */
   readonly veil = {
@@ -394,7 +367,6 @@ export class Rain {
     uRainVeilColor: { value: new THREE.Color() },
   };
   readonly mesh: THREE.Mesh;
-  look: RainLook = RAIN_LOOKS.a;
   /** How far the rain has fallen (m), from which each drop's place in its fall is worked out. */
   private fallen = 0;
   private last = NaN;
@@ -433,7 +405,7 @@ export class Rain {
    */
   update(time: number, rain: number, zoom: number, px: number, share: number, shown: boolean, wind: THREE.Vector2,
     camera: THREE.OrthographicCamera, groundY: number) {
-    const L = this.look, r = shown ? THREE.MathUtils.clamp(rain, 0, 1) : 0;
+    const L = RAIN_LOOK, r = shown ? THREE.MathUtils.clamp(rain, 0, 1) : 0;
     const speed = THREE.MathUtils.lerp(L.speed[0], L.speed[1], r);
     const dt = time - this.last;
     // On from where it was, a gap of over a second (a paused tab) as a frame's worth. Back in time (a tool going back to
@@ -442,7 +414,7 @@ export class Rain {
     if (!(dt >= 0)) this.fallen = speed * time;
     else this.fallen += speed * (dt <= 1 ? dt : 0.1);
     this.last = time;
-    const splash = L.splash[2] * (L.speed[0] + L.speed[1]) * 0.5;
+    const splash = L.splash[1] * (L.speed[0] + L.speed[1]) * 0.5;
     const cycle = COLUMN * 1.15 + Math.max(L.stroke[0] * 1.2, splash) + 1;
     // The screen holds about as many strokes at any zoom: fewer a square metre as the camera draws back. A shower
     // (0.6) shows most of a storm's strokes, so that it reads as rain: the count rises fastest in light rain.
@@ -469,14 +441,13 @@ export class Rain {
     u.uRainCells.value.set(x0, z0, across, cells);
     u.uRain.value.set(perCell, this.fallen % (cycle * 4096), cycle, speed);
     u.uRainStroke.value.set(L.stroke[0], L.stroke[1] * Math.sqrt(zoom / REFERENCE_ZOOM) * px, L.stroke[2], L.stroke[3]);
-    u.uRainShape.value.set(L.taper, L.slant, L.splash[0], L.splash[1]);
+    u.uRainShape.value.set(L.taper, L.slant, L.splash[0]);
     u.uRainSplash.value = splash;
     const g = this.mesh.geometry as THREE.InstancedBufferGeometry;
     g.instanceCount = cells * slots;
     this.mesh.visible = slots > 0;
     // Rings: more of the cells ring as it rains harder.
     u.uRings.value.set(Math.min(1, r * 1.1), L.rings[0], L.rings[1], L.rings[2] * Math.min(1, 0.4 + r));
-    u.uRingsDot.value = L.rings[3];
     // The veil: streaks falling down the screen as fast as the drops, slanted by the wind across it, and its sheets
     // drifting down slower. Offsets in the noise's cells, which repeat every FOG_NOISE_CELLS, so they wrap unseen.
     const v = this.veil;
@@ -486,7 +457,7 @@ export class Rain {
     v.uRainVeilShape.value.set(L.veil[1], L.veil[2], L.veil[4], ((down * 0.25) / L.veil[4]) % FOG_NOISE_CELLS);
   }
 
-  /** The veil's colour: the rain's light as the fog's is lit (see litFog), set with the look's light. */
+  /** The veil's colour: the rain's light as the fog's is lit (see litFog), set with the light. */
   setVeilColor(lit: (out: THREE.Color, base: THREE.Color) => void) {
     lit(this.veil.uRainVeilColor.value, RAIN_VEIL_BASE);
   }

@@ -1,7 +1,6 @@
 import { hoursOf, type HourName } from '../renderer/look';
 import { CHARACTERS, clockHour, SEASONS, type Character, type Season } from '../renderer/season';
 import { BrushRenderer, type DrawnKind } from '../renderer/renderer';
-import { RAIN_LOOKS, type RainLookName } from '../renderer/rain';
 import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
@@ -37,7 +36,6 @@ import { WindView } from './windView';
 //   cloudSeed (which cloud field: a whole number)
 //   falling=0 (leave out the things in the air: the wind's leaves, the rain, and snow to come; dust is in the haze)
 //   fallingShare (the share of the rain's strokes drawn: 1 full quality, 0.33 reduced)
-//   rainLook=a|b|c (the falling rain's look, candidates for #11: a soft washes, b fine and crisp, c brush dashes; a by default)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
 //   prepass=0 (paint without drawing the silhouettes first)  scissor=0 (the water's passes over the whole screen)
 //   equal=0 (paint at or nearer the silhouettes' depth, not only at it)
@@ -248,9 +246,6 @@ let lastTime = 0;
 send(weather, true, 0);
 renderer.settings.falling = num('falling', 1) !== 0;
 renderer.settings.fallingShare = num('fallingShare', 1);
-// The rain's look (#11): the candidates, for the developer to pick between.
-let rainLook: RainLookName = (params.get('rainLook') ?? '') in RAIN_LOOKS ? params.get('rainLook') as RainLookName : 'a';
-renderer.rain.look = RAIN_LOOKS[rainLook];
 // The scripted timeline, at a game speed: it sends the weather as the game would, a few times a second.
 let playing = params.has('timeline'), speed = Number(params.get('timeline')) || 1;
 let spell: SpellName = (params.get('spell') ?? '') in SPELLS ? params.get('spell') as SpellName : 'shower';
@@ -369,19 +364,6 @@ function hud() {
   hudEl.append(slider('Cloud', 0, 1, 0.01, () => weather.cloud, weatherSet((v) => { weather.cloud = v; }), share, true));
   hudEl.append(slider('low sun', 0, 1, 0.01, () => sunUnder, (v) => { sunUnder = v; send(sent); }, share, true));
   hudEl.append(slider('Rain', 0, 1, 0.01, () => weather.rain, weatherSet((v) => { weather.rain = v; }), share, true));
-  const looks = Object.keys(RAIN_LOOKS) as RainLookName[];
-  const rainButton = Object.assign(document.createElement('button'), { textContent: `rain look ${rainLook.toUpperCase()}` });
-  rainButton.title = 'The falling rain\'s look, candidates for #11: A soft washes, B fine and crisp, C brush dashes (rainLook=a|b|c)';
-  rainButton.onclick = () => {
-    rainLook = looks[(looks.indexOf(rainLook) + 1) % looks.length];
-    renderer.rain.look = RAIN_LOOKS[rainLook];
-    params.set('rainLook', rainLook);
-    const url = new URL(location.href);
-    url.searchParams.set('rainLook', rainLook);
-    history.replaceState(null, '', url);
-    hud();
-  };
-  hudEl.append(rainButton);
   hudEl.append(slider('Snow', 0, 1, 0.01, () => weather.snow, weatherSet((v) => { weather.snow = v; }), share, true));
   hudEl.append(slider('Heat', 0, 1, 0.01, () => weather.heat, weatherSet((v) => { weather.heat = v; }), share, true));
   hudEl.append(slider('Haze', 0, 1, 0.01, () => weather.haze.amount, weatherSet((v) => { weather.haze.amount = v; }), share, true));

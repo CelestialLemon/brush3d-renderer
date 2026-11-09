@@ -183,12 +183,12 @@ shader. Not in the shadow, reflection, under-water or silhouette passes. The dro
 only the cells the view can see (and a margin the wind can slant a stroke across) are drawn: a few thousand drops at
 any zoom. How many a cell shows follows how hard it rains and the zoom (about as many strokes on screen at any zoom),
 and `settings.fallingShare` cuts it (the quality knob: 1 full, about a third reduced) without changing a stroke's look.
-In a wind, each drop traces its slanted path through the roof and crown maps (up to 12 reads of each, in the vertex
-shader); straight down it's one. On the MacBook Air (M4, uncapped frame, the farm at 1080p in a storm, look B): 19.23
+In a wind, each drop traces its slanted path through the roof and crown maps (a read about every metre across the land,
+9 to 28 of each, in the vertex shader); straight down it's one. On the MacBook Air (M4, uncapped frame, the farm at 1080p in a storm): 19.23
 ms with the rain against 18.97 without, about the noise. Still to read on the laptop: `?profile&weather=storm` on the
 PR's preview, the `no rain` line.
 Crawl (`AB=2 tools/motion.ts`, the farm in a storm, 1 px pan): the same with the rain and without (soft 0.168 against
-0.169); pops in a gale at the shed (`tools/pops.ts`): none with looks B and C, 3 small ones (20 px) in 40 moments with A.
+0.169); pops in a gale at the shed (`tools/pops.ts`): none.
 
 ### Mist and fog (#9)
 
