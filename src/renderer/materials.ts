@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { CLOUD_LIGHT, GBUFFER_OUT, LIGHT_UNIFORMS, MIRROR_SKY, NOISE, OKLAB, PAINT, SHADOW } from './glsl';
 import { WIND_GLSL } from './wind';
 import { HIDDEN_DIVE, WATER_MAP_GLSL } from './water';
+import { RAIN_RINGS_GLSL } from './rain';
+import { SHELTER_GLSL } from './shelter';
 
 // The scene's materials. Each has a main variant (writes colour and the G-buffer) and a depth variant for the sun's
 // shadow map, built from the same vertex code so wind and billboarding cast the shadows they should.
@@ -739,6 +741,8 @@ varying vec2 vFlow;
 varying float vMud;
 varying vec2 vMirrorShift;
 ${WATER_SHEET_GLSL}
+${SHELTER_GLSL}
+${RAIN_RINGS_GLSL}
 // The flow carries the ripples and the glints along (a flow map: two copies, each carried for a while and then put back,
 // crossfaded so neither's jump shows, each place on its own beat so no pulse runs over the whole river). However the flow
 // turns and changes speed across the water, the pattern is never dragged out of shape.
@@ -886,6 +890,11 @@ void main() {
   // Whitecaps on the chop's crests in a storm.
   float caps = smoothstep(0.55, 0.9, chop) * smoothstep(0.45, 1.0, windForce()) * smoothstep(0.4, 0.9, windGust(p.xz) + 0.2);
   col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.6) * skyTint()), caps * 0.45);
+  // Rain's rings (#11): pale lines of the sky's light where the drops land, fewer under a crown, none under a roof.
+  if (uRings.x > 0.0) {
+    float rings = rainRings(p.xz) * (1.0 - shelter(p));
+    col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.45) * skyTint()), rings);
+  }
   writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
 }
 `;

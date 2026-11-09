@@ -1,14 +1,16 @@
 import * as THREE from 'three';
 
-// The shelter map: what's under cover, seen from straight above, so rain and snow stop at roofs (#10). Two depth maps over
-// a square of the land, drawn from above: the highest full cover over each point (roofs: the inked things, solar panels
-// among them) and the highest partial cover (tree crowns, drawn as their leaves). A raindrop or snowflake stops at the
-// height they give; the ground under a roof stays dry, under a crown drier. Nothing in them moves, so they're drawn only
-// when what's under cover changes (a building placed or removed), not every frame; the crowns are drawn at rest, without
-// the wind.
+// The shelter map: what's under cover, seen from straight above, so rain and snow stop at roofs (#10). Three depth maps
+// over a square of the land, drawn from above: the highest full cover over each point (roofs: the inked things, solar
+// panels among them), the highest partial cover (tree crowns, drawn as their leaves) and the land itself (the ground, so
+// a drop in the open knows where it lands, #11). A raindrop or snowflake stops at the height they give; the ground under
+// a roof stays dry, under a crown drier. Nothing in them moves, so they're drawn only when what's under cover changes (a
+// building placed or removed, the ground changed), not every frame; the crowns are drawn at rest, without the wind.
 
 /** How a mesh shelters what's under it: as a roof does, as a crown does (some rain gets through), or not at all. */
 export type Cover = 'full' | 'partial' | 'none';
+/** A map the shelter draws: the roofs, the crowns, or the land under them (the ground). */
+export type ShelterLayer = 'full' | 'partial' | 'land';
 
 /** How much of the rain and snow a crown keeps off (a roof keeps off all of it): the developer's "partly" (#10). */
 export const PARTIAL_COVER = 0.6;
@@ -25,6 +27,7 @@ export interface ShelterArea { x: number; z: number; side: number; turn: number 
 export const SHELTER_GLSL = /* glsl */ `
 uniform highp sampler2D uShelterFull;
 uniform highp sampler2D uShelterPartial;
+uniform highp sampler2D uShelterLand;
 uniform mat4 uShelterMatrix;
 // The map's depth to height: height = x - depth * y.
 uniform vec2 uShelterHeight;
@@ -52,26 +55,32 @@ float shelter(vec3 p) {
   float depth = s.z - 0.1 / uShelterHeight.y;
   return max(shelterSoft(uShelterFull, s.xy, depth), ${PARTIAL_COVER.toFixed(2)} * shelterSoft(uShelterPartial, s.xy, depth));
 }
-float shelterTop(vec3 p) {
+// The height a map holds over a point (its nearest texel), or -1e4 where it holds nothing or off the map.
+float shelterHeightIn(highp sampler2D map, vec3 p) {
   vec3 s = (uShelterMatrix * vec4(p, 1.0)).xyz;
   if (any(lessThan(s.xy, vec2(0.0))) || any(greaterThan(s.xy, vec2(1.0)))) return -1e4;
   ivec2 t = clamp(ivec2(s.xy * uShelterTexels), ivec2(0), ivec2(int(uShelterTexels) - 1));
-  float d = texelFetch(uShelterFull, t, 0).r;
+  float d = texelFetch(map, t, 0).r;
   return d < 1.0 ? uShelterHeight.x - d * uShelterHeight.y : -1e4;
 }
+float shelterTop(vec3 p) { return shelterHeightIn(uShelterFull, p); }
+// The highest crown over p (where a drop a crown catches stops), and the land's own height there (the ground).
+float crownTop(vec3 p) { return shelterHeightIn(uShelterPartial, p); }
+float landTop(vec3 p) { return shelterHeightIn(uShelterLand, p); }
 `;
 
 /** Every point to (-2, -2): off the map, while there's none. */
 const OFF_MAP = new THREE.Matrix4().set(0, 0, 0, -2, 0, 0, 0, -2, 0, 0, 0, 0, 0, 0, 0, 1);
 
-/** A mesh as the map sees it. */
-export interface CoverMesh { mesh: THREE.Mesh; cover: Cover; depth: THREE.Material }
+/** A mesh as the map sees it: which of its maps it's drawn into ('none': none). */
+export interface CoverMesh { mesh: THREE.Mesh; cover: Cover | 'land'; depth: THREE.Material }
 
 export class ShelterMap {
   /** For materials that read it (see SHELTER_GLSL). */
   readonly uniforms = {
     uShelterFull: { value: null as THREE.Texture | null },
     uShelterPartial: { value: null as THREE.Texture | null },
+    uShelterLand: { value: null as THREE.Texture | null },
     // Until it's drawn, every point is off the map.
     uShelterMatrix: { value: new THREE.Matrix4().copy(OFF_MAP) },
     uShelterHeight: { value: new THREE.Vector2(0, 1) },
@@ -83,6 +92,7 @@ export class ShelterMap {
   area: ShelterArea | null = null;
   private full: THREE.WebGLRenderTarget;
   private partial: THREE.WebGLRenderTarget;
+  private land: THREE.WebGLRenderTarget;
   private camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private overlay: THREE.ShaderMaterial;
   private overlayScene = new THREE.Scene();
@@ -98,8 +108,10 @@ export class ShelterMap {
     };
     this.full = target();
     this.partial = target();
+    this.land = target();
     this.uniforms.uShelterFull.value = this.full.depthTexture;
     this.uniforms.uShelterPartial.value = this.partial.depthTexture;
+    this.uniforms.uShelterLand.value = this.land.depthTexture;
     this.uniforms.uShelterTexels.value = size;
     this.overlay = new THREE.ShaderMaterial({
       glslVersion: THREE.GLSL3,
@@ -122,8 +134,8 @@ export class ShelterMap {
   setArea(area: ShelterArea | null) { this.area = area; this.dirty = true; }
 
   /**
-   * Draws the map, if it's dirty: the full cover into one depth map, the partial into the other, each mesh with its depth
-   * material (`meshes`), from straight above, everything else hidden. `scene` holds them; `area` is the square to cover
+   * Draws the map, if it's dirty: the full cover into one depth map, the partial into another and the land into the
+   * third, each mesh with its depth material (`meshes`), from straight above, everything else hidden. `scene` holds them; `area` is the square to cover
    * when none is set. The wind is stilled while it draws (`still`), so crowns are at rest.
    */
   draw(gl: THREE.WebGLRenderer, scene: THREE.Scene, meshes: CoverMesh[], area: ShelterArea | null, still: () => () => void) {
@@ -134,7 +146,7 @@ export class ShelterMap {
       this.uniforms.uShelterMatrix.value.copy(OFF_MAP);
       return true;
     }
-    // From a metre above the highest cover, down to a metre below everything in the scene.
+    // From a metre above the highest cover (or land), down to a metre below everything in the scene.
     const box = this.box.makeEmpty();
     let top = -Infinity;
     for (const o of scene.children) {
@@ -163,12 +175,12 @@ export class ShelterMap {
     for (const o of scene.children) if (o.visible) { o.visible = false; hidden.push(o); }
     const saved = meshes.map((m) => [m, m.mesh.material, m.mesh.visible] as const);
     const unstill = still();
-    for (const cover of ['full', 'partial'] as const) {
+    for (const cover of ['full', 'partial', 'land'] as const) {
       for (const m of meshes) {
         m.mesh.visible = m.cover === cover && hidden.includes(m.mesh);
         m.mesh.material = m.depth;
       }
-      gl.setRenderTarget(cover === 'full' ? this.full : this.partial);
+      gl.setRenderTarget(cover === 'full' ? this.full : cover === 'partial' ? this.partial : this.land);
       gl.clear(false, true, false);
       gl.render(scene, c);
     }
@@ -193,7 +205,7 @@ export class ShelterMap {
   }
 
   dispose() {
-    this.full.dispose(); this.partial.dispose(); this.overlay.dispose();
+    this.full.dispose(); this.partial.dispose(); this.land.dispose(); this.overlay.dispose();
   }
 }
 

@@ -7,14 +7,13 @@
 // of the canvas's size, not the canvas: on the MacBook the canvas held every frame to the screen's refresh, so the times
 // came out in steps of 16.7 ms.
 import * as THREE from 'three';
-import type { BrushRenderer } from '../renderer/renderer';
-import type { MaterialKind } from '../renderer/materials';
+import type { BrushRenderer, DrawnKind } from '../renderer/renderer';
 import { PassTimer } from '../renderer/timer';
 import { WEATHER_PRESETS, type Weather } from '../renderer/weather';
 import { steadyWind, WIND_SCALE } from '../renderer/wind';
 
 export interface ProfileCase {
-  label: string; width: number; height: number; wind: number; hide?: MaterialKind[];
+  label: string; width: number; height: number; wind: number; hide?: DrawnKind[];
   /** Draw the shelter map every frame, to time it (the game draws it only when cover changes). */
   shelter?: boolean;
   /** The weather, if not the demo's. */
@@ -31,7 +30,7 @@ export interface ProfileRow {
 }
 
 export const PASSES = ['setup', 'shelter', 'clouds', 'shadow', 'under', 'reflect', 'main', 'post'];
-const KINDS: MaterialKind[] = ['ground', 'paint', 'grass', 'foliage', 'crop', 'ink', 'water', 'debris'];
+const KINDS: DrawnKind[] = ['ground', 'paint', 'grass', 'foliage', 'crop', 'ink', 'water', 'debris', 'rain'];
 const STORM = WIND_SCALE.storm;
 
 /** The usual set: a calm and a stormy frame at 720p, 1080p, 1440p and 4K, then the stormy 1080p frame without each kind. */

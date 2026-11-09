@@ -1,10 +1,9 @@
 import { hoursOf, type HourName } from '../renderer/look';
 import { CHARACTERS, clockHour, SEASONS, type Character, type Season } from '../renderer/season';
-import { BrushRenderer } from '../renderer/renderer';
+import { BrushRenderer, type DrawnKind } from '../renderer/renderer';
 import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
-import type { MaterialKind } from '../renderer/materials';
 import { cloudDriftSpeed } from '../renderer/clouds';
 import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weather, type WeatherName } from '../renderer/weather';
 import { steadyWind, WIND_SCALE, windName, type WindStrength } from '../renderer/wind';
@@ -35,7 +34,8 @@ import { WindView } from './windView';
 //   water=usual|spate|flood (the water, #18), then each value over it: rise (m over the usual), flow (times the usual
 //     speed), mud (0..1)
 //   cloudSeed (which cloud field: a whole number)
-//   falling=0 (leave out the things in the air: the wind's leaves, and rain and snow to come; dust is in the haze)
+//   falling=0 (leave out the things in the air: the wind's leaves, the rain, and snow to come; dust is in the haze)
+//   fallingShare (the share of the rain's strokes drawn: 1 full quality, 0.33 reduced)
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
 //   prepass=0 (paint without drawing the silhouettes first)  scissor=0 (the water's passes over the whole screen)
 //   equal=0 (paint at or nearer the silhouettes' depth, not only at it)
@@ -245,6 +245,7 @@ function send(w: Weather, immediate = false, time = lastTime) {
 let lastTime = 0;
 send(weather, true, 0);
 renderer.settings.falling = num('falling', 1) !== 0;
+renderer.settings.fallingShare = num('fallingShare', 1);
 // The scripted timeline, at a game speed: it sends the weather as the game would, a few times a second.
 let playing = params.has('timeline'), speed = Number(params.get('timeline')) || 1;
 let spell: SpellName = (params.get('spell') ?? '') in SPELLS ? params.get('spell') as SpellName : 'shower';
@@ -486,7 +487,7 @@ if (params.has('shot')) {
   // the frame is drawn.
   const draw = async (cam?: { x: number; z: number; zoom: number; view: number },
     options: {
-      hide?: MaterialKind[]; grain?: boolean; time?: number; hour?: number; dayHour?: number; wind?: Partial<typeof wind>;
+      hide?: DrawnKind[]; grain?: boolean; time?: number; hour?: number; dayHour?: number; wind?: Partial<typeof wind>;
       weather?: Partial<Weather> | WeatherName; timeline?: { time: number; speed?: number; spell?: SpellName }; ease?: boolean;
       water?: Partial<WaterState>;
     } = {}) => {
@@ -516,7 +517,7 @@ if (params.has('shot')) {
     await windTo(time, windGoal(), !!options.ease);
     drawWind();
     if (windMap) windView.draw(view.target.x, view.target.z, view.heading);
-    const kinds: MaterialKind[] = ['ground', 'paint', 'crop', 'ink', 'water', 'foliage', 'grass', 'debris'];
+    const kinds: DrawnKind[] = ['ground', 'paint', 'crop', 'ink', 'water', 'foliage', 'grass', 'debris', 'rain'];
     for (const k of kinds) renderer.setVisible(k, !options.hide?.includes(k));
     const grain = renderer.settings.grain;
     if (options.grain === false) renderer.settings.grain = 0;

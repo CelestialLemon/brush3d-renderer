@@ -16,7 +16,7 @@ import { gpuName, launch, open } from './browser.ts';
 
 const STEP = Number(process.env.STEP ?? 1 / 240);
 const MOMENTS = 40;
-const KINDS = ['foliage', 'grass', 'crop', 'water', 'debris'];
+const KINDS = ['foliage', 'grass', 'crop', 'water', 'debris', 'rain'];
 
 const [out = 'out', ...queries] = process.argv.slice(2);
 await mkdir(out, { recursive: true });

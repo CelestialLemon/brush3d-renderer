@@ -1,5 +1,6 @@
 import { FOG_NOISE_CELLS } from './fog';
 import { NOISE, OKLAB } from './glsl';
+import { RAIN_VEIL_GLSL } from './rain';
 import { STREAK_STRETCH, WIND_GLSL } from './wind';
 
 // The post pass: the heat's shimmer, lines on inked things, the fog or dust lying on the land, the distance's haze, the sky,
@@ -83,6 +84,7 @@ const float FOG_MAX = 0.85;
 
 // The baked noise (fog.ts) at a point in noise cells: about -1..1.
 float fogNoise(vec2 p) { return texture2D(tFogNoise, p / FOG_NOISE_CELLS).r * 2.0 - 1.0; }
+${RAIN_VEIL_GLSL}
 
 // How thick the fog is at a height, 0..1.
 float fogProfile(float y) {
@@ -194,12 +196,14 @@ void main() {
     uv.x += fogNoise(q + uShimmer.y * vec2(0.15, 0.0)) * uShimmer.x / uResolution.x;
     aux = texture2D(tAux, uv);
   }
-  vec3 c = texture2D(tColor, uv).rgb;
+  vec4 painted = texture2D(tColor, uv);
+  vec3 c = painted.rgb;
   float d = depthOf(aux);
   bool sky = d >= FAR;
 
   if (sky) {
-    c = mix(uSkyBottom, uSkyTop, smoothstep(0.2, 1.0, vUv.y));
+    // Under any rain drawn over it (see rain.ts: premultiplied, over nothing).
+    c = mix(uSkyBottom, uSkyTop, smoothstep(0.2, 1.0, vUv.y)) * (1.0 - painted.a) + painted.rgb;
   }
 
   // Ink: a line on an inked surface where it ends against something farther (its silhouette) or folds sharply (a crease).
@@ -235,6 +239,9 @@ void main() {
     float haze = max((1.0 - exp(-far * uHazeDensity)) * uHazeMax, uHazeFloor);
     c = mix(c, uHazeColor, haze);
   }
+
+  // The veil of rain over the distance (#11), over the haze: rain between the eye and the far land.
+  c = mix(c, uRainVeilColor, rainVeil(uv * 2.0 - 1.0, d));
 
   // In fog, lines fade halfway with what they draw. The developer's pick (#9, 'soft'): fading all the way looked more like
   // a painting, but the things the player can use got lost in the fog.
