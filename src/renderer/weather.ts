@@ -55,6 +55,12 @@ export interface Weather {
    * what the game reads from it, don't change.
    */
   sunUnder?: number;
+  /**
+   * How stormy the sky looks, 0..1 (#12, the developer's call, 2026-11-10): how far a storm darkens and changes the picture
+   * (storm.ts). Apart from the cover and the rain: a storm darkens before its rain arrives and lifts before it stops, and a
+   * long steady rain isn't a storm. Under a storm, sunUnder lights the land at any hour of the day. A look only.
+   */
+  storm?: number;
   /** How hard it rains, 0..1. */
   rain?: number;
   /** How hard it snows, 0..1. Rain and snow are apart, so sleet is both and one can ease into the other. */
@@ -76,7 +82,7 @@ export const WEATHER_PRESETS = {
   scattered: { cloud: 0.3 },
   overcast: { cloud: 1 },
   'soft-rain': { cloud: 0.7, rain: 0.35 },
-  storm: { cloud: 1, rain: 0.9 },
+  storm: { cloud: 1, rain: 0.9, storm: 1 },
   mist: { cloud: 0.2, haze: { amount: 0.4, color: FOG, top: 0.6 } },
   fog: { cloud: 0.6, haze: { amount: 0.6, color: FOG, top: 4 } },
   'low-cloud': { cloud: 1, haze: { amount: 0.7, color: FOG, top: 9, base: 4.5 } },
@@ -92,7 +98,7 @@ const EASE = 1.5;
 
 /** The weather as drawn: the cloud cover exactly as asked, the looks eased towards it. */
 export class WeatherState {
-  readonly goal = { cloud: 0, sunUnder: 0, rain: 0, snow: 0, heat: 0, haze: 0, hazeColor: new THREE.Color(FOG), hazeTop: 4, dust: 0,
+  readonly goal = { cloud: 0, sunUnder: 0, storm: 0, rain: 0, snow: 0, heat: 0, haze: 0, hazeColor: new THREE.Color(FOG), hazeTop: 4, dust: 0,
     /** The haze's base, or null lying on the ground. */
     hazeBase: null as number | null,
   };
@@ -105,6 +111,8 @@ export class WeatherState {
   overcast = 0;
   /** How much of a low sun gets in under the cloud, eased. */
   sunUnder = 0;
+  /** How stormy the sky looks, eased. */
+  storm = 0;
   rain = 0; snow = 0; heat = 0;
   /**
    * The haze: how thick, its colour (linear), how high and where it starts, eased. With none asked for it thins away,
@@ -134,7 +142,7 @@ export class WeatherState {
 
   set(w: Weather, immediate = false) {
     const g = this.goal, clamp = (v = 0) => THREE.MathUtils.clamp(v, 0, 1);
-    g.cloud = clamp(w.cloud); g.sunUnder = clamp(w.sunUnder); g.rain = clamp(w.rain); g.snow = clamp(w.snow); g.heat = clamp(w.heat);
+    g.cloud = clamp(w.cloud); g.sunUnder = clamp(w.sunUnder); g.storm = clamp(w.storm); g.rain = clamp(w.rain); g.snow = clamp(w.snow); g.heat = clamp(w.heat);
     g.haze = clamp(w.haze?.amount);
     if (w.haze) {
       g.hazeColor.setHex(w.haze.color); g.hazeTop = w.haze.top; g.hazeBase = w.haze.base ?? null; g.dust = w.haze.kind === 'dust' ? 1 : 0;
@@ -155,7 +163,7 @@ export class WeatherState {
   /** Puts the drawn weather at the goal (a level loading, a screenshot). */
   snap() {
     const g = this.goal;
-    this.cloud = this.overcast = g.cloud; this.sunUnder = g.sunUnder; this.rain = g.rain; this.snow = g.snow; this.heat = g.heat;
+    this.cloud = this.overcast = g.cloud; this.sunUnder = g.sunUnder; this.storm = g.storm; this.rain = g.rain; this.snow = g.snow; this.heat = g.heat;
     this.haze = g.haze; this.hazeColor.copy(g.hazeColor); this.hazeTop = g.hazeTop; this.hazeBase = this.baseGoal(); this.dust = g.dust;
   }
 
@@ -174,6 +182,7 @@ export class WeatherState {
     const g = this.goal, k = 1 - Math.exp(-dt / EASE);
     this.overcast += (g.cloud - this.overcast) * k;
     this.sunUnder += (g.sunUnder - this.sunUnder) * k;
+    this.storm += (g.storm - this.storm) * k;
     this.rain += (g.rain - this.rain) * k;
     this.snow += (g.snow - this.snow) * k;
     this.heat += (g.heat - this.heat) * k;

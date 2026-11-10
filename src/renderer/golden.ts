@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Look } from './look';
 import type { OvercastRecipe } from './overcast';
+import { stormEdge } from './storm';
 
 // Golden hour under a cloud deck (#8): at dawn and dusk the low sun can shine in under a heavy cover, through a clear strip
 // of sky at the horizon, and light the land gold beneath a grey sky. Whether the horizon is clear is the game's
@@ -54,11 +55,13 @@ const smooth = THREE.MathUtils.smoothstep;
  * sets), by day only, and as heavy as the cover (from 60% to full). After sunset the look's sun climbs again as it turns
  * into the moon (look.ts), so the light is gone as soon as the night starts: by about 20:00, and in by 6:45 at dawn (on
  * the reference day; a season's follow its sunrise and sunset). The sun's height is the reference day's (Look.dayEl), so
- * it's dawn's and dusk's in every season, not all day under a low winter sun.
+ * it's dawn's and dusk's in every season, not all day under a low winter sun. Under a storm, at any hour of the day,
+ * from a light storm up (#12, stormEdge).
  */
-export function goldenShare(sunUnder: number, look: Look, cover: number) {
-  const day = 1 - smooth(look.night, 0, 0.15);
-  return sunUnder * day * smooth(look.dayEl, -2, 3) * (1 - smooth(look.dayEl, 14, 26)) * smooth(cover, 0.6, 1);
+export function goldenShare(sunUnder: number, look: Look, cover: number, storm = 0) {
+  const day = 1 - smooth(look.night, 0, 0.15), up = smooth(look.dayEl, -2, 3), low = 1 - smooth(look.dayEl, 14, 26);
+  // Under a storm the sun breaks under the deck at any hour of the day (#12, the developer, 2026-11-10; storm.ts).
+  return sunUnder * day * up * (storm > 0 ? lerp(low, 1, stormEdge(storm)) : low) * smooth(cover, 0.6, 1);
 }
 
 /** The overcast recipe's shape (sky light and shadows) turned towards a golden recipe's, by g. */
@@ -78,6 +81,8 @@ export function goldenLook(under: Look, clear: Look, gr: GoldenRecipe, g: number
   const a = gr.air * g;
   return {
     ...under,
+    // The sun's height is the clear hour's, but for a sun breaking under a storm (storm.ts), which comes in lower.
+    sunEl: lerp(under.sunEl, clear.sunEl, g),
     sunColor: under.sunColor.clone().lerp(clear.sunColor, gr.sun * g),
     rimColor: under.rimColor.clone().lerp(clear.rimColor.clone().multiplyScalar(gr.rim), g),
     shadeDepth: lerp(under.shadeDepth, clear.shadeDepth * gr.depth, g),

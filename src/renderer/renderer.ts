@@ -19,6 +19,7 @@ import type { PassTimer } from './timer';
 import { WeatherState, type Weather } from './weather';
 import { airLook, HEAT, heatShare } from './air';
 import { GOLDEN, goldenLook, goldenShape, goldenShare } from './golden';
+import { STORM_LOOKS, stormGold, stormLook, VIGNETTE, type StormRecipe } from './storm';
 import { colourLeafStorm, leafStorm, WindField, WindState } from './wind';
 import { DustField, type DustSource } from './dust';
 import { TreeSprings, type TreeSpec } from './trees';
@@ -128,6 +129,8 @@ export class BrushRenderer {
   readonly scene = new THREE.Scene();
   readonly view = new ViewCamera();
   readonly shared: SharedUniforms = createSharedUniforms();
+  /** The storm look (#12, storm.ts): a candidate, for the developer to pick on the PR's preview. */
+  stormLook: StormRecipe = STORM_LOOKS.b;
   readonly settings: Settings = { lines: true, shadows: true, grain: 0.012, prepass: true, waterScissor: true, equalDepth: true, falling: true, fallingShare: 1, shelterDebug: false };
   width = 1; height = 1;
   /** Device pixels per CSS pixel asked for (see RendererOptions): the screen's pixels, which the zoom counts in. */
@@ -257,7 +260,7 @@ export class BrushRenderer {
         uResolution: { value: new THREE.Vector2(1, 1) }, uLineWidth: { value: 1.5 }, uLines: { value: 1 },
         uTargetDepth: { value: CAMERA_DISTANCE }, uHazeColor: { value: new THREE.Color() }, uHazeDensity: { value: 0.02 },
         uHazeMax: { value: 0.4 }, uHazeFloor: { value: 0 }, uSkyTop: { value: new THREE.Color() }, uSkyBottom: { value: new THREE.Color() },
-        uExposure: { value: 1 }, uSaturation: { value: 1 }, uNightShift: { value: 0 }, uShadeHue: { value: 0 }, uGrain: { value: 0.012 },
+        uExposure: { value: 1 }, uSaturation: { value: 1 }, uNightShift: { value: 0 }, uShadeHue: { value: 0 }, uGrain: { value: 0.012 }, uVignette: { value: VIGNETTE },
         uCamPos: { value: new THREE.Vector3() }, uCamRight: { value: new THREE.Vector3() }, uCamUp: { value: new THREE.Vector3() },
         uCamFwd: { value: new THREE.Vector3() }, uFogColor: { value: new THREE.Color() }, uFog: { value: new THREE.Vector4() },
         tFogNoise: { value: fogNoiseTexture() },
@@ -637,11 +640,15 @@ export class BrushRenderer {
     const gap = THREE.MathUtils.lerp(cover, gapCover(cover), strength);
     // What dust and the heat do to the light (air.ts), laid over each.
     const w = this.weather, air = (l: Look) => airLook(l, w, HEAT);
+    // A storm (storm.ts) darkens the light under a cloud, the gaps' as far as they've turned overcast (the sun in a gap is
+    // still the sun), and the grade as far as the sky is covered.
+    const st = w.storm, sr = this.stormLook, stormy = (l: Look, k: number) => stormLook(l, st * k, sr);
     // Golden hour under a deck (golden.ts): the light under the cloud turned back towards the low sun's, and the gaps' as
-    // far as they've turned overcast; the grade only in its haze's colour.
-    const g = goldenShare(w.sunUnder, clear, cover) * strength, gold = (l: Look, k: number) => goldenLook(l, clear, GOLDEN, g * k);
-    const graded = overcastLook(clear, cover, r), grade = air({ ...graded, hazeColor: gold(graded, cover).hazeColor });
-    const look = air(gold(overcastLook(clear, gap, r), gap)), under = air(gold(overcastLook(clear, 1, r), 1));
+    // far as they've turned overcast; the grade only in its haze's colour. Under a storm, at any hour of the day, in gold.
+    const g = goldenShare(w.sunUnder, clear, cover, st) * strength, breaking = stormGold(clear, st, sr);
+    const gold = (l: Look, k: number) => goldenLook(l, breaking, GOLDEN, g * k);
+    const graded = stormy(overcastLook(clear, cover, r), cover), grade = air({ ...graded, hazeColor: gold(graded, cover).hazeColor });
+    const look = air(gold(stormy(overcastLook(clear, gap, r), gap), gap)), under = air(gold(stormy(overcastLook(clear, 1, r), 1), 1));
     const s = this.shared, rs = goldenShape(r, GOLDEN, g);
     const shape = skyShare(gap), lift = shape * rs.shadowLift;
     s.uOvercast.value.set(shape * rs.sky, shape * rs.shadowFade, shape * rs.shadowBlur);
@@ -680,10 +687,11 @@ export class BrushRenderer {
     s.uCloudBelly.value.copy(under.skyTop).lerp(under.skyBottom, 0.25);
     // The deck stays as grey in the mirror when the low sun lights the land under it: by the gaps' change of light, which
     // is the light under a cloud's once the sky has closed (under part cover, where the gaps are in the sun, it's none).
-    if (g > 0) s.uCloudBelly.value.multiplyScalar(air(overcastLook(clear, gap, r)).exposure / look.exposure);
+    if (g > 0) s.uCloudBelly.value.multiplyScalar(air(stormy(overcastLook(clear, gap, r), gap)).exposure / look.exposure);
     const sun = clear.sunColor, warm = new THREE.Color(1, 1, 1).lerp(sun.clone().multiplyScalar(1 / Math.max(sun.r, sun.g, sun.b, 1e-3)), 0.85);
     s.uCloudLit.value.copy(look.skyBottom).lerp(warm, 0.7 * THREE.MathUtils.lerp(0.15, 1, dim));
     s.uSkyClosed.value = gap;
+    u.uVignette.value = THREE.MathUtils.lerp(VIGNETTE, sr.vignette, st * cover);
     u.uExposure.value = grade.exposure; u.uSaturation.value = grade.saturation; u.uNightShift.value = grade.nightShift; u.uShadeHue.value = rad(grade.shadeHue);
     // Lightning, over the hour and the weather (and before the fog takes its colour from the light).
     this.lightning.light(s);

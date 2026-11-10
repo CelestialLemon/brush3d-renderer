@@ -14,7 +14,9 @@
 //   hour running from 16:00 past sunset, or from before dawn to 9:00, the camera still: QUERY="cloud=1&sunUnder=1" for the low sun
 //   under a cloud deck, #8; in a season, QUERY="season=winter", the same stretch of its day, #13), day (first light to
 //   dusk, the camera still and wide: QUERY="season=winter" for the season's day, #13), lightning (strikes then distant
-//   flickers: QUERY="weather=storm&flashes=gentle", #12), snow-settle (snow settling on the shed, bare to deep; #14) and
+//   flickers: QUERY="weather=storm&flashes=gentle", #12), thunderstorm, gale and hurricane (the demo's scripted storms rolling
+//   in and clearing, at 3x, the camera still and wide, lightning at the spell's rates from a fixed seed, so every look gets
+//   the same strikes: QUERY="stormLook=b&hour=night", #12), snow-settle (snow settling on the shed, bare to deep; #14) and
 //   snow-pan (the camera panning over lying snow; QUERY="season=winter")
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
@@ -23,6 +25,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Page } from 'puppeteer-core';
 import { launch, open } from './browser.ts';
 
 const FPS = 30;
@@ -35,7 +38,8 @@ const STRENGTHS = { calm: 0, breeze: 5, gale: 17, storm: 25, hurricane: 35 };
  */
 interface Move {
   seconds: number; at: (t: number) => Cam; wind?: (t: number) => number; cloud?: (t: number) => number;
-  timeline?: (t: number) => number; spell?: 'shower' | 'fog' | 'dust' | 'flood'; ease?: boolean; extra?: boolean;
+  timeline?: (t: number) => number; spell?: 'shower' | 'fog' | 'dust' | 'flood' | 'thunderstorm' | 'gale' | 'hurricane';
+  ease?: boolean; extra?: boolean;
   /** The water (#18): how far it stands over the usual (m), how fast it runs (times the usual), how muddy (0..1). */
   water?: (t: number) => { rise?: number; flow?: number; mud?: number };
   /** The hour, if it moves: on the reference day (16 to 20.5 for a sunset), drawn at that point of the season's day. */
@@ -49,6 +53,24 @@ interface Move {
 const tick = (t: number) => Math.floor(t * 4) / 4;
 const STILL = { x: -1, z: 4, zoom: 48, view: 0 };
 const CLOUDS = { x: -1, z: 4, zoom: 24, view: 0 };
+const STORM_CAM = { x: -6, z: 4, zoom: 28, view: 0 };
+/** A number in 0..1 from a frame and a channel, the same every run. */
+const hash = (i: number, k: number) => { const x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
+/**
+ * A scripted storm's lightning at frame i (#12): its strikes and flickers a minute at that time, the demo's (timeline.ts),
+ * drawn at those rates from a fixed seed; strikes land on the land in view.
+ */
+async function stormLightning(page: Page, move: Move, i: number, t: number) {
+  if (!move.timeline || !move.spell) return { bolts: [] as { x: number; z: number }[], flickers: 0 };
+  const rates = await page.evaluate((time, spell) => (window as any).__timelineLightning(time, 3, spell), move.timeline(t), move.spell) as
+    { bolts: number; far: number } | null;
+  if (!rates) return { bolts: [], flickers: 0 };
+  const cam = move.at(t), yaw = ((45 + 90 * cam.view) * Math.PI) / 180;
+  const across = (hash(i, 2) - 0.5) * 0.7 * (1280 / cam.zoom), along = (hash(i, 3) - 0.6) * 0.5 * (720 / cam.zoom) / Math.sin(PITCH);
+  const bolts = hash(i, 1) < rates.bolts / 60 / FPS
+    ? [{ x: cam.x + Math.cos(yaw) * across - Math.sin(yaw) * along, z: cam.z - Math.sin(yaw) * across - Math.cos(yaw) * along }] : [];
+  return { bolts, flickers: hash(i, 4) < rates.far / 60 / FPS ? 1 : 0 };
+}
 const MOVES: Record<string, Move> = {
   // A slow drag to the right and a little up, at an everyday zoom: 60 px a second.
   pan: { seconds: 5, at: (t) => pan({ x: 0, z: 0, zoom: 40, view: 0 }, 60 * t, 15 * t) },
@@ -110,6 +132,10 @@ const MOVES: Record<string, Move> = {
   'snow-settle': { seconds: 15, at: () => ({ x: 10, z: 12, zoom: 48, view: 0 }), ground: (t) => ({ snow: Math.min(0.8, tick(t) / 15) }), ease: true, extra: true },
   // The snow lying, the camera panning over the farm: what the snow does in motion.
   'snow-pan': { seconds: 8, at: (t) => pan({ x: 4, z: 6, zoom: 48, view: 0 }, -t * 40, 0), ground: () => ({ snow: 0.5 }), extra: true },
+  // The scripted storms (#12), at 3x, the camera still and wide: the spell's lightning drawn at its rates (stormLightning).
+  thunderstorm: { seconds: 40, at: () => STORM_CAM, timeline: (t) => t, spell: 'thunderstorm', ease: true, extra: true },
+  gale: { seconds: 33, at: () => STORM_CAM, timeline: (t) => t, spell: 'gale', ease: true, extra: true },
+  hurricane: { seconds: 47, at: () => STORM_CAM, timeline: (t) => t, spell: 'hurricane', ease: true, extra: true },
   'stream-usual': { seconds: 8, at: () => ({ x: -14, z: 20, zoom: 64, view: 0 }), water: () => ({ rise: 0, flow: 1, mud: 0 }), extra: true },
 };
 
@@ -141,8 +167,9 @@ try {
       const water = move.water?.(t);
       const ground = move.ground?.(t);
       // Lightning runs on real seconds: here the frame's, so the video's flashes are at the right moments.
-      const bolts = move.lightning?.strikes?.filter(([at]) => at >= t && at < t + 1 / FPS).map(([, x, z]) => ({ x, z })) ?? [];
-      const flickers = move.lightning?.flickers?.filter((at) => at >= t && at < t + 1 / FPS).length ?? 0;
+      const storm = await stormLightning(page, move, i, t);
+      const bolts = [...(move.lightning?.strikes?.filter(([at]) => at >= t && at < t + 1 / FPS).map(([, x, z]) => ({ x, z })) ?? []), ...storm.bolts];
+      const flickers = (move.lightning?.flickers?.filter((at) => at >= t && at < t + 1 / FPS).length ?? 0) + storm.flickers;
       await page.evaluate((now, bolts, flickers) => {
         const r = (window as any).__renderer;
         r.lightning.clock = () => now;
