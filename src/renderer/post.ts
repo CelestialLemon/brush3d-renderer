@@ -1,5 +1,6 @@
 import { FOG_NOISE_CELLS } from './fog';
 import { NOISE, OKLAB } from './glsl';
+import { LIGHTNING_GLSL } from './lightning';
 import { RAIN_VEIL_GLSL } from './rain';
 import { STREAK_STRETCH, WIND_GLSL } from './wind';
 
@@ -180,6 +181,7 @@ vec3 toSrgb(vec3 c) {
 }
 
 // Where a pixel is in the world, from its place on the screen and its depth.
+${LIGHTNING_GLSL}
 vec3 worldAt(vec2 uv, float d) {
   vec2 ndc = uv * 2.0 - 1.0;
   return uCamPos + uCamRight * ndc.x + uCamUp * ndc.y + uCamFwd * d;
@@ -266,6 +268,8 @@ void main() {
   o += (hash12(gl_FragCoord.xy) - 0.5) * uGrain;
   vec2 v = vUv - 0.5;
   o *= 1.0 - dot(v, v) * 0.35;
+  // Lightning (#12), laid over the finished picture: the flash, the far lightning, the glow where it struck.
+  if (uFlashOn > 0.5) o = lightningFinal(o, sky ? vec3(0.0) : worldAt(uv, d), sky);
   gl_FragColor = vec4(o, 1.0);
 }
 `;
