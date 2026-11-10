@@ -45,6 +45,8 @@ const [farm, meadow] = scenes;
 for (const [query, hour] of [[farm, 22], [meadow, 12]] as const) for (const setting of ['full', 'gentle', 'off'] as Setting[]) {
   runs.push({ name: `${label(query)} ${hour}h ${setting}, every frame`, query, hour, setting, seconds: setting === 'full' ? 11 : 5, fps: 30, plan: 'spam' });
 }
+// The far stutter (look C) called every frame too, so Full's strikes land at every point round its three rises.
+for (const [query, hour] of [[farm, 22], [meadow, 12]] as const) runs.push({ name: `${label(query)} ${hour}h full, every frame, far C`, query, hour, setting: 'full', seconds: 11, fps: 30, plan: 'spam', look: 'c' });
 for (const look of ['a', 'b', 'c'] as const) for (const hour of [17.5, 22]) runs.push({ name: `farm ${hour}h full, looks ${look}`, query: farm, hour, setting: 'full', seconds: 5, fps: 30, plan: 'natural', look });
 for (const look of ['b', 'c'] as const) for (const setting of ['gentle', 'off'] as const) runs.push({ name: `farm 22h ${setting}, looks ${look}`, query: farm, hour: 22, setting, seconds: 5, fps: 30, plan: 'natural', look });
 for (const zoom of [16, 192]) for (const setting of ['full', 'gentle', 'off'] as const) for (const look of ['a', 'b', 'c'] as const) runs.push({ name: `farm 22h ${setting}, looks ${look}, zoom ${zoom}`, query: farm, hour: 22, setting, seconds: 5, fps: 30, plan: 'natural', look, zoom });
