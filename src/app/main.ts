@@ -4,7 +4,6 @@ import { BrushRenderer, type DrawnKind } from '../renderer/renderer';
 import { lightningHud, setupLightning } from './lightning';
 import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
-import { DEFAULT_TREE_LOOKS, type TreeLooks } from '../scenes/seasonTrees';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
 import { cloudDriftSpeed } from '../renderer/clouds';
 import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weather, type WeatherName } from '../renderer/weather';
@@ -22,7 +21,6 @@ import { WindView } from './windView';
 //   season=spring|summer|autumn|winter (#13; none by default: the looks' own day, sun up 6 to 20)  character (the
 //     game's: mild|wet|dry|hot|gales|stormy|hard|highRiver)  sunrise, sunset (the game's clock hours; the season's by default)
 //   The scene is built in the season (summer's with none): its crops, flowers and hay stand in for the game's.
-//   bare=a|b|c  turn=a|b|c  blossom=a|b|c  fallen=a|b|off (the trees' seasons' looks, #13, each the developer's to pick)
 //   scene=farm|meadow  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   rhythm (how the gusts come: 0 rare and strong, 1 frequent and mild)  windMap (the living wind from above, #36)
@@ -71,12 +69,8 @@ if (season) {
     sunrise: params.has('sunrise') ? num('sunrise', 6) : undefined, sunset: params.has('sunset') ? num('sunset', 20) : undefined,
   });
 }
-// The trees' seasons' looks (#13), candidates for the developer to pick.
-const treeLookOf = <K extends keyof TreeLooks>(key: K, options: readonly TreeLooks[K][]): TreeLooks[K] =>
-  (options.includes(params.get(key) as TreeLooks[K]) ? params.get(key) as TreeLooks[K] : DEFAULT_TREE_LOOKS[key]);
-const treeLooks: TreeLooks = { bare: treeLookOf('bare', ['a', 'b', 'c']), turn: treeLookOf('turn', ['a', 'b', 'c']), blossom: treeLookOf('blossom', ['a', 'b', 'c']), fallen: treeLookOf('fallen', ['a', 'b', 'off']) };
-const farmScene = farm ? buildFarm(renderer, season ?? 'summer', treeLooks) : null;
-const scene = farmScene ?? buildMeadow(renderer, season ?? 'summer', treeLooks);
+const farmScene = farm ? buildFarm(renderer, season ?? 'summer') : null;
+const scene = farmScene ?? buildMeadow(renderer, season ?? 'summer');
 /** Settles once the scene's models are in. */
 const loaded = farmScene?.ready ?? Promise.resolve();
 let isLoaded = false;
@@ -319,14 +313,6 @@ function hud() {
   };
   seasons.onkeydown = (e) => e.stopPropagation();
   hudEl.append(Object.assign(document.createElement('label'), { textContent: 'Season' }), seasons);
-  // The trees' seasons' looks (#13): candidates, reloading the scene.
-  for (const [key, label, options] of [['bare', 'Winter trees', ['a', 'b', 'c']], ['turn', 'Autumn trees', ['a', 'b', 'c']], ['blossom', 'Blossom', ['a', 'b', 'c']], ['fallen', 'Fallen', ['a', 'b', 'off']]] as const) {
-    const pick = document.createElement('select');
-    for (const name of options) pick.append(new Option(name, name, false, name === treeLooks[key]));
-    pick.onchange = () => { const next = here(); next.set(key, pick.value); location.search = `?${next}`; };
-    pick.onkeydown = (e) => e.stopPropagation();
-    hudEl.append(Object.assign(document.createElement('label'), { textContent: label }), pick);
-  }
   const at = Object.assign(document.createElement('span'), { textContent: `${clock(hour)} · sun ${clock(renderer.day.sunrise)}–${clock(renderer.day.sunset)}` });
   hudEl.append(at);
   const lines = document.createElement('button');

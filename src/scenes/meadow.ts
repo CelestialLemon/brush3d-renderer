@@ -4,7 +4,7 @@ import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
 import { C, addFlowers, addReeds, addStone, addTuft, groundOf, smooth, treeWind, type Stream, type Tree } from './kit';
 import type { Obstacle } from '../wind/sim';
 import type { Season } from '../renderer/season';
-import { DEFAULT_TREE_LOOKS, Grove, dressFor, type Dress, type TreeLooks } from './seasonTrees';
+import { Grove, dressFor, type Dress } from './seasonTrees';
 
 // The first slice: a corner of a farm in a meadow. A stream, a field of wheat, three trees (two broadleaf, one with fruit,
 // and a blue-green cypress), long grass and wildflowers, and one solar panel, the only inked thing.
@@ -86,9 +86,9 @@ let SEASON: Season = 'summer';
 /** How the trees are dressed for the season (seasonTrees.ts); none in summer, or with no season set. */
 let DRESS: Dress | null = null;
 
-export function buildMeadow(r: BrushRenderer, season: Season = 'summer', treeLooks: TreeLooks = DEFAULT_TREE_LOOKS): Meadow {
+export function buildMeadow(r: BrushRenderer, season: Season = 'summer'): Meadow {
   SEASON = season;
-  DRESS = dressFor(season, treeLooks, (x, z) => streamDistance(x, z) > 1.6 && !(x > FIELD.x0 - 0.2 && x < FIELD.x1 + 0.2 && z > FIELD.z0 - 0.2 && z < FIELD.z1 + 0.2));
+  DRESS = dressFor(season, (x, z) => streamDistance(x, z) > 1.6 && !(x > FIELD.x0 - 0.2 && x < FIELD.x1 + 0.2 && z > FIELD.z0 - 0.2 && z < FIELD.z1 + 0.2));
   terrain(r);
   field(r);
   trees(r);

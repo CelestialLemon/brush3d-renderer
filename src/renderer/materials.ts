@@ -213,7 +213,8 @@ void main() {
 
 /** Added to a foliage dab's aPaint.x (its colour drift, under 2 otherwise) to give it crisper edges: see FOLIAGE_VERT. */
 export const CRISP_EDGE = 2;
-/** Added to a foliage dab's aPaint.x to mark it as wood (#13's winter twigs): it moves only with its tree. */
+/** Added to a foliage dab's aPaint.x to mark it as stiff (#13's winter twigs, and fallen leaves): it moves only with its
+ * tree, if any, never fluttering or turning over on its own. Adds to CRISP_EDGE. */
 export const STIFF_STROKE = 4;
 
 /**
@@ -271,8 +272,10 @@ void main() {
   vCardPx = aCard.z * projectionMatrix[0][0] * uScreen.x * 0.5;
   // Spring's and autumn's strokes (#13, aPaint.x raised by CRISP_EDGE) have crisper edges: their brighter colours make the
   // part-covered pixels along an edge, which change as the camera moves a pixel, shimmer more than green leaves'.
-  if (aPaint.x >= ${STIFF_STROKE.toFixed(1)}) vPaint.x -= ${STIFF_STROKE.toFixed(1)};
-  else if (aPaint.x >= ${CRISP_EDGE.toFixed(1)}) { vPaint.x -= ${CRISP_EDGE.toFixed(1)}; vCardPx *= 1.8; }
+  // The flags add up (a fallen leaf is both): wood's comes off first, then the crisp edge's.
+  float paintX = aPaint.x >= ${STIFF_STROKE.toFixed(1)} ? aPaint.x - ${STIFF_STROKE.toFixed(1)} : aPaint.x;
+  if (paintX >= ${CRISP_EDGE.toFixed(1)}) { paintX -= ${CRISP_EDGE.toFixed(1)}; vCardPx *= 1.8; }
+  vPaint.x = paintX;
   place(world + drawnShift(tree));
 }
 `;

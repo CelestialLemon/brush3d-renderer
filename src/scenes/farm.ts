@@ -17,7 +17,7 @@ import {
 } from './kit';
 import { DRAG, type Obstacle } from '../wind/sim';
 import type { Season } from '../renderer/season';
-import { DEFAULT_TREE_LOOKS, Grove, dressFor, type Dress, type TreeLooks } from './seasonTrees';
+import { Grove, dressFor, type Dress } from './seasonTrees';
 
 // A pastoral valley, about 176 m across, for trying the renderer's features on a big, full and varied scene. In its
 // middle, the working farm after the aerial shot in Dear Alice (0:37): a wheat field with a solar array, a track along it
@@ -346,9 +346,9 @@ let DRESS: Dress | null = null;
 type Stage = 'young' | 'ripe' | 'stubble' | 'bare';
 const STAGE: Record<Season, Stage> = { spring: 'young', summer: 'ripe', autumn: 'stubble', winter: 'bare' };
 
-export function buildFarm(renderer: BrushRenderer, season: Season = 'summer', treeLooks: TreeLooks = DEFAULT_TREE_LOOKS): Farm {
+export function buildFarm(renderer: BrushRenderer, season: Season = 'summer'): Farm {
   SEASON = season;
-  DRESS = dressFor(season, treeLooks, canFall);
+  DRESS = dressFor(season, canFall);
   const r: Adder = { add: (g, kind, o = {}) => renderer.add(g, kind, { ...o, tile: TILE }) };
   terrain(r);
   crops(r);
