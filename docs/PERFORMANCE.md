@@ -243,6 +243,24 @@ up the layer, or worked out as the grass's gusts are, each cost half again), and
 
 Dust is the dearest at 0.3 ms here (the preset's warmth and shimmer included), about 0.6 on the laptop, inside the line's 0.8.
 
+### Lying snow (#14)
+
+In the materials, from the ground's map (docs/GROUND.md): each one reads the snow lying where it is, and what shelters
+it, and lays the snow's paint over what it covers. The snow's colours are worked out once a frame on the CPU, and the
+land's hollows (with the pattern a thin snow breaks along, how far the ground faces up and how sheltered it is) once,
+into a map, rather than in every pixel; together those took it from 0.95 ms to 0.37. Snow on the river's banks is
+painted in the bed's pass too, which brought it to about 0.45. While the ground is bare the materials skip it all.
+
+RX 570, the farm at 1080p in a storm, snow lying 0.6 everywhere (`1080p storm, snow lying` in `node tools/profile.ts`
+and `?profile`): **11.03 → 11.48 ms**, about 0.45, a little over the line's 0.4 (shared with the wet ground and frost
+still to come). Crawl (`AB=2 tools/motion.ts`, a 1 px pan): 0.108 → 0.193, all of the rise at dark branch edges against
+the white, the open snow steady; pops (`tools/pops.ts`): none.
+
+On the MacBook Air (`?profile` on #58's preview, uncapped): 19.47 → 24.17 ms, but that run warmed as it went: the rows
+before it, fog, dust and the heat wave (0.2, 0.3 and 0.05 ms here), read 3.0 to 3.6 ms over the storm there, and
+`no rain` read slower than the storm with the rain. So most of the 4.7 is the machine slowing, not the snow; its own
+share there is still to read. Still to read on the laptop: the `snow lying` line against `1080p storm`.
+
 ## The farm valley
 
 The farm grew from a 68 m square to a 176 m valley (2026-11-03). Measured on the RX 570 at 1080p:

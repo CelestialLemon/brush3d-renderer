@@ -23,6 +23,8 @@ import { colourLeafStorm, leafStorm, WindField, WindState } from './wind';
 import { DustField, type DustSource } from './dust';
 import { TreeSprings, type TreeSpec } from './trees';
 import { WATER_EASE, WaterField, type WaterMap } from './water';
+import { GROUND_EASE, GroundField, HollowMap, type GroundMap } from './ground';
+import { SnowPaint } from './snow';
 import type { WindSnapshot } from '../wind/sim';
 
 // The renderer: the clouds' shade over the land (#8); a sun shadow map; for the water, the bed drawn without it and the
@@ -194,6 +196,12 @@ export class BrushRenderer {
    * call shelter.changed() after moving cover; adding a mesh or showing or hiding a kind does it already.
    */
   readonly shelter: ShelterMap;
+  /** The game's ground (#14): how deep the snow lies and where the frost is, its map eased between updates (see setGround). */
+  readonly ground = new GroundField();
+  /** The land's hollows and rises, found from the ground's shape: once, when there's first snow or frost to draw. */
+  readonly hollows = new HollowMap();
+  /** The lying snow's paint in the hour's light (#14), worked out once a frame. */
+  private readonly snow = new SnowPaint();
   /** The falling rain (#11): its strokes, and the uniforms for its veil and the water's rings. */
   readonly rain: Rain;
   /** Lightning (#12): the game says where and when (strike, flicker); the player's flash setting is lightning.setting. */
@@ -230,6 +238,8 @@ export class BrushRenderer {
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
     });
     this.shelter = new ShelterMap(options.shelterSize ?? 1024);
+    // Every material reads the shelter map, the ground's map and the land's hollows, for lying snow (#14).
+    Object.assign(this.shared, this.shelter.uniforms, this.ground.uniforms, this.hollows.uniforms, this.snow.uniforms);
     this.rain = new Rain(this.shared, this.shelter.uniforms);
     this.scene.add(this.rain.mesh);
     this.cloudMap = new CloudMap(this.shared);
@@ -366,7 +376,7 @@ export class BrushRenderer {
     if (mesh.userData.cover !== 'none' || kind === 'ground') this.shelter.changed();
     if (kind === 'ground') this.cloudArea = false;
     this.scene.add(mesh);
-    if (kind === 'ground') { this.setHazeGround(); this.land = null; }
+    if (kind === 'ground') { this.setHazeGround(); this.land = null; this.hollows.changed(); }
     if (options.castShadow ?? kind !== 'water') this.casters.push(mesh);
     const twin = new THREE.Mesh(geometry, this.materials.get(kind)!.prepass);
     twin.frustumCulled = cull;
@@ -389,7 +399,7 @@ export class BrushRenderer {
     const i = this.twins.findIndex(([m]) => m === mesh);
     if (i >= 0) { this.silhouettes.remove(this.twins[i][1]); this.twins.splice(i, 1); }
     if (mesh.userData.cover !== 'none' || mesh.userData.kind === 'ground') this.shelter.changed();
-    if (mesh.userData.kind === 'ground') { this.setHazeGround(); this.cloudArea = false; this.land = null; }
+    if (mesh.userData.kind === 'ground') { this.setHazeGround(); this.cloudArea = false; this.land = null; this.hollows.changed(); }
   }
 
   /**
@@ -524,6 +534,15 @@ export class BrushRenderer {
   private waterShown = true;
 
   /**
+   * The game's ground (#14, see GroundMap and docs/GROUND.md): how deep the snow lies and where the frost is, over a grid
+   * as the water's is, sent again whenever it changes. A changed map eases in over `ease` seconds (0 at once). None
+   * settles under a roof, and less under a crown: that, and how a thin cover breaks along the land, are the renderer's.
+   * Null: bare everywhere.
+   */
+  setGround(map: GroundMap | null, ease = GROUND_EASE) { this.ground.set(map, this.shared.uTime.value, ease); }
+
+
+  /**
    * A haze on the ground starts just under the lowest land: the ground's lowest point (it's laid in world space, its brush
    * baked by place), or the water's bed if lower.
    */
@@ -646,6 +665,11 @@ export class BrushRenderer {
     s.uLightExposure.value = look.exposure / grade.exposure;
     const deeper = THREE.MathUtils.lerp(CLOUD_DEPTH, 1, gap);
     s.uCloudBands.value.set(rad(((under.shadeHue - look.shadeHue + 540) % 360) - 180), under.shadeDepth, under.litLean, (under.exposure * deeper) / grade.exposure);
+    // The lying snow's paint in that light (#14), in the gaps and under a cloud.
+    this.snow.update(
+      { shadeHue: look.shadeHue, litHue: look.litHue, sky: s.uOvercast.value.x, sunColor: s.uSunColor.value, skyColor: look.skyColor },
+      { shadeHue: look.shadeHue + s.uCloudBands.value.x * 180 / Math.PI, litHue: look.litHue, sky: s.uCloudOvercast.value.x, sunColor: s.uCloudSunColor.value, skyColor: look.skyColor },
+    );
     const u = this.post.uniforms;
     u.uHazeColor.value.copy(grade.hazeColor); u.uHazeDensity.value = grade.hazeDensity; u.uHazeMax.value = grade.hazeMax; u.uHazeFloor.value = grade.hazeFloor;
     u.uSkyTop.value.copy(grade.skyTop); u.uSkyBottom.value.copy(grade.skyBottom);
@@ -840,9 +864,8 @@ export class BrushRenderer {
         mesh, cover: mesh.userData.kind === 'ground' ? 'land' as const : mesh.userData.cover as Cover,
         depth: this.materials.get(mesh.userData.kind)!.depth,
       }));
-    const ground = this.scene.children.find((o) => o.userData.kind === 'ground' && o.userData.fields);
     const s = this.shared;
-    this.shelter.draw(this.gl, this.scene, cover, ground?.userData.fields ?? null, () => {
+    this.shelter.draw(this.gl, this.scene, cover, this.groundSquare(), () => {
       // Every wind value and the clock set to one rest, whatever the weather, and the flutter kept across the map's own
       // view (straight down), not the camera's: what's left of the sway and the flutter (a little even in a calm) is then
       // the same every draw, so a new building can't nudge a tree's dry patch.
@@ -855,6 +878,27 @@ export class BrushRenderer {
         s.uWindDir.value.copy(saved[4]); s.uWindDrift.value.copy(saved[5]); s.uViewBack.value.copy(saved[6]);
       };
     });
+  }
+
+  /**
+   * The ground's square, for the maps over it (the shelter, the hollows): its brush's, or without one a square round all
+   * of the ground (from #11's #50). Null with no ground.
+   */
+  private groundSquare(): NonNullable<MeshOptions['fields']> | null {
+    const grounds = this.scene.children.filter((o): o is THREE.Mesh => (o as THREE.Mesh).isMesh && o.userData.kind === 'ground');
+    const square = grounds.find((g) => g.userData.fields)?.userData.fields as MeshOptions['fields'] | undefined;
+    if (square || !grounds.length) return square ?? null;
+    const box = new THREE.Box3();
+    for (const g of grounds) box.expandByObject(g);
+    const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+    return { x: c.x, z: c.z, side: Math.max(size.x, size.z), turn: 0 };
+  }
+
+  /** Finds the land's hollows (HollowMap): every piece of the ground, from above, over its square. */
+  private drawHollows() {
+    const grounds = this.scene.children.filter((o): o is THREE.Mesh => (o as THREE.Mesh).isMesh && o.userData.kind === 'ground' && o.visible);
+    const depth = this.materials.get('ground')?.depth;
+    if (depth) this.hollows.draw(this.gl, this.scene, grounds, depth, this.groundSquare(), this.shelter.uniforms);
   }
 
   /**
@@ -901,6 +945,7 @@ export class BrushRenderer {
     if (this.water.settle(time) && this.waterMesh) this.waterMesh.visible = false;
     s.uMirrorY.value = this.water.mirror;
     s.uWaterHigh.value = this.water.any ? this.water.wetHigh : -1e6;
+    this.ground.update(time);
     // The land's height, known before a strike is asked for (see strike): worked out on the first frame, not during one.
     this.land ??= LandHeights.from(this.scene);
     if (!this.lightningCompiled) { this.lightning.precompile(this.gl, this.view.camera); this.lightningCompiled = true; }
@@ -935,7 +980,12 @@ export class BrushRenderer {
 
     // The shelter map, only when cover has changed: nothing to do most frames.
     t?.mark('shelter', this.shelter.dirty);
-    if (this.shelter.dirty) this.drawShelter();
+    // The hollows map holds the ground's shelter too: found again with it.
+    if (this.shelter.dirty) { this.drawShelter(); this.hollows.changed(); }
+    // The land's hollows (#14): once there's snow or frost, and again only when the ground or its shelter changes.
+    const hollows = this.ground.any && this.hollows.dirty;
+    t?.mark('hollows', hollows);
+    if (hollows) this.drawHollows();
 
     // The clouds' shade over the land, as the game has them now.
     t?.mark('clouds');
@@ -962,7 +1012,14 @@ export class BrushRenderer {
     gl.setClearColor(0x000000, 0);
     const water = this.waterOnScreen();
     const nudge = (WATER_REACH.ripple + WATER_REACH.chop * WATER_REACH.chopMax) * 1.1;
-    if (water) this.drawOnly(this.underTarget, (m) => m.userData.under, this.waterRect(water, this.underTarget, nudge, 0));
+    if (water) {
+      // The bed under the water takes no snow or frost (#14): 2 tells the materials to leave out what's below the water's
+      // top (the banks above it keep theirs, as the ripples' nudge shows them through the water's edge).
+      const ground = this.ground.uniforms.uGroundOn, on = ground.value;
+      if (on > 0.5) ground.value = 2;
+      this.drawOnly(this.underTarget, (m) => m.userData.under, this.waterRect(water, this.underTarget, nudge, 0));
+      ground.value = on;
+    }
     t?.mark('reflect');
     const pre = this.settings.prepass;
     if (water) {
