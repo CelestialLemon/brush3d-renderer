@@ -13,10 +13,11 @@ import haywagonModel from './models/haywagon.glb?url';
 import rowboatModel from './models/rowboat.glb?url';
 import scarecrowModel from './models/scarecrow.glb?url';
 import {
-  C, MapLine, addFlowers, addMound, addReeds, addStone, addTuft, groundOf, growTree, smooth, treeWind, type Stream, type Tree,
+  C, MapLine, addFlowers, addMound, addReeds, addStone, addTuft, groundOf, smooth, treeWind, type Stream, type Tree,
 } from './kit';
 import { DRAG, type Obstacle } from '../wind/sim';
 import type { Season } from '../renderer/season';
+import { Grove, dressFor, type Dress } from './seasonTrees';
 
 // A pastoral valley, about 176 m across, for trying the renderer's features on a big, full and varied scene. In its
 // middle, the working farm after the aerial shot in Dear Alice (0:37): a wheat field with a solar array, a track along it
@@ -208,7 +209,7 @@ const TREES: Tree[] = [
     .map(([u, v, s], i) => tree('broadleaf', u, v, s, 600 + i, C.leaf.clone().lerp(C.deepLeaf, 0.3 + 0.1 * i))),
   // Willows (round, pale) round the pond, and cypresses by the lavender.
   ...([[-24, -50, 1.5], [-21, -66, 1.3], [-9, -72.5, 1.6], [6, -67, 1.2], [-17, -44, 1.1]] as const)
-    .map(([u, v, s], i) => tree('broadleaf', u, v, s, 700 + i, C.leafLight.clone().lerp(C.teal, 0.35))),
+    .map(([u, v, s], i) => ({ ...tree('broadleaf', u, v, s, 700 + i, C.leafLight.clone().lerp(C.teal, 0.35)), form: 'willow' as const })),
   ...([[16, -45, 1.3], [16.5, -50, 1.1], [42, -46, 1.4], [42.5, -51, 1.2]] as const).map(([u, v, s], i) => tree('cypress', u, v, s, 800 + i)),
 ];
 // The old orchard: standard fruit trees in rows, every other one shifted.
@@ -339,12 +340,15 @@ const TILE = 24;
  * the wildflowers thinning out to none; the lavender in flower only in summer. The colours are the renderer's (setSeason).
  */
 let SEASON: Season = 'summer';
+/** How the trees are dressed for the season (seasonTrees.ts); none in summer, or with no season set. */
+let DRESS: Dress | null = null;
 /** How far a crop has come: growing, ready (the scene's own), cut to stubble, or the field ploughed and bare. */
 type Stage = 'young' | 'ripe' | 'stubble' | 'bare';
 const STAGE: Record<Season, Stage> = { spring: 'young', summer: 'ripe', autumn: 'stubble', winter: 'bare' };
 
 export function buildFarm(renderer: BrushRenderer, season: Season = 'summer'): Farm {
   SEASON = season;
+  DRESS = dressFor(season, canFall);
   const r: Adder = { add: (g, kind, o = {}) => renderer.add(g, kind, { ...o, tile: TILE }) };
   terrain(r);
   crops(r);
@@ -834,12 +838,12 @@ function bridges(r: Adder) {
 }
 
 function orchard(r: Adder) {
-  const wood = new MeshBuilder('paint'), leaves = new MeshBuilder('foliage'), stakes = new MeshBuilder('ink');
+  const grove = new Grove(DRESS), stakes = new MeshBuilder('ink');
   const rand = rng(61);
   for (const row of ROWS) {
     for (let s = 0.6; s < row.length - 0.4; s += 1.5 + (rand() - 0.5) * 0.3) {
       const p = row.at(s);
-      growTree(wood, leaves, ground, { kind: 'bush', x: p.x, z: p.z, seed: 0, scale: 0.8 + rand() * 0.2, leaf: ORCHARD_LEAF, fruit: C.apple, fruitDensity: 3 }, rand);
+      grove.grow(ground, { kind: 'bush', x: p.x, z: p.z, seed: 0, scale: 0.8 + rand() * 0.2, leaf: ORCHARD_LEAF, fruit: C.apple, fruitDensity: 3, form: 'orchard' }, rand);
       // A stake by every other bush.
       if (rand() < 0.5) {
         const x = p.x + p.dz * 0.45, z = p.z - p.dx * 0.45, y = height(x, z);
@@ -847,9 +851,14 @@ function orchard(r: Adder) {
       }
     }
   }
-  r.add(wood.build(), 'paint');
-  r.add(leaves.build(), 'foliage');
+  grove.addTo(r);
   r.add(stakes.build(), 'ink');
+}
+
+/** Where leaves and petals may lie: not on the water, the fields or the buildings. */
+function canFall(x: number, z: number) {
+  const [u, v] = M(x, z);
+  return onLand(u, v, 1) && waterDistance(x, z) > 1.4 && !inPlot(u, v, 0) && wheatInside(u, v) < 0 && !nearBuilding(u, v, 1);
 }
 
 /** Places a tree may not grow: the water, the paths, the fields, the buildings, the props. */
@@ -860,14 +869,14 @@ function blockedForTrees(x: number, z: number, margin = 1) {
 }
 
 function trees(r: Adder) {
-  const wood = new MeshBuilder('paint'), leaves = new MeshBuilder('foliage');
-  for (const t of TREES) growTree(wood, leaves, ground, t, rng(t.seed));
+  const grove = new Grove(DRESS);
+  for (const t of TREES) grove.grow(ground, t, rng(t.seed));
   // Hedges of round bushes along the upper fork and the lane's far end.
   const rand = rng(71);
   for (const [path, from, to, side] of [[FORK_UP, 2, 17, -1], [LANE, 2, 14, 1]] as const) {
     for (let s = from; s < to; s += 1.1 + rand() * 0.6) {
       const p = path.at(s), off = side * (PATH_HALF + 0.9 + rand() * 0.3);
-      growTree(wood, leaves, ground, { kind: 'bush', x: p.x - p.dz * off, z: p.z + p.dx * off, seed: 0, scale: 1.1 + rand() * 0.4, leaf: C.emerald }, rand);
+      grove.grow(ground, { kind: 'bush', x: p.x - p.dz * off, z: p.z + p.dx * off, seed: 0, scale: 1.1 + rand() * 0.4, leaf: C.emerald, form: 'hedge' }, rand);
     }
   }
   // Thickets along the stream, with gaps where the banks open to the water.
@@ -877,15 +886,15 @@ function trees(r: Adder) {
     const x = p.x - p.dz * off, z = p.z + p.dx * off;
     const [u, v] = M(x, z);
     if (!onLand(u, v, 1) || pathDistance(x, z) < PATH_HALF + 1 || clear(x, z) || nearBuilding(u, v, 2) || waterDistance(x, z) < 2.2) continue;
-    growTree(wood, leaves, ground, { kind: rand() < 0.25 ? 'round' : 'bush', x, z, seed: 0, scale: 1.1 + rand() * 0.6,
-      leaf: C.leaf.clone().lerp(C.deepLeaf, rand() * 0.7) }, rand);
+    grove.grow(ground, { kind: rand() < 0.25 ? 'round' : 'bush', x, z, seed: 0, scale: 1.1 + rand() * 0.6,
+      leaf: C.leaf.clone().lerp(C.deepLeaf, rand() * 0.7), form: 'thicket' }, rand);
   }
   // Clumps of shrubs out on the meadow.
   for (const [u, v] of SHRUBS) {
     for (let k = 0, n = 2 + Math.floor(rand() * 3); k < n; k++) {
       const [x, z] = W(u + (rand() - 0.5) * 2.6, v + (rand() - 0.5) * 1.8);
       if (blockedForTrees(x, z, 0.6)) continue;
-      growTree(wood, leaves, ground, { kind: 'bush', x, z, seed: 0, scale: 1.0 + rand() * 0.5, leaf: C.leaf.clone().lerp(C.emerald, rand()) }, rand);
+      grove.grow(ground, { kind: 'bush', x, z, seed: 0, scale: 1.0 + rand() * 0.5, leaf: C.leaf.clone().lerp(C.emerald, rand()), form: 'shrub' }, rand);
     }
   }
   // Hedgerows round the fields: bushes shoulder to shoulder, a hedgerow tree every so often.
@@ -895,10 +904,10 @@ function trees(r: Adder) {
       const [u, v] = M(x, z);
       if (!onLand(u, v, 1) || pathDistance(x, z) < PATH_HALF + 0.5 || nearBuilding(u, v, 1)) continue;
       if (rand() < 0.06) {
-        growTree(wood, leaves, ground, { kind: 'broadleaf', x, z, seed: 0, scale: 1.1 + rand() * 0.5, leaf: C.leaf.clone().lerp(C.deepLeaf, 0.2 + rand() * 0.5) }, rand);
+        grove.grow(ground, { kind: 'broadleaf', x, z, seed: 0, scale: 1.1 + rand() * 0.5, leaf: C.leaf.clone().lerp(C.deepLeaf, 0.2 + rand() * 0.5), form: 'hedge' }, rand);
       } else {
-        growTree(wood, leaves, ground, { kind: 'bush', x, z, seed: 0, scale: 1.15 + rand() * 0.45,
-          leaf: C.emerald.clone().lerp(C.deepLeaf, rand() * 0.6).lerp(C.leaf, rand() * 0.3) }, rand);
+        grove.grow(ground, { kind: 'bush', x, z, seed: 0, scale: 1.15 + rand() * 0.45,
+          leaf: C.emerald.clone().lerp(C.deepLeaf, rand() * 0.6).lerp(C.leaf, rand() * 0.3), form: 'hedge' }, rand);
       }
     }
   }
@@ -917,12 +926,11 @@ function trees(r: Adder) {
     const pick = rand();
     const kind: Tree['kind'] = pick < 0.14 ? 'cypress' : pick < 0.3 ? 'round' : 'broadleaf';
     const scale = kind === 'cypress' ? 1.2 + rand() * 0.5 : kind === 'round' ? 1.1 + rand() * 0.4 : 1.3 + rand() * 0.8;
-    const t: Tree = { kind, x, z, seed: 0, scale, leaf: kind === 'cypress' ? C.cypress : woodLeaves[Math.floor(rand() * woodLeaves.length)] };
+    const t: Tree = { kind, x, z, seed: 0, scale, leaf: kind === 'cypress' ? C.cypress : woodLeaves[Math.floor(rand() * woodLeaves.length)], form: 'wood' };
     TREES_GROWN.push(t);
-    growTree(wood, leaves, ground, t, rand);
+    grove.grow(ground, t, rand);
   }
-  r.add(wood.build(), 'paint');
-  r.add(leaves.build(), 'foliage');
+  grove.addTo(r);
 }
 /** Trees grown by chance (the woods), for the wind. */
 const TREES_GROWN: Tree[] = [];
@@ -935,17 +943,16 @@ function clear(x: number, z: number) {
 }
 
 function nursery(r: Adder) {
-  const wood = new MeshBuilder('paint'), leaves = new MeshBuilder('foliage');
+  const grove = new Grove(DRESS);
   const rand = rng(83);
   for (const row of NURSERY) {
     for (let s = 0.8; s < row.length; s += 1.9) {
       const p = row.at(s);
-      growTree(wood, leaves, ground, { kind: 'round', x: p.x, z: p.z, seed: 0, scale: 0.7 + rand() * 0.15,
-        leaf: C.leaf.clone().lerp(C.emerald, rand() * 0.5) }, rand);
+      grove.grow(ground, { kind: 'round', x: p.x, z: p.z, seed: 0, scale: 0.7 + rand() * 0.15,
+        leaf: C.leaf.clone().lerp(C.emerald, rand() * 0.5), form: 'sapling' }, rand);
     }
   }
-  r.add(wood.build(), 'paint');
-  r.add(leaves.build(), 'foliage');
+  grove.addTo(r);
 }
 
 /**

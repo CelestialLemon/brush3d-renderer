@@ -23,7 +23,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   7. #18 dynamic water: a state the game drives (done 2026-11-03, #45 and #48: see Water);
   8. #11 rain and wet ground (the falling rain done 2026-11-09, #53: see Weather; wet ground is open);
   9. #12 storms and lightning (the lightning in #55: see Weather; the storm look is open);
-  10. #13 seasons (the trees' look in a thread of its own; parts 1 and 2, the hour following the game's sun and the season's look for the rest, merged 2026-11-07 as #51 and #52);
+  10. #13 seasons (parts 1 and 2, the hour following the game's sun and the season's look for the rest, merged 2026-11-07 as #51 and #52; part 3, the trees' look, in #54);
   11. #14 snow, frost and ice;
   12. #19 the water's own look, chosen under every weather.
 - **The demo on GitHub Pages** (#15, shipped 2026-10-30): https://celestiallemon.github.io/brush3d-renderer/main/, and a preview
@@ -195,7 +195,7 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   screen the storm's beyond lights up, fading across (0.06 at most, 0.03 at Gentle; Sol finds 0.06 sound, and 0.08
   plausible after a test of a flicker over a fading flash). The first set was too faint to tell apart; of the second, cloud
   gaps read as mist, and a stutter of three pulses might grate over a long storm.
-- **Seasons (#13, all but the trees done 2026-11-07, #51 and #52; the trees' look is open).** The developer's scope (2026-11-03): the trees' seasonal look (turning, bare limbs,
+- **Seasons (#13, done: parts 1 and 2 on 2026-11-07, #51 and #52; part 3, the trees, in #54).** The developer's scope (2026-11-03): the trees' seasonal look (turning, bare limbs,
   blossom, the bushes and hedges with them, fallen and flying leaves) is a separate thread; this one does the rest. The
   decisions are on #13. Part 1: `renderer.setSeason({ season, character, sunrise, sunset })`, once per level, with the
   game's sunrise and sunset (its table's by default: spring 6–19, summer 5–21, autumn 7–18, winter 8–16), and
@@ -211,6 +211,14 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   drabber). The developer's picks (2026-11-07): the look near the game's turf with a gentle light (not the bolder painted
   one), winter's grass a dormant straw-olive (not bleached pale, which read as frost). The demo's scenes stand in for the game's crops by
   season (young, ripe, stubble, ploughed; the wildflowers thinning out; the lavender in flower only in summer).
+  Part 3, the trees (`src/scenes/seasonTrees.ts`): each season builds its own tree models once, at level load, so nothing
+  changes frame to frame and there's no hitch (the developer's pick, over recolouring summer's). Spring: blossom on the
+  orchards, on a few wild trees and hedges, cream to peach (it stays a dusky rose at golden hour, where pink goes lavender),
+  and fresh greens. Autumn: a patchwork, each tree and each of its branches turning at its own pace, green through gold
+  to vivid orange and red, with drifts of leaves under the trees; fruit stays only in autumn. Winter: fine bare limbs
+  with a few rust leaves clinging to some, bushes and hedges as twig masses; cypresses stay green and about one broadleaf
+  in five is an evergreen (holm-oak dark). Flying leaves take the season's colours (`LEAF_STORM`). Summer and no season
+  are today's trees, frame for frame. The looks are the developer's picks (2026-11-10); decisions are on #13 and #54.
 
 ### Motion and stability
 

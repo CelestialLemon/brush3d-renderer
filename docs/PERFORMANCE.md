@@ -174,6 +174,23 @@ the game sent them are kept beside them (12 bytes a vertex, about 18 MB on the f
 Crawl (`AB=2 tools/motion.ts`, farm noon) is the same in every season as today's (soft 0.50 to 0.55, 0.53 today), and no
 pops in a gale (`tools/pops.ts`, 0 patches).
 
+The trees' seasons (#13, part 3) are models built once at level load: a spring, autumn or winter level builds its own
+in place of summer's (load about 5% longer on the farm in autumn, slightly shorter in winter), and nothing is added per
+frame. A frame at 1080p in a storm on the RX 570 (GPU ms): 14.3 with no season, spring 13.3, autumn 14.2, winter 10.7
+(no leaves to draw in the sun's shadow). A leafy tree's thin limbs cast no shadow: the crown's covers theirs, and a thin
+limb's shadow rocking in the wind flickered on the crops.
+
+Steadiness, against main in the same season (`AB=2 tools/motion.ts`, `>8` share at a 1 px pan, farm): zoom 40, main
+spring 1.81% against 1.57%, autumn 1.80% against 1.76%, winter 1.74% against 0.60%; zoom 16, spring 2.25%, autumn 2.59%,
+winter 1.88% (main's winter 2.32%, no season 2.62%). Three things keep it there, all flags on a foliage dab read by its
+shader (materials.ts): `CRISP_EDGE`, a crisper edge on the seasons' strokes, whose brighter colours shimmer more than
+greens along a part-covered edge; `STIFF_STROKE`, for winter's twigs and the fallen leaves, which then move only with
+their tree (if any) and never flutter or turn over; and fallen leaves a little larger and fewer than petals for the same
+cover. At a quarter-pixel pan the seasons count higher (farm zoom 40: main's winter 6.1% against 14.6%, spring 6.9%
+against 9.1%): that test also counts every sharp edge it shifts by part of a pixel, and bare limbs and pale blossom are
+many sharp edges; making the twigs thicker raised it. Pops (`tools/pops.ts`, 40 moments): none at the short step on the
+farm in a gale (every season) and a hurricane (autumn, winter), the meadow's spring in a gale and autumn in a storm.
+
 ### Falling rain (#11)
 
 The budget's 1.5 ms line. The strokes are one instanced draw in the main view (a quad each for the stroke and its
