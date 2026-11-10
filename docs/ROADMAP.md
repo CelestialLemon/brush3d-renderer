@@ -189,6 +189,10 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   bolt and glow, and nothing is queued. `tools/flash.ts` measures it on the finished frames, by the published tests (WCAG 2.2
   2.3.1); it isn't a certified test, and the game's own frames would want one before release. `FLASH_LIMIT` is the one line to
   loosen if a heavy storm feels short of flashes.
+  The developer's picks (2026-11-10, #55): flash B (the scene lit from the bolt, with sharp shadows under a closed sky), bolt A
+  (a thin hot wire), glow C (a slow burn with a scorch, about 7 s). The shadows are the sun's map turned to the bolt, so they
+  fall parallel rather than spreading out from it: #56, a known issue. The far lightning was too faint to tell apart, so a
+  second set is in the running (from the horizon, cloud gaps, a stutter; 0.06 at most, 0.03 at Gentle).
 - **Seasons (#13, all but the trees done 2026-11-07, #51 and #52; the trees' look is open).** The developer's scope (2026-11-03): the trees' seasonal look (turning, bare limbs,
   blossom, the bushes and hedges with them, fallen and flying leaves) is a separate thread; this one does the rest. The
   decisions are on #13. Part 1: `renderer.setSeason({ season, character, sunrise, sunset })`, once per level, with the

@@ -193,7 +193,7 @@ async function measure(run: Run & { limit: number; sliver: number }) {
   w.__clock = base;
   l.clock = () => w.__clock;
   l.setting = run.setting;
-  l.looks = { flash: run.look ?? 'a', bolt: run.look ?? 'a', glow: run.look ?? 'a', far: run.look ?? 'a' };
+  l.looks = { far: run.look ?? 'a' };
   w.__admitted.length = 0;
   // The same piece of the world as at 1080p, so what share of the picture a bolt takes is the game's.
   r.view.zoom = (run.zoom ?? 44) * H / 1080;

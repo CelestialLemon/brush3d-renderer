@@ -1,7 +1,7 @@
 // The demo's lightning (#12), standing in for the game: a button and a shift-click to strike, random strikes and distant
 // flickers, the player's flash setting, and, until the developer has picked, the looks. The URL options:
 //   flashes=full|gentle|off (the player's setting)   strikes (random strikes on)   flicker (random flickers on)
-//   flashLook, boltLook, glowLook, farLook=a|b|c (the looks in the running)
+//   farLook=a|b|c (the far lightning's looks in the running; the rest are picked: flash B, bolt A, glow C)
 import type { BrushRenderer } from '../renderer/renderer';
 import type { FlashSetting, LookPick } from '../renderer/lightning';
 import { PITCH } from '../renderer/camera';
@@ -25,7 +25,7 @@ export function setupLightning(renderer: BrushRenderer) {
   const l = renderer.lightning;
   const setting = params.get('flashes');
   if (setting === 'full' || setting === 'gentle' || setting === 'off') l.setting = setting;
-  l.looks = { flash: pick('flashLook'), bolt: pick('boltLook'), glow: pick('glowLook'), far: pick('farLook') };
+  l.looks = { far: pick('farLook') };
   renderer.canvas.addEventListener('pointerdown', (e) => {
     if (!e.shiftKey) return;
     e.stopPropagation();
@@ -86,8 +86,8 @@ export function lightningHud(hud: HTMLElement, renderer: BrushRenderer, refresh:
   for (const s of ['full', 'gentle', 'off'] as FlashSetting[]) {
     button(s, l.setting === s, 'The player\'s setting for flashes', () => { l.setting = s; remember('flashes', s); refresh(); });
   }
-  for (const [label, key, url] of [['Flash', 'flash', 'flashLook'], ['Bolt', 'bolt', 'boltLook'], ['Glow', 'glow', 'glowLook'], ['Far', 'far', 'farLook']] as const) {
-    hud.append(Object.assign(document.createElement('label'), { textContent: label }));
-    for (const p of PICKS) button(p.toUpperCase(), l.looks[key] === p, `${label} look ${p.toUpperCase()}`, () => { l.looks[key] = p; remember(url, p); refresh(); });
-  }
+  // The far lightning's three, still to pick (#12): A from the horizon, B cloud gaps, C a stutter.
+  hud.append(Object.assign(document.createElement('label'), { textContent: 'Far' }));
+  const named = { a: 'from the horizon', b: 'cloud gaps', c: 'a stutter' };
+  for (const p of PICKS) button(p.toUpperCase(), l.looks.far === p, `Far lightning ${p.toUpperCase()}: ${named[p]}`, () => { l.looks.far = p; remember('farLook', p); refresh(); });
 }

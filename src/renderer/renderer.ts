@@ -901,7 +901,9 @@ export class BrushRenderer {
     // The land's height, known before a strike is asked for (see strike): worked out on the first frame, not during one.
     this.land ??= LandHeights.from(this.scene);
     if (!this.lightningCompiled) { this.lightning.precompile(this.gl, this.view.camera); this.lightningCompiled = true; }
-    this.lightning.update(this.view.target, this.view.zoom, this.width, this.height, this.gbuffer.textures[1]);
+    // How far the screen reaches from its middle, on the land (m): across, and up it (foreshortened by the 30° pitch).
+    const reach = (this.view.camera.right + this.view.camera.top * 2) / 2;
+    this.lightning.update(this.view.target, this.view.zoom, reach, this.width, this.height, this.gbuffer.textures[1]);
     this.applyLook(this.look);
     const grounded: THREE.Object3D[] = [];
     if (!this.settings.falling) {
