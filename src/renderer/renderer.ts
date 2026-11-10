@@ -24,7 +24,7 @@ import { DustField, type DustSource } from './dust';
 import { TreeSprings, type TreeSpec } from './trees';
 import { WATER_EASE, WaterField, type WaterMap } from './water';
 import { GROUND_EASE, GroundField, HollowMap, type GroundMap } from './ground';
-import { SnowPaint, type SnowLook } from './snow';
+import { SnowPaint } from './snow';
 import type { WindSnapshot } from '../wind/sim';
 
 // The renderer: the clouds' shade over the land (#8); a sun shadow map; for the water, the bed drawn without it and the
@@ -200,7 +200,7 @@ export class BrushRenderer {
   readonly ground = new GroundField();
   /** The land's hollows and rises, found from the ground's shape: once, when there's first snow or frost to draw. */
   readonly hollows = new HollowMap();
-  /** The look for lying snow, while the developer picks (#14, SNOW_LOOKS). */
+  /** The lying snow's paint in the hour's light (#14), worked out once a frame. */
   private readonly snow = new SnowPaint();
   /** The falling rain (#11): its strokes, and the uniforms for its veil and the water's rings. */
   readonly rain: Rain;
@@ -541,8 +541,6 @@ export class BrushRenderer {
    */
   setGround(map: GroundMap | null, ease = GROUND_EASE) { this.ground.set(map, this.shared.uTime.value, ease); }
 
-  /** The look for lying snow, while the developer picks (#14, SNOW_LOOKS). */
-  setSnowLook(look: SnowLook) { this.snow.look = look; }
 
   /**
    * A haze on the ground starts just under the lowest land: the ground's lowest point (it's laid in world space, its brush

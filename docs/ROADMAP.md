@@ -24,7 +24,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   8. #11 rain and wet ground (the falling rain done 2026-11-09, #53: see Weather; wet ground is open);
   9. #12 storms and lightning (the lightning in #55: see Weather; the storm look is open);
   10. #13 seasons (parts 1 and 2, the hour following the game's sun and the season's look for the rest, merged 2026-11-07 as #51 and #52; part 3, the trees' look, in #54);
-  11. #14 snow, frost and ice;
+  11. #14 snow, frost and ice (the lying snow done 2026-11-11, #58: see Weather; falling snow, frost and river ice are open);
   12. #19 the water's own look, chosen under every weather.
 - **The demo on GitHub Pages** (#15, shipped 2026-10-30): https://celestiallemon.github.io/brush3d-renderer/main/, and a preview
   of every open pull request from this repo at `.../pr-<number>/`, removed when it closes.
@@ -177,6 +177,16 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   (some of the time) crowns, traced along their slanted path through the shelter map, which gained a third map, the land
   itself. `settings.fallingShare` is the quality knob (fewer strokes, the same look); `falling=0` leaves it all out.
   Snow (#14) can reuse the patches, the stops and the count. Costs in `docs/PERFORMANCE.md`.
+
+- **Lying snow (#14, part 1, #58; falling snow, frost and river ice are open).** The game owns the ground's state and
+  sends it as a map in the water's format, `renderer.setGround(...)` (#50's plumbing, without its wet look; wet ground
+  and mud keep two free slots for #11): snow in it now, frost carried but not yet drawn. The renderer lays the snow on
+  what faces up, none under a roof (the shelter map) and less under a crown; a thin snow lies in patches along the
+  land's own hollows (found once, `HollowMap`), the grass and crops poking through it and buried as it deepens. Its paint
+  is the developer's pick of three ('A'): white in the sun, a clear blue shade following the hour's (violet at dusk,
+  lavender at night), a pale cool tint under an overcast sky, never grey. Follow-up to try: a large flat roof face in
+  shade reads as a flat, slightly strong blue; less colour there. The contract in `docs/GROUND.md`, costs in
+  `docs/PERFORMANCE.md`.
 
 - **Lightning (#12, #55; the storm look is open).** The game says where and when: `renderer.strike({ x, z })` and
   `renderer.flicker()` (distant lightning, the developer's call: the game calls each one, #12). The renderer draws a bolt, a

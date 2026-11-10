@@ -15,7 +15,7 @@
 //   under a cloud deck, #8; in a season, QUERY="season=winter", the same stretch of its day, #13), day (first light to
 //   dusk, the camera still and wide: QUERY="season=winter" for the season's day, #13), lightning (strikes then distant
 //   flickers: QUERY="weather=storm&flashes=gentle", #12), snow-settle (snow settling on the shed, bare to deep; #14) and
-//   snow-pan (the camera panning over lying snow; QUERY="season=winter&snowLook=b")
+//   snow-pan (the camera panning over lying snow; QUERY="season=winter")
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
 // tools/browser.ts for the rest.
@@ -106,7 +106,7 @@ const MOVES: Record<string, Move> = {
     lightning: { strikes: [[0.8, 5, 2], [2.6, -8, -4], [3.1, 2, 9], [4.8, -3, 1]], flickers: [6.1, 7.4, 8.1] },
   },
   // Snow settling (#14): from bare ground to deep over twelve seconds, sent in the game's steps, the camera still on the
-  // shed (its roof takes the snow, its porch doesn't); then held. The look by QUERY's snowLook.
+  // shed (its roof takes the snow, its porch doesn't); then held.
   'snow-settle': { seconds: 15, at: () => ({ x: 10, z: 12, zoom: 48, view: 0 }), ground: (t) => ({ snow: Math.min(0.8, tick(t) / 15) }), ease: true, extra: true },
   // The snow lying, the camera panning over the farm: what the snow does in motion.
   'snow-pan': { seconds: 8, at: (t) => pan({ x: 4, z: 6, zoom: 48, view: 0 }, -t * 40, 0), ground: () => ({ snow: 0.5 }), extra: true },

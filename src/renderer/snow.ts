@@ -21,18 +21,6 @@ export const SNOW_METRES = 0.9;
 export const SNOW_WHOLE = 0.3;
 
 /**
- * The looks for lying snow, while the developer picks (#14): the demo's buttons and URL option (`snowLook`). The ones not
- * picked are removed before the pull request merges.
- */
-export const SNOW_LOOKS = {
-  a: 'blue: soft paint, white in the sun, its shade a clear blue (violet at dusk)',
-  b: 'violet: soft paint, cream in the sun, its shade lavender-violet all day',
-  c: 'crisp: flat white in crisp bands, a blue half-tone and a violet shade',
-} as const;
-export type SnowLook = keyof typeof SNOW_LOOKS;
-export const DEFAULT_SNOW_LOOK: SnowLook = 'a';
-
-/**
  * Lying snow, for every material but the water (FRAG_HEAD): needs the light model (PAINT, CLOUD_LIGHT), OKLab and the
  * shelter map. A material calls snowAt(p) once (the snow lying there, as deep as the game says less what shelters it),
  * then works out how much of its surface the snow covers, and mixes in snowPaint.
@@ -42,7 +30,6 @@ ${GROUND_GLSL}
 ${HOLLOW_GLSL}
 uniform vec3 uSnowGap[4];    // the snow's paint in the gaps' light: its shade, half-tone, lit band and a stroke in it
 uniform vec3 uSnowCloud[4];  // and under a cloud
-uniform float uSnowSoft;     // how soft its bands' edges are, of the material's
 const float SNOW_METRES = ${SNOW_METRES.toFixed(2)};
 // The snow lying here (0..1, the game's depth, less under shelter), and the land's hollow here (hollowAt), read by snowAt.
 float gSnow = 0.0;
@@ -95,11 +82,10 @@ float snowBuries(vec3 p, float d) {
 }
 // The snow's own paint, lit by 'light' as paintBands lights a surface (0 deep shade .. 1 full sun), its bands' edges 'soft'
 // wide, 'brush' the material's brush there (about -1..1), so a wide snowfield is still paint: the strokes show faintly in
-// its lit band, a little darker and cooler. Its colours are the look's, in the hour's light, worked out once a frame
+// its lit band, a little darker and cooler. Its colours are worked out in the hour's light once a frame
 // (SnowPaint below), in the gaps and under a cloud, mixed here by the cloud's shade. Not exposed (the material does that,
 // as for its own).
 vec3 snowPaint(float light, float soft, float brush) {
-  soft *= uSnowSoft;
   vec3 shade = mix(uSnowGap[0], uSnowCloud[0], gCloud), half_ = mix(uSnowGap[1], uSnowCloud[1], gCloud);
   vec3 lit = mix(uSnowGap[2], uSnowCloud[2], gCloud), stroked = mix(uSnowGap[3], uSnowCloud[3], gCloud);
   float stroke = clamp(brush, -1.0, 1.0);
@@ -111,25 +97,14 @@ vec3 snowPaint(float light, float soft, float brush) {
 `;
 
 
-/** A band's lightness and chroma in OKLab. */
-type Band = { l: number; c: number };
-interface SnowRecipe {
-  lit: Band; half: Band; shade: Band;
-  /** The shade's hue and the half-tone's (degrees), from the hour's shade hue (degrees). */
-  shadeHue: (hour: number) => number; halfHue: (shade: number) => number;
-  /** How soft the bands' edges are, of the material's. */
-  soft: number;
-}
-/** The hour's shade hue, kept between lo and hi (degrees), so a noon's teal shade doesn't turn the snow green-grey. */
-const kept = (lo: number, hi: number) => (h: number) => Math.min(hi, Math.max(lo, ((h % 360) + 360) % 360));
-const RECIPES: Record<SnowLook, SnowRecipe> = {
-  // A, blue: white in the sun, a clear blue shade (violet at dusk).
-  a: { lit: { l: 0.95, c: 0.008 }, half: { l: 0.87, c: 0.035 }, shade: { l: 0.74, c: 0.075 }, shadeHue: kept(250, 295), halfHue: (h) => h, soft: 1 },
-  // B, violet: cream in the sun, a lavender-violet shade all day.
-  b: { lit: { l: 0.95, c: 0.022 }, half: { l: 0.86, c: 0.04 }, shade: { l: 0.72, c: 0.08 }, shadeHue: () => 292, halfHue: () => 280, soft: 1 },
-  // C, crisp: flat white, a blue half-tone and a violet shade, in crisp bands.
-  c: { lit: { l: 0.96, c: 0.004 }, half: { l: 0.86, c: 0.05 }, shade: { l: 0.70, c: 0.085 }, shadeHue: kept(285, 305), halfHue: () => 255, soft: 0.35 },
-};
+/**
+ * The snow's paint (the developer's pick, #14, of three looks): white in the sun, a clear blue shade that follows the
+ * hour's shade (violet at dusk, lavender at night), its half-tone the shade's hue, soft bands as the material's. Each band's
+ * lightness and chroma in OKLab.
+ */
+const LIT = { l: 0.95, c: 0.008 }, HALF = { l: 0.87, c: 0.035 }, SHADE = { l: 0.74, c: 0.075 };
+/** The hour's shade hue (degrees), kept between blue and violet, so a noon's teal shade doesn't turn the snow green-grey. */
+const shadeHueOf = (h: number) => Math.min(295, Math.max(250, ((h % 360) + 360) % 360));
 
 /** The light the snow is painted in, at one end (the gaps', or under a cloud), as the materials have it. */
 export interface SnowLight {
@@ -175,32 +150,28 @@ export class SnowPaint {
   readonly uniforms = {
     uSnowGap: { value: [0, 1, 2, 3].map(() => new THREE.Color()) },
     uSnowCloud: { value: [0, 1, 2, 3].map(() => new THREE.Color()) },
-    uSnowSoft: { value: 1 },
   };
-  look: SnowLook = DEFAULT_SNOW_LOOK;
 
   /** Sets the snow's colours for the light in the gaps and under a cloud. */
   update(gap: SnowLight, cloud: SnowLight) {
-    const r = RECIPES[this.look];
-    this.uniforms.uSnowSoft.value = r.soft;
-    this.paint(this.uniforms.uSnowGap.value, gap, r);
-    this.paint(this.uniforms.uSnowCloud.value, cloud, r);
+    this.paint(this.uniforms.uSnowGap.value, gap);
+    this.paint(this.uniforms.uSnowCloud.value, cloud);
   }
 
-  private paint(out: THREE.Color[], light: SnowLight, r: SnowRecipe) {
-    const shadeHue = r.shadeHue(light.shadeHue), halfHue = r.halfHue(shadeHue), sky = light.sky;
+  private paint(out: THREE.Color[], light: SnowLight) {
+    const shadeHue = shadeHueOf(light.shadeHue), halfHue = shadeHue, sky = light.sky;
     tint(sun, light.sunColor, 0.4); tint(fill, light.skyColor, 0.45);
     // Under cloud there's no sun to warm the lit band: it takes a pale cool tint from the shade's side, and keeps a little
     // of the brightness the grey day takes away, so the snow stays the brightest thing on the land, never a grey.
     const lift = 1 + 0.18 * sky;
-    lch(out[0], r.shade.l, r.shade.c, shadeHue).multiply(fill);
-    lch(out[1], r.half.l, r.half.c, halfHue).multiply(mid.copy(fill).lerp(sun, 0.15));
+    lch(out[0], SHADE.l, SHADE.c, shadeHue).multiply(fill);
+    lch(out[1], HALF.l, HALF.c, halfHue).multiply(mid.copy(fill).lerp(sun, 0.15));
     // The lit band: the hour's light leaning it, turned to the cool tint as the sky closes (mixed in OKLab's a, b).
     const h1 = THREE.MathUtils.degToRad(light.litHue), h2 = THREE.MathUtils.degToRad(halfHue);
-    const a = r.lit.c * Math.cos(h1) * (1 - sky) + 0.03 * Math.cos(h2) * sky, b = r.lit.c * Math.sin(h1) * (1 - sky) + 0.03 * Math.sin(h2) * sky;
-    lch(out[2], r.lit.l, Math.hypot(a, b), THREE.MathUtils.radToDeg(Math.atan2(b, a))).multiply(sun);
+    const a = LIT.c * Math.cos(h1) * (1 - sky) + 0.03 * Math.cos(h2) * sky, b = LIT.c * Math.sin(h1) * (1 - sky) + 0.03 * Math.sin(h2) * sky;
+    lch(out[2], LIT.l, Math.hypot(a, b), THREE.MathUtils.radToDeg(Math.atan2(b, a))).multiply(sun);
     // A stroke in it: a little darker and cooler.
-    lch(out[3], r.lit.l - 0.04, 0.035, halfHue).multiply(sun);
+    lch(out[3], LIT.l - 0.04, 0.035, halfHue).multiply(sun);
     for (const c of out) c.multiplyScalar(lift);
   }
 }

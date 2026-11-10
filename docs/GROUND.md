@@ -21,7 +21,8 @@ The game paints a number on each tile of the land: how deep the snow lies there.
   roof shows through, thickening to white.
 - **Grass and crops poke through thin snow**, and are buried as it deepens: snow at 1 lies 0.9 m deep, over the
   tallest grass.
-- **Its shade is blue and violet, never grey.** The snow has its own paint, lit by the same light as everything else
+- **Its shade is blue and violet, never grey** (the developer's pick of three, #58): white in the sun, a clear blue in
+  shade that follows the hour's shade (violet at dusk, lavender at night). The snow has its own paint, lit by the same light as everything else
   (the sun's shadows, the clouds', the hour's colour). Under an overcast sky it stays the brightest thing on the land,
   with a pale cool tint, not grey.
 
@@ -46,7 +47,7 @@ renderer.setGround(null, ease);  // bare everywhere, eased out as any map is (at
   at that moment. A map on a new grid comes in at once. The values are stored to 1/255.
 - **Cost.** Uploading the map is cheap: two small textures and a blend between them. While the ground is bare
   everywhere, the materials skip it all. Snow lying costs about 0.45 ms a frame at 1080p on the development machine's
-  RX 570, a little over docs/PERFORMANCE.md's line for it (0.4). The land's low places are found once (see below), the first time
+  RX 570, a little over docs/PERFORMANCE.md's line for it (0.4); the details there. The land's low places are found once (see below), the first time
   there's any snow, and again only if the land is reshaped or what shelters it changes.
 
 ## How it's drawn
