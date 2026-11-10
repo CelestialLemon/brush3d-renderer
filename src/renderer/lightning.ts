@@ -16,8 +16,8 @@ import type { SharedUniforms } from './materials';
 // and a far flicker (0.06; 0.03 at gentle) stay well under what counts as a flash at all (a 0.10 swing), so they don't
 // count against the limit. Times are real seconds: a game at 4x speed can't flash faster.
 //
-// The developer's picks (#12): flash B (shadows thrown from the bolt), bolt A (a hot wire), glow C (a slow burn). The far
-// lightning's three are still in the running.
+// The developer's picks (#12): flash B (shadows thrown from the bolt), bolt A (a hot wire), glow C (a slow burn), and far
+// lightning A (from the horizon).
 
 /** Where a strike lands; the game's to say. `y`: the height it lands at if not the land's (a rod, a roof). */
 export interface Strike { x: number; z: number; y?: number; strength?: number; seed?: number }
@@ -25,7 +25,6 @@ export interface Strike { x: number; z: number; y?: number; strength?: number; s
 export interface Flicker { strength?: number; bearing?: number }
 /** The player's setting: full; gentle (one soft, slow swell); off (the picture doesn't light up, the bolt and glow still show). */
 export type FlashSetting = 'full' | 'gentle' | 'off';
-export type LookPick = 'a' | 'b' | 'c';
 
 /** A pulse of the flash level: how bright (0..1 of its setting's peak), how it rises, holds and falls (seconds). */
 interface PulseShape { peak: number; rise: number; hold: number; fall: number }
@@ -55,32 +54,15 @@ const CLOSED_SKY = 0.35;
 
 /** Full's one flash (no return strokes in the whole picture: each would count as a flash of its own). */
 const FULL: PulseShape = { peak: 1, rise: 0, hold: 0.05, fall: 0.25 };
-/** Gentle's one swell; a far flicker's at gentle, whatever its look. */
+/** Gentle's one swell; a far flicker's at gentle. */
 const GENTLE: PulseShape = { peak: 1, rise: 0.4, hold: 0, fall: 0.8 };
 const FAR_SOFT: PulseShape = { peak: 1, rise: 0.3, hold: 0, fall: 0.7 };
 
-/** A pulse that starts `at` seconds into something: several make a flicker that stutters. */
-interface Flare { at: number; shape: PulseShape }
 /**
- * How the far lightning lights the scene (the developer picks one of three, #12): where on the screen (0 from the edge the
- * storm's beyond, 1 patches drifting, 2 all of it) and its rhythm. Each peaks at 0.06 at most, under the 0.10 a flash takes.
+ * A far flicker at full: from the horizon (the developer's pick, #12). The storm's off the screen's edge, on its bearing: that
+ * edge lights up, fading across the screen. 0.06 at most, under the 0.10 a flash takes.
  */
-const FAR_LOOKS: Record<LookPick, { pattern: number; flares: Flare[] }> = {
-  // A: from the horizon. The storm's off the screen's edge, on its bearing: that edge lights up, fading across the screen.
-  a: { pattern: 0, flares: [{ at: 0, shape: { peak: 1, rise: 0.2, hold: 0.1, fall: 0.8 } }] },
-  // B: cloud gaps. Patches of light, a few across the screen, drifting as it swells: lit through breaks in the cloud.
-  b: { pattern: 1, flares: [{ at: 0, shape: { peak: 1, rise: 0.25, hold: 0.1, fall: 0.8 } }] },
-  // C: a stutter. All of the picture, evenly, but in three quick pulses, the rhythm of lightning far off.
-  c: {
-    pattern: 2, flares: [
-      { at: 0, shape: { peak: 0.85, rise: 0.04, hold: 0.03, fall: 0.14 } },
-      { at: 0.2, shape: { peak: 0.5, rise: 0.04, hold: 0.02, fall: 0.12 } },
-      { at: 0.42, shape: { peak: 1, rise: 0.05, hold: 0.05, fall: 0.55 } },
-    ],
-  },
-};
-const flaresLevel = (flares: Flare[], age: number) => flares.reduce((v, f) => Math.max(v, pulseLevel(f.shape, age - f.at)), 0);
-const flaresEnd = (flares: Flare[]) => Math.max(...flares.map((f) => f.at + pulseEnd(f.shape)));
+const FAR: PulseShape = { peak: 1, rise: 0.2, hold: 0.1, fall: 0.8 };
 
 /** The bolt: a thin, hot wire with a soft blue halo (the developer's pick, #12). How jagged (how far a point is pushed aside, per metre it climbs, and at most, metres), how wide (px at 1080p at the reference zoom) and how many branches. */
 const BOLT = { jag: 0.62, most: 2.6, width: 21, branches: 3 };
@@ -149,8 +131,7 @@ export class FlashGovernor {
 
 /** A flash of the whole picture (a strike's, or its toned-down swell). */
 interface Pulse { start: number; shape: PulseShape; weight: number; strike: boolean }
-/** A far flicker: its pulses, and how bright. */
-interface Swell { start: number; flares: Flare[]; weight: number }
+
 interface Bolt { start: number; strength: number; soft: boolean }
 interface Glow { x: number; y: number; z: number; start: number; strength: number }
 
@@ -166,14 +147,12 @@ const pulseEnd = (p: PulseShape) => p.rise + p.hold + p.fall;
 export class Lightning {
   /** The player's setting (settings menu, #12). Takes effect from the next flash; off takes effect at once. */
   setting: FlashSetting = 'full';
-  /** The far lightning's look, still in the running (the developer picks, #12). */
-  looks: { far: LookPick } = { far: 'a' };
   /** The clock, in real seconds. The tools set their own. */
   clock: () => number = () => performance.now() / 1000;
 
   private governor = new FlashGovernor();
   private flash: Pulse | null = null;
-  private farSwell: Swell | null = null;
+  private farSwell: Pulse | null = null;
   private bolts: (Bolt | null)[] = new Array(MAX_BOLTS).fill(null);
   private nextBolt = 0;
   private glows: (Glow | null)[] = new Array(MAX_GLOWS).fill(null);
@@ -200,8 +179,8 @@ export class Lightning {
     uFlashW: { value: 0 },         // how far the strike's flash lifts the picture
     uFlashAimed: { value: 0 },     // whether the shadow map is the bolt's
     uFlashTint: { value: 0 },      // how far colours go cold
-    uFlashFar: { value: new THREE.Vector4() },   // its bearing, how far it lifts the picture, its pattern
-    uFarCenter: { value: new THREE.Vector4() },  // the view's middle, how far the screen reaches from it (m), how far the patches drift
+    uFlashFar: { value: new THREE.Vector3() },   // its bearing, how far it lifts the picture
+    uFarCenter: { value: new THREE.Vector3() },  // the view's middle, how far the screen reaches from it (m)
     uGlows: { value: Array.from({ length: MAX_GLOWS }, () => new THREE.Vector4()) },
     uGlowN: { value: 0 },
     uGlowColor: { value: new THREE.Vector4() },
@@ -290,18 +269,15 @@ export class Lightning {
     }
   }
 
-  /** A distant flicker: light with no bolt. One at a time; toned down, one soft swell whatever its look. */
+  /** A distant flicker: light with no bolt, from the edge of the screen it's beyond. One at a time; toned down, softer. */
   flicker(f: Flicker = {}) {
     if (this.setting === 'off') return;
     const now = this.clock();
-    if (this.farSwell && now - this.farSwell.start < flaresEnd(this.farSwell.flares)) return;
+    if (this.farSwell && now - this.farSwell.start < pulseEnd(this.farSwell.shape)) return;
     const bearing = f.bearing ?? (this.seed = (this.seed * 48271) % 2147483647) / 2147483647 * Math.PI * 2;
     this.farDir.set(Math.cos(bearing), Math.sin(bearing));
     const gentle = this.setting === 'gentle', strength = THREE.MathUtils.clamp(f.strength ?? 1, 0, 1);
-    this.farSwell = {
-      start: now, flares: gentle ? [{ at: 0, shape: FAR_SOFT }] : FAR_LOOKS[this.looks.far].flares,
-      weight: (gentle ? FAR_GENTLE : FAR_PEAK) * strength,
-    };
+    this.farSwell = { start: now, shape: gentle ? FAR_SOFT : FAR, weight: (gentle ? FAR_GENTLE : FAR_PEAK) * strength, strike: false };
   }
 
   /** The flashes, bolts and glows as of now: called once a frame before the look. */
@@ -310,16 +286,16 @@ export class Lightning {
     this.center.copy(view);
     // Turning the flashes off takes effect at once.
     if (this.setting === 'off') this.flash = this.farSwell = null;
-    const level = this.flash && now - this.flash.start < pulseEnd(this.flash.shape) ? pulseLevel(this.flash.shape, now - this.flash.start) : 0;
-    const swell = this.farSwell, farAge = swell ? now - swell.start : 0, far = swell && farAge < flaresEnd(swell.flares) ? flaresLevel(swell.flares, farAge) : 0;
+    const age = (p: Pulse | null) => (p && now - p.start < pulseEnd(p.shape) ? pulseLevel(p.shape, now - p.start) : 0);
+    const level = age(this.flash), far = age(this.farSwell), swell = this.farSwell;
     if (level <= 0 && this.flash && now - this.flash.start >= pulseEnd(this.flash.shape)) this.flash = null;
-    if (far <= 0 && swell && farAge >= flaresEnd(swell.flares)) this.farSwell = null;
+    if (far <= 0 && swell && now - swell.start >= pulseEnd(swell.shape)) this.farSwell = null;
     this.level = this.flash?.strike ? level : 0;
     const strike = this.flash?.strike ?? false;
     pu.uFlashW.value = level * (this.flash?.weight ?? 0);
     pu.uFlashTint.value = level * (strike ? FLASH_TINT : GENTLE_TINT);
-    pu.uFlashFar.value.set(this.farDir.x, this.farDir.y, far * (swell?.weight ?? 0), this.setting === 'gentle' ? 2 : FAR_LOOKS[this.looks.far].pattern);
-    pu.uFarCenter.value.set(this.center.x, this.center.z, reach, farAge * 0.8);
+    pu.uFlashFar.value.set(this.farDir.x, this.farDir.y, far * (swell?.weight ?? 0));
+    pu.uFarCenter.value.set(this.center.x, this.center.z, reach);
     // The bolts.
     let live = false;
     this.bolts.forEach((b, i) => {
@@ -514,8 +490,8 @@ uniform float uFlashOn;
 uniform float uFlashW;
 uniform float uFlashAimed;
 uniform float uFlashTint;
-uniform vec4 uFlashFar;
-uniform vec4 uFarCenter;
+uniform vec3 uFlashFar;
+uniform vec3 uFarCenter;
 uniform vec4 uGlows[${MAX_GLOWS}];   // x, y, z, how strong
 uniform int uGlowN;
 uniform vec4 uGlowColor;   // its colour (of brightness 1), how burnt
@@ -546,13 +522,11 @@ vec3 lightningFinal(vec3 o, vec3 p, bool sky) {
   // Lit from the bolt: what it can't see keeps less of the flash.
   if (w > 0.0 && !sky && uFlashAimed > 0.5) w *= mix(0.3, 1.0, boltSees(p));
   float far = uFlashFar.z;
-  if (far > 0.0 && !sky && uFlashFar.w < 1.5) {
-    // Where on the screen, by its reach from the middle (about -1 to 1 across).
+  if (far > 0.0 && !sky) {
+    // From the edge of the screen the storm's beyond, fading across to nothing at the other side (where on the screen: its
+    // reach from the middle, about -1 to 1 across).
     vec2 q = (p.xz - uFarCenter.xy) / uFarCenter.z;
-    // From the edge the storm's beyond, fading across to nothing at the far side; or patches a few across the screen,
-    // drifting its way.
-    if (uFlashFar.w < 0.5) far *= smoothstep(-0.9, 1.0, dot(q, uFlashFar.xy));
-    else far *= smoothstep(0.05, 0.45, fogNoise(q * 1.4 + uFlashFar.xy * (7.0 + uFarCenter.w)));
+    far *= smoothstep(-0.9, 1.0, dot(q, uFlashFar.xy));
   }
   float lift = max(w, far), touched = lift;
   if (lift > 0.0) {

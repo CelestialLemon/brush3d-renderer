@@ -191,8 +191,10 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   loosen if a heavy storm feels short of flashes.
   The developer's picks (2026-11-10, #55): flash B (the scene lit from the bolt, with sharp shadows under a closed sky), bolt A
   (a thin hot wire), glow C (a slow burn with a scorch, about 7 s). The shadows are the sun's map turned to the bolt, so they
-  fall parallel rather than spreading out from it: #56, a known issue. The far lightning was too faint to tell apart, so a
-  second set is in the running (from the horizon, cloud gaps, a stutter; 0.06 at most, 0.03 at Gentle).
+  fall parallel rather than spreading out from it: #56, a known issue. Far lightning A, from the horizon: the edge of the
+  screen the storm's beyond lights up, fading across (0.06 at most, 0.03 at Gentle; Sol finds 0.06 sound, and 0.08
+  plausible after a test of a flicker over a fading flash). The first set was too faint to tell apart; of the second, cloud
+  gaps read as mist, and a stutter of three pulses might grate over a long storm.
 - **Seasons (#13, all but the trees done 2026-11-07, #51 and #52; the trees' look is open).** The developer's scope (2026-11-03): the trees' seasonal look (turning, bare limbs,
   blossom, the bushes and hedges with them, fallen and flying leaves) is a separate thread; this one does the rest. The
   decisions are on #13. Part 1: `renderer.setSeason({ season, character, sunrise, sunset })`, once per level, with the

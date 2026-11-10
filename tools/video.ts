@@ -14,7 +14,7 @@
 //   hour running from 16:00 past sunset, or from before dawn to 9:00, the camera still: QUERY="cloud=1&sunUnder=1" for the low sun
 //   under a cloud deck, #8; in a season, QUERY="season=winter", the same stretch of its day, #13), day (first light to
 //   dusk, the camera still and wide: QUERY="season=winter" for the season's day, #13), lightning (strikes then distant
-//   flickers: QUERY="weather=storm&farLook=b&flashes=gentle", #12)
+//   flickers: QUERY="weather=storm&flashes=gentle", #12)
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
 // tools/browser.ts for the rest.
@@ -96,8 +96,8 @@ const MOVES: Record<string, Move> = {
   // A whole day, first light to dusk, the camera still and wide: in a season (QUERY="season=winter", #13) the sun's path
   // and its height as the hour's looks follow the game's sunrise and sunset.
   day: { seconds: 24, at: () => ({ x: -1, z: 4, zoom: 20, view: 0 }), hour: (t) => 5.2 + (16.3 * t) / 24, extra: true },
-  // Lightning (#12): a few strikes over the farm, then distant flickers; the far look and the setting by QUERY's farLook
-  // and flashes, the storm by QUERY="weather=storm".
+  // Lightning (#12): a few strikes over the farm, then distant flickers; the setting by QUERY's flashes, the storm by
+  // QUERY="weather=storm".
   lightning: {
     seconds: 9, at: () => ({ x: -1, z: 4, zoom: 32, view: 0 }), extra: true,
     lightning: { strikes: [[0.8, 5, 2], [2.6, -8, -4], [3.1, 2, 9], [4.8, -3, 1]], flickers: [6.1, 7.4, 8.1] },
