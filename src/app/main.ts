@@ -233,6 +233,12 @@ const cloudSeed = num('cloudSeed', 1);
 let sunUnder = num('sunUnder', 0);
 /** A storm spell's own low sun (#12), over the demo's while the timeline plays one; null otherwise. */
 let spellSun: number | null = null;
+/** Leaving a storm spell: its lightning stops and the demo's own low sun comes back, on the controls too. */
+function endSpellStorm() {
+  stormLightning(null);
+  spellSun = null;
+  for (const r of refreshers) r();
+}
 
 // The clouds' drift, standing in for the game's: carried along by the demo's wind (standing in for the wind aloft) at the
 // drawn speed (cloudDriftSpeed), and sent with its speed whenever the weather is, as the game would.
@@ -387,14 +393,14 @@ function hud() {
     const p: Weather = WEATHER_PRESETS[pick.value as WeatherName];
     Object.assign(weather, { cloud: p.cloud, storm: p.storm ?? 0, rain: p.rain ?? 0, snow: p.snow ?? 0, heat: p.heat ?? 0 });
     weather.haze = p.haze ? { ...p.haze } : { ...weather.haze, amount: 0 };
-    presetName = pick.value as WeatherName; playing = false; timelineEl.textContent = ''; stormLightning(null); spellSun = null;
+    presetName = pick.value as WeatherName; playing = false; timelineEl.textContent = ''; endSpellStorm();
     send(weather);
     hud();
   };
   pick.onkeydown = (e) => e.stopPropagation();
   hudEl.append(Object.assign(document.createElement('label'), { textContent: 'Weather' }), pick);
   const weatherSet = (f: (v: number) => void) => (v: number) => {
-    f(v); presetName = null; pick.value = 'custom'; playing = false; play.className = ''; timelineEl.textContent = ''; stormLightning(null); spellSun = null;
+    f(v); presetName = null; pick.value = 'custom'; playing = false; play.className = ''; timelineEl.textContent = ''; endSpellStorm();
     send(weather);
   };
   const share = (v: number) => v.toFixed(2);
@@ -437,7 +443,7 @@ function hud() {
   spells.onkeydown = (e) => e.stopPropagation();
   play.onclick = () => {
     playing = !playing; timelineStart = null; timelineSent = '';
-    if (playing) { presetName = null; pick.value = 'custom'; } else { timelineEl.textContent = ''; stormLightning(null); spellSun = null; }
+    if (playing) { presetName = null; pick.value = 'custom'; } else { timelineEl.textContent = ''; endSpellStorm(); }
     play.className = playing ? 'on' : '';
   };
   const pace = Object.assign(document.createElement('button'), { textContent: `${speed}× speed` });
