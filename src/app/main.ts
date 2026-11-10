@@ -152,7 +152,7 @@ function here() {
     if (h.base !== undefined) next.set('hazeBase', String(h.base));
     if (h.kind) next.set('hazeKind', h.kind);
   }
-  next.set('sunUnder', String(sunUnder));
+  next.set('sunUnder', String(sunUnder)); next.set('stormLook', stormLookName);
   next.set('wind', wind.speed.toFixed(2)); next.set('windDir', ((wind.direction * 180) / Math.PI).toFixed(1));
   next.set('gust', String(wind.gust ?? 0.5)); next.set('rhythm', String(rhythm));
   next.set('rise', String(water.rise)); next.set('flow', String(water.flow)); next.set('mud', String(water.mud));
@@ -231,6 +231,8 @@ const cloudSeed = num('cloudSeed', 1);
 // How much of a low sun gets in under the cloud at dawn and dusk (#8): the game's, sent with the weather, and only now and
 // then (a rare sight, not every overcast evening); none unless asked for.
 let sunUnder = num('sunUnder', 0);
+/** A storm spell's own low sun (#12), over the demo's while the timeline plays one; null otherwise. */
+let spellSun: number | null = null;
 
 // The clouds' drift, standing in for the game's: carried along by the demo's wind (standing in for the wind aloft) at the
 // drawn speed (cloudDriftSpeed), and sent with its speed whenever the weather is, as the game would.
@@ -274,7 +276,7 @@ let sent: Weather = weather;
 function send(w: Weather, immediate = false, time = lastTime) {
   sent = { ...w };
   dustSource(Math.max(w.rain ?? 0, w.snow ?? 0));
-  renderer.setWeather({ sunUnder, ...w, drift: driftAt(time), cloudSeed }, immediate);
+  renderer.setWeather({ sunUnder: spellSun ?? sunUnder, ...w, drift: driftAt(time), cloudSeed }, immediate);
 }
 let lastTime = 0;
 send(weather, true, 0);
@@ -385,19 +387,19 @@ function hud() {
     const p: Weather = WEATHER_PRESETS[pick.value as WeatherName];
     Object.assign(weather, { cloud: p.cloud, storm: p.storm ?? 0, rain: p.rain ?? 0, snow: p.snow ?? 0, heat: p.heat ?? 0 });
     weather.haze = p.haze ? { ...p.haze } : { ...weather.haze, amount: 0 };
-    presetName = pick.value as WeatherName; playing = false; timelineEl.textContent = ''; stormLightning(null);
+    presetName = pick.value as WeatherName; playing = false; timelineEl.textContent = ''; stormLightning(null); spellSun = null;
     send(weather);
     hud();
   };
   pick.onkeydown = (e) => e.stopPropagation();
   hudEl.append(Object.assign(document.createElement('label'), { textContent: 'Weather' }), pick);
   const weatherSet = (f: (v: number) => void) => (v: number) => {
-    f(v); presetName = null; pick.value = 'custom'; playing = false; play.className = ''; timelineEl.textContent = ''; stormLightning(null);
+    f(v); presetName = null; pick.value = 'custom'; playing = false; play.className = ''; timelineEl.textContent = ''; stormLightning(null); spellSun = null;
     send(weather);
   };
   const share = (v: number) => v.toFixed(2);
   hudEl.append(slider('Cloud', 0, 1, 0.01, () => weather.cloud, weatherSet((v) => { weather.cloud = v; }), share, true));
-  hudEl.append(slider('low sun', 0, 1, 0.01, () => sunUnder, (v) => { sunUnder = v; send(sent); }, share, true));
+  hudEl.append(slider('low sun', 0, 1, 0.01, () => spellSun ?? sunUnder, (v) => { sunUnder = v; spellSun = null; send(sent); }, share, true));
   hudEl.append(slider('Storm', 0, 1, 0.01, () => weather.storm, weatherSet((v) => { weather.storm = v; }), share, true));
   // The storm look's candidates (#12), for the developer to pick: stormLook=a|b|c.
   hudEl.append(Object.assign(document.createElement('label'), { textContent: 'Storm look' }));
@@ -435,7 +437,7 @@ function hud() {
   spells.onkeydown = (e) => e.stopPropagation();
   play.onclick = () => {
     playing = !playing; timelineStart = null; timelineSent = '';
-    if (playing) { presetName = null; pick.value = 'custom'; } else { timelineEl.textContent = ''; stormLightning(null); }
+    if (playing) { presetName = null; pick.value = 'custom'; } else { timelineEl.textContent = ''; stormLightning(null); spellSun = null; }
     play.className = playing ? 'on' : '';
   };
   const pace = Object.assign(document.createElement('button'), { textContent: `${speed}× speed` });
@@ -501,8 +503,8 @@ function playTimeline(time: number) {
   stormLightning(timelineLightning(time - timelineStart, speed, spell));
   if (key === timelineSent) return;
   timelineSent = key;
-  // The low sun under the deck, when the spell sends it (#12).
-  if (w.sunUnder !== undefined) sunUnder = w.sunUnder;
+  // The low sun under the deck, when the spell sends it (#12): over the demo's own, which comes back after it.
+  spellSun = w.sunUnder ?? null;
   // The game sends the whole weather: what the spell leaves out is none (a haze thinned away keeps its colour and height).
   const { haze, ...rest } = whole(w);
   Object.assign(weather, rest, { haze: haze ? { ...haze } : { ...weather.haze, amount: 0 } });
@@ -549,6 +551,7 @@ if (params.has('shot')) {
     const time = options.time ?? frozen ?? 0;
     if (options.weather) {
       const w = typeof options.weather === 'string' ? whole(WEATHER_PRESETS[options.weather]) : { ...weather, ...options.weather };
+      spellSun = null;
       send(w, !options.ease, time);
     }
     if (options.timeline) {
@@ -557,7 +560,7 @@ if (params.has('shot')) {
       const s = timelineWind(t.time, t.speed ?? speed, t.spell ?? spell);
       if (s !== null) wind.speed = s;
       const w = timelineAt(t.time, t.speed ?? speed, t.spell ?? spell);
-      if (w.sunUnder !== undefined) sunUnder = w.sunUnder;
+      spellSun = w.sunUnder ?? null;
       send(whole(w), !options.ease, time);
       const ws = timelineWater(t.time, t.speed ?? speed, t.spell ?? spell);
       if (ws) Object.assign(water, ws);

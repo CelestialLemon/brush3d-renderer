@@ -672,10 +672,14 @@ export class BrushRenderer {
     s.uLightExposure.value = look.exposure / grade.exposure;
     const deeper = THREE.MathUtils.lerp(CLOUD_DEPTH, 1, gap);
     s.uCloudBands.value.set(rad(((under.shadeHue - look.shadeHue + 540) % 360) - 180), under.shadeDepth, under.litLean, (under.exposure * deeper) / grade.exposure);
-    // The lying snow's paint in that light (#14), in the gaps and under a cloud.
+    // A storm's lit tint and shade lean under a cloud, from the gaps': only under a storm, so without one every frame is
+    // as it was (the gaps' and a cloud's lit hue can differ a little in golden light under part cover; left as it was).
+    if (st > 0) s.uCloudTint.value.set(rad(((under.litHue - look.litHue + 540) % 360) - 180), under.shadeLean - look.shadeLean);
+    else s.uCloudTint.value.set(0, 0);
+    // The lying snow's paint in that light (#14), in the gaps and under a cloud (its lit hue a storm's tint, as the shaders').
     this.snow.update(
       { shadeHue: look.shadeHue, litHue: look.litHue, sky: s.uOvercast.value.x, sunColor: s.uSunColor.value, skyColor: look.skyColor },
-      { shadeHue: look.shadeHue + s.uCloudBands.value.x * 180 / Math.PI, litHue: look.litHue, sky: s.uCloudOvercast.value.x, sunColor: s.uCloudSunColor.value, skyColor: look.skyColor },
+      { shadeHue: look.shadeHue + s.uCloudBands.value.x * 180 / Math.PI, litHue: look.litHue + s.uCloudTint.value.x * 180 / Math.PI, sky: s.uCloudOvercast.value.x, sunColor: s.uCloudSunColor.value, skyColor: look.skyColor },
     );
     const u = this.post.uniforms;
     u.uHazeColor.value.copy(grade.hazeColor); u.uHazeDensity.value = grade.hazeDensity; u.uHazeMax.value = grade.hazeMax; u.uHazeFloor.value = grade.hazeFloor;
