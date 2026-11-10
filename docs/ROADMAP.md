@@ -22,7 +22,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
      #41 to #44: see Wind);
   7. #18 dynamic water: a state the game drives (done 2026-11-03, #45 and #48: see Water);
   8. #11 rain and wet ground (the falling rain done 2026-11-09, #53: see Weather; wet ground is open);
-  9. #12 storms and lightning (the lightning in #55: see Weather; the storm look is open);
+  9. #12 storms and lightning (done 2026-11-11, #55 and #57: see Weather);
   10. #13 seasons (parts 1 and 2, the hour following the game's sun and the season's look for the rest, merged 2026-11-07 as #51 and #52; part 3, the trees' look, in #54);
   11. #14 snow, frost and ice (the lying snow done 2026-11-11, #58: see Weather; falling snow, frost and river ice are open);
   12. #19 the water's own look, chosen under every weather.
@@ -188,7 +188,7 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   shade reads as a flat, slightly strong blue; less colour there. The contract in `docs/GROUND.md`, costs in
   `docs/PERFORMANCE.md`.
 
-- **Lightning (#12, #55; the storm look is open).** The game says where and when: `renderer.strike({ x, z })` and
+- **Lightning (#12, #55).** The game says where and when: `renderer.strike({ x, z })` and
   `renderer.flicker()` (distant lightning, the developer's call: the game calls each one, #12). The renderer draws a bolt, a
   flash of the whole picture, and a glow where it landed (`src/renderer/lightning.ts`). The flash is laid over the finished
   picture, the last thing done to a pixel, so it can't lift one by more than its limit whatever the hour or the exposure; no
@@ -205,6 +205,20 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   screen the storm's beyond lights up, fading across (0.06 at most, 0.03 at Gentle; Sol finds 0.06 sound, and 0.08
   plausible after a test of a flicker over a fading flash). The first set was too faint to tell apart; of the second, cloud
   gaps read as mist, and a stutter of three pulses might grate over a long storm.
+- **Storms (#12, #57, done 2026-11-11).** How stormy the sky is is the game's: `setWeather({ storm })`, 0 to 1, apart from
+  the cover and the rain (the developer's call: a storm darkens before its rain arrives and lifts before it stops, and a
+  long steady rain isn't a storm); left out it's 0 and every frame is as before. The storm look (`src/renderer/storm.ts`)
+  is laid over the overcast light: fully under a cloud, the gaps as far as they've turned overcast (the sun in a gap is
+  still the sun, so a gale's broken sky has bright patches against dark cloud), the grade as far as the sky is covered.
+  The developer's pick of three, B "slate": a heavy blue-slate light, the greens cooled towards teal, deep shade, the
+  distance going dark, the water a dark mirror, the corners a little darker; the colour held up, readable at night. (Not
+  picked: A "moody", too close to a rainy day to read as a storm; C "dramatic", the night one dark wash.) The gold
+  breaking under a storm is the game's `sunUnder`, which under a storm works at any hour of the day, from a light storm
+  up: at noon it comes in low (18° at most), gold and a little dim, with the storm's deep shade kept, so it reads as light
+  under a dark sky rather than a sunny day. The demo's timeline has a thunderstorm, a gale and a hurricane (storm, wind,
+  rain, the gold as each comes and goes, lightning at the spell's rates), with videos by `tools/video.ts` (`thunderstorm`,
+  `gale`, `hurricane`). Torn-off bits with the flying leaves were left out for now (the developer's call). The distant rain
+  veil (#11) shows in the top part of the screen in any heavy rain; the developer keeps it as it is for now.
 - **Seasons (#13, done: parts 1 and 2 on 2026-11-07, #51 and #52; part 3, the trees, in #54).** The developer's scope (2026-11-03): the trees' seasonal look (turning, bare limbs,
   blossom, the bushes and hedges with them, fallen and flying leaves) is a separate thread; this one does the rest. The
   decisions are on #13. Part 1: `renderer.setSeason({ season, character, sunrise, sunset })`, once per level, with the

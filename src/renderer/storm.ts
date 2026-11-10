@@ -43,32 +43,17 @@ export interface StormRecipe {
 export const VIGNETTE = 0.35;
 
 /**
- * The candidates (#12), from "darker and moodier, still clearly the painting" to "properly dramatic", for the developer to
- * pick on the PR's preview (`?stormLook=`).
+ * The storm look, the developer's pick (#12, PR #57, 2026-11-11) of three, "slate": a heavy blue-slate light, the greens
+ * cooled towards teal, deep shade, the distance going dark, the water a dark mirror; the colour held up, so it's still
+ * the painting, and things stay readable at night. (Not picked: "moody", the grey day only a step darker and cooler,
+ * which read as a gloomy rain rather than a storm; "dramatic", darker still with a dark indigo air and heavy corners,
+ * which turned the night into one dark wash.)
  */
-export const STORM_LOOKS = {
-  // Moody: the grey day a step darker and cooler, the shade a deeper violet, the colour kept. Clearly the same painting.
-  a: {
-    exposure: 0.8, nightExposure: 0.88, light: 0x9aa6d8, lightTurn: 0.3, shadeHue: 280, shadeTurn: 0.35, lean: 0.08, depth: 1.12,
-    litHue: 270, litLean: 0, saturation: 1.06, air: 0x7a86b4, airTurn: 0.45, airLight: 0.85, airDensity: 1.25, airFloor: 0.02, deck: 0.7,
-    vignette: 0.45, rim: 0.5,
-  },
-  // Slate: a heavy blue-slate light, the greens cooled towards teal, deep shade, the distance going dark; the water a
-  // dark mirror.
-  b: {
-    exposure: 0.64, nightExposure: 0.76, light: 0x7c96c4, lightTurn: 0.6, shadeHue: 250, shadeTurn: 0.6, lean: 0.18, depth: 1.3,
-    litHue: 215, litLean: 0.22, saturation: 1.16, air: 0x4f6390, airTurn: 0.7, airLight: 0.65, airDensity: 1.7, airFloor: 0.03, deck: 0.45,
-    vignette: 0.62, rim: 0.3,
-  },
-  // Dramatic: a deep slate, the darkest of the three, with more contrast in the land (tops still catch the light while
-  // the shade drops away), the far land lost in a dark indigo air, the corners closing in.
-  c: {
-    exposure: 0.5, nightExposure: 0.72, light: 0x6c7fc0, lightTurn: 0.7, shadeHue: 268, shadeTurn: 0.75, lean: 0.28, depth: 1.65,
-    litHue: 245, litLean: 0.18, saturation: 1.3, air: 0x363e74, airTurn: 0.9, airLight: 0.45, airDensity: 2.4, airFloor: 0.03,
-    deck: 0.25, vignette: 1.0, rim: 0.2,
-  },
-} as const satisfies Record<string, StormRecipe>;
-export type StormLookName = keyof typeof STORM_LOOKS;
+export const STORM: StormRecipe = {
+  exposure: 0.64, nightExposure: 0.76, light: 0x7c96c4, lightTurn: 0.6, shadeHue: 250, shadeTurn: 0.6, lean: 0.18, depth: 1.3,
+  litHue: 215, litLean: 0.22, saturation: 1.16, air: 0x4f6390, airTurn: 0.7, airLight: 0.65, airDensity: 1.7, airFloor: 0.03, deck: 0.45,
+  vignette: 0.62, rim: 0.3,
+};
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const lerpAngle = (a: number, b: number, t: number) => a + ((((b - a + 540) % 360) - 180) * t);
@@ -79,8 +64,8 @@ const hueOf = (c: THREE.Color) => c.clone().multiplyScalar(1 / peak(c));
 /** A colour turned towards a hue, keeping its own brightness (its largest channel). */
 const turned = (c: THREE.Color, hue: THREE.Color, t: number) => c.clone().lerp(hueOf(hue).multiplyScalar(peak(c)), t);
 
-/** A look under a storm (0 none .. 1 a full storm), by a recipe. */
-export function stormLook(look: Look, storm: number, r: StormRecipe): Look {
+/** A look under a storm (0 none .. 1 a full storm), by a recipe (the picked look by default). */
+export function stormLook(look: Look, storm: number, r: StormRecipe = STORM): Look {
   if (storm <= 0) return look;
   const t = storm, n = look.night, light = new THREE.Color(r.light), air = new THREE.Color(r.air);
   const haze = hueOf(air).multiplyScalar((luminance(look.hazeColor) * r.airLight) / Math.max(luminance(hueOf(air)), 1e-4));
@@ -124,7 +109,7 @@ const UNDER_DECK_LIGHT = 0.7;
  * and white, the gold and the low angle are the storm's; at dawn and dusk the hour's own are kept. A look only: the sun's
  * angle here moves the light and its shadows, not the game's sun.
  */
-export function stormGold(clear: Look, storm: number, r: StormRecipe): Look {
+export function stormGold(clear: Look, storm: number, r: StormRecipe = STORM): Look {
   if (storm <= 0) return clear;
   const k = stormEdge(storm) * THREE.MathUtils.smoothstep(clear.dayEl, 14, 30), dark = stormLook(clear, storm, r);
   return {

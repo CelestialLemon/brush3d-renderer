@@ -16,7 +16,7 @@
 //   dusk, the camera still and wide: QUERY="season=winter" for the season's day, #13), lightning (strikes then distant
 //   flickers: QUERY="weather=storm&flashes=gentle", #12), thunderstorm, gale and hurricane (the demo's scripted storms rolling
 //   in and clearing, at 3x, the camera still and wide, lightning at the spell's rates from a fixed seed, so every look gets
-//   the same strikes: QUERY="stormLook=b&hour=night", #12), snow-settle (snow settling on the shed, bare to deep; #14) and
+//   the same strikes: QUERY="hour=night", #12), snow-settle (snow settling on the shed, bare to deep; #14) and
 //   snow-pan (the camera panning over lying snow; QUERY="season=winter")
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See

@@ -6,7 +6,6 @@ import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
 import { cloudDriftSpeed } from '../renderer/clouds';
-import { STORM_LOOKS, type StormLookName } from '../renderer/storm';
 import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weather, type WeatherName } from '../renderer/weather';
 import { steadyWind, WIND_SCALE, windName, type WindStrength } from '../renderer/wind';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
@@ -32,7 +31,6 @@ import { WindView } from './windView';
 //     hazeKind=fog|dust
 //   sunUnder (0..1: how much of a low sun gets in under the cloud at dawn and dusk, and at any hour of the day under a
 //     storm; the game's, now and then; 0 by default)
-//   stormLook=a|b|c (the storm look's candidates, #12: moody, slate, dramatic)
 //   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
 //   spell=shower|fog|dust|flood|thunderstorm|gale|hurricane (which scripted weather: a shower, a morning fog lifting, a
 //     dust storm blowing through, a storm flooding the stream over the land, or a thunderstorm, a gale or a hurricane, #12)
@@ -152,7 +150,7 @@ function here() {
     if (h.base !== undefined) next.set('hazeBase', String(h.base));
     if (h.kind) next.set('hazeKind', h.kind);
   }
-  next.set('sunUnder', String(sunUnder)); next.set('stormLook', stormLookName);
+  next.set('sunUnder', String(sunUnder));
   next.set('wind', wind.speed.toFixed(2)); next.set('windDir', ((wind.direction * 180) / Math.PI).toFixed(1));
   next.set('gust', String(wind.gust ?? 0.5)); next.set('rhythm', String(rhythm));
   next.set('rise', String(water.rise)); next.set('flow', String(water.flow)); next.set('mud', String(water.mud));
@@ -212,20 +210,6 @@ const weather: Sky & { haze: Haze } = {
   },
 };
 if (['cloud', 'storm', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase', 'hazeKind'].some((k) => params.has(k))) presetName = null;
-// The storm look's candidates (#12, storm.ts): stormLook=a|b|c.
-let stormLookName: StormLookName = (params.get('stormLook') ?? '') in STORM_LOOKS ? params.get('stormLook') as StormLookName : 'b';
-renderer.stormLook = STORM_LOOKS[stormLookName];
-const STORM_LOOK_TITLES: [StormLookName, string][] = [
-  ['a', 'Moody: the grey day a step darker and cooler, deeper violet shade, the colour kept'],
-  ['b', 'Slate: a heavy blue-slate light, deep shade, the distance going dark, the water a dark mirror'],
-  ['c', 'Dramatic: a deep slate, the darkest, the most contrast, the far land lost in a dark indigo air'],
-];
-/** Sets a URL option without reloading, so the setting can be shared. */
-function remember(name: string, value: string) {
-  const u = new URL(location.href);
-  u.searchParams.set(name, value);
-  history.replaceState(null, '', u);
-}
 // The clouds' field (#8).
 const cloudSeed = num('cloudSeed', 1);
 // How much of a low sun gets in under the cloud at dawn and dusk (#8): the game's, sent with the weather, and only now and
@@ -407,13 +391,6 @@ function hud() {
   hudEl.append(slider('Cloud', 0, 1, 0.01, () => weather.cloud, weatherSet((v) => { weather.cloud = v; }), share, true));
   hudEl.append(slider('low sun', 0, 1, 0.01, () => spellSun ?? sunUnder, (v) => { sunUnder = v; spellSun = null; send(sent); }, share, true));
   hudEl.append(slider('Storm', 0, 1, 0.01, () => weather.storm, weatherSet((v) => { weather.storm = v; }), share, true));
-  // The storm look's candidates (#12), for the developer to pick: stormLook=a|b|c.
-  hudEl.append(Object.assign(document.createElement('label'), { textContent: 'Storm look' }));
-  for (const [name, title] of STORM_LOOK_TITLES) {
-    const b = Object.assign(document.createElement('button'), { textContent: name.toUpperCase(), title, className: stormLookName === name ? 'on' : '' });
-    b.onclick = () => { stormLookName = name; renderer.stormLook = STORM_LOOKS[name]; remember('stormLook', name); hud(); };
-    hudEl.append(b);
-  }
   hudEl.append(slider('Rain', 0, 1, 0.01, () => weather.rain, weatherSet((v) => { weather.rain = v; }), share, true));
   hudEl.append(slider('Snow', 0, 1, 0.01, () => weather.snow, weatherSet((v) => { weather.snow = v; }), share, true));
   hudEl.append(slider('Heat', 0, 1, 0.01, () => weather.heat, weatherSet((v) => { weather.heat = v; }), share, true));
