@@ -14,7 +14,8 @@
 //   hour running from 16:00 past sunset, or from before dawn to 9:00, the camera still: QUERY="cloud=1&sunUnder=1" for the low sun
 //   under a cloud deck, #8; in a season, QUERY="season=winter", the same stretch of its day, #13), day (first light to
 //   dusk, the camera still and wide: QUERY="season=winter" for the season's day, #13), lightning (strikes then distant
-//   flickers: QUERY="weather=storm&flashes=gentle", #12)
+//   flickers: QUERY="weather=storm&flashes=gentle", #12), snow-settle (snow settling on the shed, bare to deep; #14) and
+//   snow-pan (the camera panning over lying snow; QUERY="season=winter&snowLook=b")
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
 // tools/browser.ts for the rest.
@@ -39,6 +40,8 @@ interface Move {
   water?: (t: number) => { rise?: number; flow?: number; mud?: number };
   /** The hour, if it moves: on the reference day (16 to 20.5 for a sunset), drawn at that point of the season's day. */
   hour?: (t: number) => number;
+  /** The ground (#14): how deep the snow lies (0..1), sent in the game's steps and eased. */
+  ground?: (t: number) => { snow?: number; frost?: number };
   /** Lightning, standing in for the game (#12): strikes as [time, x, z] and distant flickers' times. */
   lightning?: { strikes?: [number, number, number][]; flickers?: number[] };
 }
@@ -102,6 +105,11 @@ const MOVES: Record<string, Move> = {
     seconds: 9, at: () => ({ x: -1, z: 4, zoom: 32, view: 0 }), extra: true,
     lightning: { strikes: [[0.8, 5, 2], [2.6, -8, -4], [3.1, 2, 9], [4.8, -3, 1]], flickers: [6.1, 7.4, 8.1] },
   },
+  // Snow settling (#14): from bare ground to deep over twelve seconds, sent in the game's steps, the camera still on the
+  // shed (its roof takes the snow, its porch doesn't); then held. The look by QUERY's snowLook.
+  'snow-settle': { seconds: 15, at: () => ({ x: 10, z: 12, zoom: 48, view: 0 }), ground: (t) => ({ snow: Math.min(0.8, tick(t) / 15) }), ease: true, extra: true },
+  // The snow lying, the camera panning over the farm: what the snow does in motion.
+  'snow-pan': { seconds: 8, at: (t) => pan({ x: 4, z: 6, zoom: 48, view: 0 }, -t * 40, 0), ground: () => ({ snow: 0.5 }), extra: true },
   'stream-usual': { seconds: 8, at: () => ({ x: -14, z: 20, zoom: 64, view: 0 }), water: () => ({ rise: 0, flow: 1, mud: 0 }), extra: true },
 };
 
@@ -131,6 +139,7 @@ try {
       const wind = move.wind ? { speed: move.wind(t) } : i === 0 ? {} : undefined;
       const weather = move.cloud ? { cloud: move.cloud(t) } : i === 0 && !move.timeline ? {} : undefined;
       const water = move.water?.(t);
+      const ground = move.ground?.(t);
       // Lightning runs on real seconds: here the frame's, so the video's flashes are at the right moments.
       const bolts = move.lightning?.strikes?.filter(([at]) => at >= t && at < t + 1 / FPS).map(([, x, z]) => ({ x, z })) ?? [];
       const flickers = move.lightning?.flickers?.filter((at) => at >= t && at < t + 1 / FPS).length ?? 0;
@@ -140,11 +149,11 @@ try {
         for (const b of bolts) r.strike(b);
         for (let n = 0; n < flickers; n++) r.flicker();
       }, 1000 + t, bolts, flickers);
-      const png = await page.evaluate(async (cam, time, wind, weather, timeline, ease, water, hour) => {
-        await (window as any).__draw(cam, { time, wind, weather, timeline, ease, water, dayHour: hour });
+      const png = await page.evaluate(async (cam, time, wind, weather, timeline, ease, water, hour, ground) => {
+        await (window as any).__draw(cam, { time, wind, weather, timeline, ease, water, dayHour: hour, ground });
         return document.querySelector('canvas')!.toDataURL('image/png');
       }, move.at(t), 3 + t, wind, weather, move.timeline ? { time: move.timeline(t), speed: 3, spell: move.spell ?? 'shower' } : undefined,
-      !!move.ease && i > 0, water, move.hour?.(t));
+      !!move.ease && i > 0, water, move.hour?.(t), ground);
       await writeFile(join(dir, `${String(i).padStart(4, '0')}.png`), Buffer.from(png.split(',')[1], 'base64'));
     }
     const file = join(out, `${name}.mp4`);

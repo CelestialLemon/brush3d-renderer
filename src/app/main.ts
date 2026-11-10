@@ -11,6 +11,8 @@ import { steadyWind, WIND_SCALE, windName, type WindStrength } from '../renderer
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
 import { SPEEDS, SPELLS, TICK, timelineAt, timelinePhase, timelineWater, timelineWind, type SpellName } from './timeline';
 import { DemoWater, USUAL_WATER, type WaterState } from './water';
+import { DemoGround, type GroundState } from './ground';
+import { DEFAULT_SNOW_LOOK, SNOW_LOOKS, type SnowLook } from '../renderer/snow';
 import { WindWorker } from '../wind/client';
 import { TICK as WIND_TICK, type WindGoal, type WindSave } from '../wind/sim';
 import { WindView } from './windView';
@@ -34,6 +36,8 @@ import { WindView } from './windView';
 //     a storm flooding the stream over the land)
 //   water=usual|spate|flood (the water, #18), then each value over it: rise (m over the usual), flow (times the usual
 //     speed), mud (0..1)
+//   lying (how deep the snow lies over the land, 0..1, the game's: 0.2 a dusting, 0.5 the grass covered, 1 deep; #14)
+//   snowLook=a|b|c (the lying snow's looks, while the developer picks: see SNOW_LOOKS)
 //   cloudSeed (which cloud field: a whole number)
 //   falling=0 (leave out the things in the air: the wind's leaves, the rain, and snow to come; dust is in the haze)
 //   fallingShare (the share of the rain's strokes drawn: 1 full quality, 0.33 reduced)
@@ -96,6 +100,21 @@ function sendWater(w: WaterState, immediate = false) {
   renderer.setWater(demoWater.map(w), immediate ? 0 : undefined);
 }
 sendWater(water, true);
+// The ground (#14), standing in for the game's: how deep the snow lies and how much frost, sent as a map whenever it
+// changes.
+const demoGround = new DemoGround(scene.stream);
+const ground: GroundState = { snow: num('lying', 0), frost: 0 };
+let groundSent = '';
+function sendGround(g: GroundState, immediate = false) {
+  const key = JSON.stringify(g);
+  if (key === groundSent) return;
+  groundSent = key;
+  renderer.setGround(demoGround.map(g), immediate ? 0 : undefined);
+}
+sendGround(ground, true);
+const snowLookParam = params.get('snowLook') ?? '';
+let snowLook: SnowLook = snowLookParam in SNOW_LOOKS ? snowLookParam as SnowLook : DEFAULT_SNOW_LOOK;
+renderer.setSnowLook(snowLook);
 const view = renderer.view;
 view.view = num('view', 0); view.zoom = num('zoom', 40);
 view.target.set(num('x', farm ? 0 : -1), 0, num('z', 0));
@@ -139,6 +158,7 @@ function here() {
   next.set('wind', wind.speed.toFixed(2)); next.set('windDir', ((wind.direction * 180) / Math.PI).toFixed(1));
   next.set('gust', String(wind.gust ?? 0.5)); next.set('rhythm', String(rhythm));
   next.set('rise', String(water.rise)); next.set('flow', String(water.flow)); next.set('mud', String(water.mud));
+  next.set('lying', String(ground.snow)); next.set('snowLook', snowLook);
   next.set('view', String(view.view)); next.set('zoom', view.zoom.toFixed(1));
   next.set('x', view.target.x.toFixed(2)); next.set('z', view.target.z.toFixed(2));
   next.set('hour', was ? Object.keys(HOUR_NAMES).find((k) => HOUR_NAMES[k] === was)! : hour.toFixed(2));
@@ -414,6 +434,18 @@ function hud() {
     (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)} m`, true));
   hudEl.append(slider('flow', 0, 5, 0.05, () => water.flow, waterSet((v) => { water.flow = v; }), (v) => `${v.toFixed(2)}×`, true));
   hudEl.append(slider('mud', 0, 1, 0.01, () => water.mud, waterSet((v) => { water.mud = v; }), share, true));
+
+  // The ground (#14): the snow lying, what the game would send, and the looks for it while the developer picks.
+  hudEl.append(slider('Lying', 0, 1, 0.01, () => ground.snow, (v) => { ground.snow = v; sendGround({ ...ground }); }, share, true));
+  const look = Object.assign(document.createElement('button'), { textContent: `Snow ${snowLook.toUpperCase()}` });
+  look.title = SNOW_LOOKS[snowLook];
+  look.onclick = () => {
+    const keys = Object.keys(SNOW_LOOKS) as SnowLook[];
+    snowLook = keys[(keys.indexOf(snowLook) + 1) % keys.length];
+    renderer.setSnowLook(snowLook);
+    look.textContent = `Snow ${snowLook.toUpperCase()}`; look.title = SNOW_LOOKS[snowLook];
+  };
+  hudEl.append(look);
 }
 const timelineEl = document.createElement('span');
 /** A clock hour as 14:45. */
@@ -492,7 +524,7 @@ if (params.has('shot')) {
     options: {
       hide?: DrawnKind[]; grain?: boolean; time?: number; hour?: number; dayHour?: number; wind?: Partial<typeof wind>;
       weather?: Partial<Weather> | WeatherName; timeline?: { time: number; speed?: number; spell?: SpellName }; ease?: boolean;
-      water?: Partial<WaterState>;
+      water?: Partial<WaterState>; ground?: Partial<GroundState>; snowLook?: SnowLook;
     } = {}) => {
     if (cam) { view.target.set(cam.x, 0, cam.z); view.zoom = cam.zoom; view.view = cam.view; view.update(0, true); }
     if (options.hour !== undefined) hour = options.hour;
@@ -516,6 +548,9 @@ if (params.has('shot')) {
     // The water's clock is the renderer's: put it at the frame's time first, so an ease starts from there.
     renderer.shared.uTime.value = time;
     sendWater({ ...water }, !options.ease);
+    if (options.ground) Object.assign(ground, options.ground);
+    sendGround({ ...ground }, !options.ease);
+    if (options.snowLook) { snowLook = options.snowLook; renderer.setSnowLook(snowLook); }
     if (!options.weather && !options.timeline) send(sent, false, time);
     await windTo(time, windGoal(), !!options.ease);
     drawWind();
@@ -543,7 +578,7 @@ async function profile(cases = defaultCases(), progress?: (row: ProfileRow, i: n
   profiling = true;
   try {
     return await runProfile(renderer, (t) => { renderer.setHour(hour); renderer.render(t); },
-      () => send(weather, true, 0), cases, progress);
+      () => { send(weather, true, 0); groundSent = ''; sendGround(ground, true); }, cases, progress);
   } finally { profiling = false; resize(); }
 }
 if (params.has('profile')) profilePanel();

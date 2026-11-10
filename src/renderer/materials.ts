@@ -4,6 +4,7 @@ import { WIND_GLSL } from './wind';
 import { HIDDEN_DIVE, WATER_MAP_GLSL } from './water';
 import { RAIN_RINGS_GLSL } from './rain';
 import { SHELTER_GLSL } from './shelter';
+import { SNOW_GLSL } from './snow';
 
 // The scene's materials. Each has a main variant (writes colour and the G-buffer) and a depth variant for the sun's
 // shadow map, built from the same vertex code so wind and billboarding cast the shadows they should.
@@ -400,6 +401,8 @@ varying vec4 vPaint;
 varying float vViewDepth;
 ${GBUFFER_OUT}
 vec3 toCamera() { return normalize(vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2])); }
+${SHELTER_GLSL}
+${SNOW_GLSL}
 
 #ifdef BASIS
 // The brush by place, baked at load (basisBakeMaterial): for each of the BASIS brush scales, seven layers over the ground's
@@ -529,6 +532,21 @@ void main() {
 #endif
   vec3 col = paintBands(base, light, 0.05, n.y * 0.5 + 0.5);
   col += rimColorHere() * rimLight(n, vPaint.w);
+  // Lying snow (#14, snow.ts).
+  if (uGroundOn > 0.5 && snowAt(p) > 0.0) {
+#ifdef GROUND
+    // The ground: whole from SNOW_WHOLE up on the flat, less on steep banks; thinner, in patches along the land's own
+    // hollows, a patch's edge broken by the brush.
+    float cover = snowCover(gSnow, smoothstep(0.55, 0.9, n.y), snowPattern(p.xz) + dab * 0.15, 0.06);
+#elif defined(CROP)
+    // A crop: its top as the ground's, and its sides buried as deep as the snow lies.
+    float cover = max(snowCover(gSnow, smoothstep(0.6, 0.9, n.y), snowPattern(p.xz), 0.06), snowBuries(p, gSnow));
+#else
+    // Stones and wood: their tops, in patches, and buried at their foot.
+    float cover = max(snowCover(gSnow, smoothstep(0.5, 0.85, n.y), snowPattern(p.xz) * 0.6 + br * 0.4, 0.05), snowBuries(p, gSnow));
+#endif
+    col = mix(col, snowPaint(light, 0.05, fields.x * 1.2 + fine * 0.8), cover);
+  }
   writeGBuffer(exposeHere(col), n, vViewDepth, 0.0, 1.0);
 }
 `;
@@ -605,6 +623,14 @@ void main() {
   // Light through a leaf takes the leaf's colour: a warm yellow-green, not the sun's orange.
   float side = pow(1.0 - abs(dot(nCanopy, toCamera())), 3.0);
   col += rimColorHere() * tintOf(base, 0.75) * behind * side * vPaint.w * 0.7 * mix(0.4, 1.0, vis);
+#ifndef NO_SNOW
+  // Lying snow (#14): the dabs facing up take it, whole dabs at a time (each its own threshold), the crown's top most
+  // (under its own leaves, less: the shelter map's crowns).
+  if (uGroundOn > 0.5 && snowAt(p) > 0.0) {
+    float cover = snowCover(gSnow, smoothstep(0.05, 0.7, nCanopy.y), hash12(vec2(vCard.w * 37.0, 3.1)) * 2.0 - 1.0, 0.04);
+    col = mix(col, snowPaint(light, 0.07, 0.0), cover);
+  }
+#endif
   writeGBuffer(exposeHere(col), n, vViewDepth, 0.0, alpha);
 }
 `;
@@ -636,6 +662,12 @@ void main() {
   light += (vBlade.x - 0.5) * 0.1;
   vec3 col = paintBands(base, light, 0.06, 0.8);
   col += rimColorHere() * vPaint.w * vBlade.x * vBlade.x * vis * 0.25;
+  // Lying snow (#14): where the ground under it is white, a blade is buried as deep as the snow lies, its tip poking
+  // through; painted as the ground's snow is, so the buried part is lost in it.
+  if (uGroundOn > 0.5 && snowAt(p) > 0.0) {
+    float cover = snowBuries(p, gSnow);
+    if (cover > 0.0) col = mix(col, snowPaint(light, 0.06, 0.0), cover);
+  }
   writeGBuffer(exposeHere(col), n, vViewDepth, 0.0, 1.0);
 }
 `;
@@ -702,6 +734,13 @@ void main() {
     glass = mix(glass, vec3(1.0) * sunTint(), sun * 0.6 * vis * (1.0 - gCloud));
     col = mix(glass, glass * 1.3 + 0.04, grid * 0.35);
   }
+  // Lying snow (#14): on the tops of built things and their roofs' slopes (a solar panel's too). A thin cover is a veil
+  // the roof shows through, thickening to white (patches on a roof read as camouflage), a little uneven.
+  if (uGroundOn > 0.5 && snowAt(p) > 0.0) {
+    float uneven = snoise(p.xz * 1.3) * 0.7 + snoise(p.xz * 5.0) * 0.3;
+    float cover = snowCover(gSnow, smoothstep(0.4, 0.65, n.y), uneven * 0.25, 0.45);
+    col = mix(col, snowPaint(light, 0.02, uneven * 0.3), cover);
+  }
   writeGBuffer(exposeHere(col), n, vViewDepth, 1.0, 1.0);
 }
 `;
@@ -754,7 +793,6 @@ varying vec2 vFlow;
 varying float vMud;
 varying vec2 vMirrorShift;
 ${WATER_SHEET_GLSL}
-${SHELTER_GLSL}
 ${RAIN_RINGS_GLSL}
 // The flow carries the ripples and the glints along (a flow map: two copies, each carried for a while and then put back,
 // crossfaded so neither's jump shows, each place on its own beat so no pulse runs over the whole river). However the flow
@@ -965,7 +1003,11 @@ const FRAG: Record<MaterialKind, string> = {
 /** The water's own colour (C.water before #18, when the scenes built it), linear. */
 const WATER_LINEAR = new THREE.Color(0x2c6e74);
 const DEFINES: Partial<Record<MaterialKind, Record<string, number | string>>> = {
-  paint: { TREES: 1 }, ground: { TREES: 1 }, crop: { CROP: 1 },
+  // The ground and what stands on it read their shelter with the land's hollows (AT_GROUND, snow.ts): one lookup, for
+  // the shelter at their foot. The roofs (ink) and the crowns (foliage) read the shelter map where they are; the leaves in
+  // the air take no snow.
+  paint: { TREES: 1, AT_GROUND: 1 }, ground: { TREES: 1, GROUND: 1, AT_GROUND: 1 }, crop: { CROP: 1, AT_GROUND: 1 }, grass: { AT_GROUND: 1 },
+  debris: { NO_SNOW: 1 },
   water: { WATER_SHEET: 1, WATER_COLOR: `vec3(${WATER_LINEAR.r.toFixed(6)}, ${WATER_LINEAR.g.toFixed(6)}, ${WATER_LINEAR.b.toFixed(6)})` },
 };
 const DABS = (kind: MaterialKind) => kind === 'foliage' || kind === 'debris';

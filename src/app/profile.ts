@@ -20,6 +20,8 @@ export interface ProfileCase {
   weather?: Weather;
   /** Hold a strike at its brightest in every frame (#12): the cost of a flash, a bolt and a glow together. */
   lightning?: boolean;
+  /** Snow lying this deep (0..1) everywhere (#14): the cost of painting it in the materials. */
+  lying?: number;
 }
 export interface ProfileRow {
   label: string; width: number; height: number;
@@ -49,12 +51,13 @@ export function defaultCases(): ProfileCase[] {
   cases.push({ label: '1080p storm, fog', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS.fog });
   cases.push({ label: '1080p storm, dust', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS.dust });
   cases.push({ label: '1080p storm, heat wave', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS['heat-wave'] });
+  cases.push({ label: '1080p storm, snow lying', width: 1920, height: 1080, wind: STORM, lying: 0.6 });
   return cases;
 }
 
 /**
  * Runs the cases. `draw(time)` draws one frame as the demo does (the look, then the renderer); `restore` puts the demo's
- * size, wind and weather back (and is called before each case). `progress` hears each row as it's done.
+ * size, wind, weather and ground back (and is called before each case). `progress` hears each row as it's done.
  */
 export async function runProfile(
   renderer: BrushRenderer, draw: (time: number) => void, restore: () => void, cases: ProfileCase[],
@@ -78,6 +81,8 @@ export async function runProfile(
       view.update(0, true);
       restore();
       if (c.weather) renderer.setWeather(c.weather, true);
+      // The same depth over all the land: a map of one cell, larger than any scene.
+      if (c.lying !== undefined) renderer.setGround({ nx: 1, nz: 1, cell: 2000, x0: -1000, z0: -1000, snow: new Float32Array([c.lying]) }, 0);
       // A steady wind: the gust map's cost is in sampling it, the same for any wind (its upload is a tick's, not a frame's).
       const wind = steadyWind(c.wind, (31 * Math.PI) / 180);
       renderer.setWind(wind, wind, 0);
