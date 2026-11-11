@@ -73,6 +73,7 @@ export function createSharedUniforms() {
     uCloudSunColor: { value: new THREE.Color(1, 1, 1) },
     uCloudRimColor: { value: new THREE.Color(1, 0.8, 0.4) },
     uCloudBands: { value: new THREE.Vector4(0, 0.3, 0.1, 1) },
+    uCloudTint: { value: new THREE.Vector2(0, 0) },
     uLightExposure: { value: 1 },
     // The sky the water and the solar glass mirror (MIRROR_SKY): the sky map, the gaps' sky and the clouds' colours.
     uSkyMap: { value: null as THREE.Texture | null },

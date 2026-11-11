@@ -216,6 +216,16 @@ storm, at the flash's brightest, with the bolt and a glow: the farm's frame 14.3
 but the glow's few metres while the glow fades. The laptop's numbers are the developer's to take: `?profile`, the case "1080p
 storm, a strike at its brightest". A strike's own work on the CPU is about 1 to 2 ms, once (`strike()`, building the bolt).
 
+### A storm, as a whole (#12)
+
+The storm look is the light's numbers (worked out on the CPU each frame) and a vignette uniform: no pass, no texture.
+RX 570, 1080p, GPU ms (`node tools/profile.ts`, wind at storm strength in each): the farm in a full storm 14.01 with the
+look, 13.95 at `storm=0`, the noise. The whole storm (`weather=storm`: full cover, rain 0.9, `storm` 1) against the same wind
+under a clear sky: the meadow 5.23 → 5.57 (the rain and its veil; post 0.22 → 0.29, the main view 3.71 → 3.97), and 5.93
+at a strike's brightest (post 0.50): about 0.7 ms in all, about 1.3 on the laptop at ×1.9, inside the 4 a storm is
+allowed. The farm's 14.31 → 14.01; it's over the scene's own 9 ms with or without weather. Still to take on the laptop:
+`?profile&weather=storm` on a preview of the demo.
+
 ### Mist and fog (#9)
 
 In the post pass: each pixel's place in the world rebuilt from its depth, and the fog summed in four steps up the view's

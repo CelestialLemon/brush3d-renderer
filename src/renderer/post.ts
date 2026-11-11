@@ -31,6 +31,7 @@ uniform float uSaturation;
 uniform float uNightShift;
 uniform float uShadeHue;
 uniform float uGrain;
+uniform float uVignette;    // how dark the corners go (a storm closes them in, storm.ts)
 // Where a pixel is in the world: the camera's position, its right and up scaled to half the view, and its forward (the
 // camera is orthographic, so every pixel looks the same way and its depth is a distance along it).
 uniform vec3 uCamPos;
@@ -267,7 +268,7 @@ void main() {
   // A faint canvas tooth, and a gentle vignette.
   o += (hash12(gl_FragCoord.xy) - 0.5) * uGrain;
   vec2 v = vUv - 0.5;
-  o *= 1.0 - dot(v, v) * 0.35;
+  o *= 1.0 - dot(v, v) * uVignette;
   // Lightning (#12), laid over the finished picture: the flash, the far lightning, the glow where it struck.
   if (uFlashOn > 0.5) o = lightningFinal(o, sky ? vec3(0.0) : worldAt(uv, d), sky);
   gl_FragColor = vec4(o, 1.0);

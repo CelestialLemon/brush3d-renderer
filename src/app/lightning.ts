@@ -15,7 +15,11 @@ function remember(name: string, value: string) {
 }
 
 let strikes = params.has('strikes'), flickers = params.has('flicker');
-let strikeTimer = 0, flickerTimer = 0;
+let strikeTimer = 0, flickerTimer = 0, stormTimer = 0;
+/** A scripted storm's lightning (timeline.ts), strikes and flickers a minute, while the timeline plays one; else null. */
+let stormRates: { bolts: number; far: number } | null = null;
+/** Sets the scripted storm's lightning (null when none plays): called at random at those rates, as the game might. */
+export function stormLightning(rates: { bolts: number; far: number } | null) { stormRates = rates; }
 
 /** Sets up the URL's options and the random strikes and flickers. */
 export function setupLightning(renderer: BrushRenderer) {
@@ -60,6 +64,16 @@ function schedule(renderer: BrushRenderer) {
   };
   strikeTimer = window.setTimeout(strike, random(0.5, 2) * 1000);
   flickerTimer = window.setTimeout(flicker, random(0.5, 2) * 1000);
+  // A scripted storm's: a chance every quarter second, at its rates.
+  window.clearInterval(stormTimer);
+  stormTimer = window.setInterval(() => {
+    if (!stormRates) return;
+    if (Math.random() < (stormRates.bolts / 60) * 0.25) {
+      const r = renderer.canvas.getBoundingClientRect();
+      strikeAt(renderer, random(-0.35, 0.35) * r.width, random(-0.3, 0.1) * r.height);
+    }
+    if (Math.random() < (stormRates.far / 60) * 0.25) renderer.flicker({ strength: random(0.5, 1) });
+  }, 250);
 }
 
 /** The buttons, in the demo's controls. */

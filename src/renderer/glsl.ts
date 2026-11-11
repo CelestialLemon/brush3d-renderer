@@ -182,6 +182,8 @@ uniform vec3 uCloudSunColor;   // under a cloud, as uSunColor
 uniform vec3 uCloudRimColor;   // under a cloud, as uRimColor
 uniform vec4 uCloudBands;      // under a cloud: the shade's hue (radians from uShadeHue, the short way), its depth, the lit
                                // band's lean, and the exposure (over the grade's)
+uniform vec2 uCloudTint;       // under a cloud, from the gaps': the lit band's hue (radians, the short way) and the shade's
+                               // lean (a storm's, storm.ts; none without one)
 uniform float uLightExposure;  // in the gaps: the exposure, over the grade's
 // The cloud's shade here, 0 in the sun .. 1 under the deepest of it, as strong as the sun is direct.
 float gCloud = 0.0;
@@ -190,6 +192,8 @@ vec3 overcastHere() { return mix(uOvercast, uCloudOvercast, gCloud); }
 vec3 sunColorHere() { return mix(uSunColor, uCloudSunColor, gCloud); }
 vec3 rimColorHere() { return mix(uRimColor, uCloudRimColor, gCloud); }
 float shadeHueHere() { return uShadeHue + uCloudBands.x * gCloud; }
+float litHueHere() { return uLitHue + uCloudTint.x * gCloud; }
+float shadeLeanHere() { return uShadeLean + uCloudTint.y * gCloud; }
 vec3 exposeHere(vec3 c) { return c * mix(uLightExposure, uCloudBands.w, gCloud); }
 `;
 
@@ -277,12 +281,13 @@ vec3 paintBands(vec3 base, float light, float soft, float upness) {
   float shadeHue = shadeHueHere(), shadeDepth = mix(uShadeDepth, uCloudBands.y, gCloud), litLean = mix(uLitLean, uCloudBands.z, gCloud);
   // Shade: darker, a touch richer, with some of the look's shade colour mixed in (teal at noon, violet at dusk), the way a
   // painter cools a shadow with blue rather than black. Mixing, not turning the hue: yellow wheat in shade goes olive, not red.
-  vec3 shadeMix = vec3(0.0, cos(shadeHue), sin(shadeHue)) * uShadeLean * 0.09;
+  vec3 shadeMix = vec3(0.0, cos(shadeHue), sin(shadeHue)) * shadeLeanHere() * 0.09;
   vec3 shade = lchShift(lab, -shadeDepth * lab.x, 1.1, 0.0) + shadeMix;
   // Half-tone: between, with less of it.
   vec3 half_ = lchShift(lab, -shadeDepth * 0.45 * lab.x, 1.06, 0.0) + shadeMix * 0.45;
   // Lit: the colour itself, warmed by the hour.
-  vec3 lit = lchShift(lab, 0.02, 1.05, 0.0) + vec3(0.0, cos(uLitHue), sin(uLitHue)) * litLean * 0.09;
+  float litHue = litHueHere();
+  vec3 lit = lchShift(lab, 0.02, 1.05, 0.0) + vec3(0.0, cos(litHue), sin(litHue)) * litLean * 0.09;
   float t1 = smoothstep(0.30 - soft, 0.30 + soft, light);
   float t2 = smoothstep(0.62 - soft, 0.62 + soft, light);
   vec3 col = oklabToLinFit(mix(mix(shade, half_, t1), lit, t2));

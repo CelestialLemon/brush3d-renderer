@@ -9,6 +9,10 @@ import type { WaterState } from './water';
 // lowering its amount and top; the renderer only draws it), a dust storm the wind brings in and takes away again, and a
 // flood (#18): a storm swells the stream, which runs fast and muddy, spills over the land and drains away again.
 // A spell may set the wind too, as the game does with setWind, and the water, as it does with setWater.
+// Three storms (#12): a thunderstorm rolling in and clearing, a gale (squalls on a strong wind under a broken sky) and a
+// hurricane. They send how stormy the sky looks (storm), the gold breaking under the deck as the storm comes and goes
+// (sunUnder), and how often lightning strikes and flickers in the distance, which the demo calls as the game would
+// (renderer.strike and renderer.flicker, #12).
 
 /** Seconds of a game hour at normal speed. */
 export const GAME_HOUR = 10;
@@ -26,6 +30,8 @@ const FOG = WEATHER_PRESETS.fog.haze.color, DUST = WEATHER_PRESETS.dust.haze.col
 interface Key {
   hour: number; cloud: number; rain: number; haze?: number; top?: number; heat?: number; wind?: number;
   rise?: number; flow?: number; mud?: number;
+  /** How stormy the sky looks, the low sun under the deck (sunUnder), and strikes and distant flickers a minute. */
+  storm?: number; sun?: number; bolts?: number; far?: number;
 }
 /** A spell's keys, its haze's colour and kind, and what it's doing at an hour. */
 interface Spell { keys: Key[]; haze?: { color: number; kind: HazeKind }; phase: (hour: number) => string }
@@ -104,6 +110,58 @@ export const SPELLS = {
     ],
     phase: (h) => (h < 1 ? 'fair' : h < 4 ? 'the stream swelling' : h < 7.5 ? 'a flood' : h < 16 ? 'draining' : 'fair'),
   },
+  thunderstorm: {
+    keys: [
+      // A close afternoon, cloud gathering...
+      { hour: 0, cloud: 0.25, rain: 0, wind: 4, storm: 0, sun: 0, bolts: 0, far: 0 },
+      { hour: 1.5, cloud: 0.5, rain: 0, wind: 5, storm: 0.1, sun: 0, bolts: 0, far: 0 },
+      // ...the storm's deck coming over, darkening before the rain, the sun breaking in under its edge, thunder far off...
+      { hour: 3, cloud: 0.9, rain: 0, wind: 9, storm: 0.55, sun: 0.9, bolts: 0, far: 5 },
+      { hour: 4, cloud: 1, rain: 0.3, wind: 14, storm: 0.9, sun: 0.2, bolts: 4, far: 6 },
+      // ...the storm: heavy rain, strikes close by...
+      { hour: 5, cloud: 1, rain: 0.9, wind: 16, storm: 1, sun: 0, bolts: 9, far: 5 },
+      { hour: 7, cloud: 1, rain: 1, wind: 15, storm: 1, sun: 0, bolts: 9, far: 5 },
+      // ...passing: the rain easing, the strikes moving off, the sun breaking in under the back of the deck...
+      { hour: 8.5, cloud: 1, rain: 0.45, wind: 11, storm: 0.7, sun: 0.3, bolts: 3, far: 6 },
+      { hour: 9.5, cloud: 0.9, rain: 0.1, wind: 8, storm: 0.4, sun: 1, bolts: 0, far: 5 },
+      // ...and clearing, the thunder going away.
+      { hour: 11, cloud: 0.45, rain: 0, wind: 5, storm: 0.05, sun: 0.3, bolts: 0, far: 2 },
+      { hour: 12, cloud: 0.25, rain: 0, wind: 4, storm: 0, sun: 0, bolts: 0, far: 0 },
+    ],
+    phase: (h) => (h < 1.5 ? 'close' : h < 4 ? 'the storm coming in' : h < 8.5 ? 'a thunderstorm' : h < 11 ? 'passing' : 'clearing'),
+  },
+  gale: {
+    keys: [
+      // A fresh day, the wind rising...
+      { hour: 0, cloud: 0.3, rain: 0, wind: 8, storm: 0, sun: 0 },
+      { hour: 2, cloud: 0.6, rain: 0, wind: 17, storm: 0.3, sun: 0 },
+      // ...a gale, squalls blowing through under a broken sky...
+      { hour: 3.5, cloud: 0.85, rain: 0.35, wind: 23, storm: 0.55, sun: 0 },
+      { hour: 5, cloud: 0.65, rain: 0, wind: 25, storm: 0.4, sun: 0.6 },
+      { hour: 6.5, cloud: 0.9, rain: 0.45, wind: 22, storm: 0.6, sun: 0 },
+      // ...and blowing itself out.
+      { hour: 8, cloud: 0.5, rain: 0, wind: 15, storm: 0.2, sun: 0.4 },
+      { hour: 10, cloud: 0.3, rain: 0, wind: 8, storm: 0, sun: 0 },
+    ],
+    phase: (h) => (h < 2 ? 'the wind rising' : h < 8 ? 'a gale' : 'blowing out'),
+  },
+  hurricane: {
+    keys: [
+      // The swell before it, the wind getting up...
+      { hour: 0, cloud: 0.4, rain: 0, wind: 10, storm: 0, sun: 0, bolts: 0, far: 0 },
+      { hour: 2, cloud: 0.9, rain: 0.3, wind: 22, storm: 0.6, sun: 0, bolts: 0, far: 3 },
+      // ...the hurricane: the strongest wind, driving rain, a dark sky, lightning now and then...
+      { hour: 3.5, cloud: 1, rain: 0.9, wind: 32, storm: 1, sun: 0, bolts: 2, far: 5 },
+      { hour: 6, cloud: 1, rain: 1, wind: 38, storm: 1, sun: 0, bolts: 3, far: 5 },
+      { hour: 9, cloud: 1, rain: 0.8, wind: 30, storm: 0.9, sun: 0, bolts: 2, far: 4 },
+      // ...passing, the sun breaking under its back edge...
+      { hour: 11, cloud: 0.85, rain: 0.15, wind: 20, storm: 0.5, sun: 0.8, bolts: 0, far: 2 },
+      // ...and gone.
+      { hour: 13, cloud: 0.5, rain: 0, wind: 12, storm: 0.1, sun: 0.2, bolts: 0, far: 0 },
+      { hour: 14, cloud: 0.4, rain: 0, wind: 10, storm: 0, sun: 0, bolts: 0, far: 0 },
+    ],
+    phase: (h) => (h < 2 ? 'the wind getting up' : h < 3.5 ? 'the hurricane coming in' : h < 11 ? 'a hurricane' : 'passing'),
+  },
 } satisfies Record<string, Spell>;
 export type SpellName = keyof typeof SPELLS;
 
@@ -129,8 +187,11 @@ function valueAt(spell: SpellName, seconds: number, speed: number, value: (key: 
 export function timelineAt(seconds: number, speed = 1, spell: SpellName = 'shower'): Weather {
   const at = (k: (key: Key) => number) => valueAt(spell, seconds, speed, k);
   const rain = at((k) => k.rain), haze = at((k) => k.haze ?? 0), kind: Spell['haze'] = (SPELLS[spell] as Spell).haze;
+  const first: Key = SPELLS[spell].keys[0];
   return {
-    cloud: at((k) => k.cloud), rain: rain >= RAIN_FROM ? rain : 0, heat: at((k) => k.heat ?? 0),
+    cloud: at((k) => k.cloud), rain: rain >= RAIN_FROM ? rain : 0, heat: at((k) => k.heat ?? 0), storm: at((k) => k.storm ?? 0),
+    // The low sun under the deck, if the spell sends it: else it's the demo's.
+    ...(first.sun !== undefined ? { sunUnder: at((k) => k.sun ?? 0) } : {}),
     haze: haze > 0 ? { amount: haze, color: kind?.color ?? FOG, top: at((k) => k.top ?? 0), kind: kind?.kind ?? 'fog' } : null,
   };
 }
@@ -146,6 +207,12 @@ export function timelineWater(seconds: number, speed = 1, spell: SpellName = 'sh
   if ((SPELLS[spell].keys as Key[])[0].rise === undefined) return null;
   const at = (k: (key: Key) => number) => valueAt(spell, seconds, speed, k);
   return { rise: at((k) => k.rise ?? 0), flow: at((k) => k.flow ?? 1), mud: at((k) => k.mud ?? 0) };
+}
+
+/** How often lightning strikes and flickers in the distance at a time (a minute, of real time), or null if never. */
+export function timelineLightning(seconds: number, speed = 1, spell: SpellName = 'shower'): { bolts: number; far: number } | null {
+  if ((SPELLS[spell].keys as Key[])[0].bolts === undefined) return null;
+  return { bolts: valueAt(spell, seconds, speed, (k) => k.bolts ?? 0), far: valueAt(spell, seconds, speed, (k) => k.far ?? 0) };
 }
 
 /** What the spell is doing at a time, for the demo's controls. */
