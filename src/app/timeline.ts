@@ -218,12 +218,19 @@ export function timelineWater(seconds: number, speed = 1, spell: SpellName = 'sh
 }
 
 /**
- * How wet the land is at a time (#11, 0 dry .. 1 soaked; see DemoGround): the game's rain and sun since the spell began,
- * which starts with the land dry. Held between ticks, as the weather is.
+ * How wet the land is at a time (#11, 0 dry .. 1 soaked; see DemoGround): the game's rain and sun over the spell so far,
+ * from how wet it left the land last time round, as the spell repeats (none the first: then at its end), so it doesn't
+ * jump dry as it starts again. Held between ticks, as the weather is.
  */
 export function timelineWet(seconds: number, speed = 1, spell: SpellName = 'shower') {
-  const end = hourAt(spell, Math.floor(seconds * TICK) / TICK, speed), STEP = 0.05;
-  let wet = 0;
+  const start = (WET_LEFT[spell] ??= soak(spell, 0, span(spell)));
+  return soak(spell, start, hourAt(spell, Math.floor(seconds * TICK) / TICK, speed));
+}
+/** How wet each spell leaves the land, from dry (a spell whose rain soaks it leaves it the same from any start). */
+const WET_LEFT: Partial<Record<SpellName, number>> = {};
+/** How wet the land is `end` hours into a spell, from `wet` at its start. */
+function soak(spell: SpellName, wet: number, end: number) {
+  const STEP = 0.05;
   for (let h = 0; h < end; h += STEP) {
     const mid = Math.min(h + STEP / 2, end), rain = valueAtHour(spell, mid, (k) => k.rain);
     wet = soakStep(wet, rain >= RAIN_FROM ? rain : 0, valueAtHour(spell, mid, (k) => k.cloud), Math.min(STEP, end - h));
