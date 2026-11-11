@@ -18,6 +18,7 @@ import { WindView } from './windView';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
 //   view=0..3  zoom=16..192 (screen px per metre)  x, z (camera target)  t (seconds: freeze the clock there)
+//   focus=mill (farm only: start at the wheat mill; explicit camera parameters still take precedence)
 //   hour=0..24 (the game's clock), or dawn|noon|golden|sunset|night (that look in the season's day)
 //   season=spring|summer|autumn|winter (#13; none by default: the looks' own day, sun up 6 to 20)  character (the
 //     game's: mild|wet|dry|hot|gales|stormy|hard|highRiver)  sunrise, sunset (the game's clock hours; the season's by default)
@@ -112,8 +113,14 @@ function sendGround(g: GroundState, immediate = false) {
 }
 sendGround(ground, true);
 const view = renderer.view;
-view.view = num('view', 0); view.zoom = num('zoom', 40);
-view.target.set(num('x', farm ? 0 : -1), 0, num('z', 0));
+const millView = { x: -80.5, z: -14.5, zoom: 38, view: 0.3 };
+// Zoom uses device pixels per metre. Fit the whole silhouette on small windows
+// and retain the same composition on Retina displays, independent of render resolution.
+const millZoom = () => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM,
+  millView.zoom * renderer.screenRatio * Math.min(canvas.clientHeight / 720, canvas.clientWidth / 800)));
+const focusMill = farm && params.get('focus') === 'mill';
+view.view = num('view', focusMill ? millView.view : 0); view.zoom = num('zoom', focusMill ? millZoom() : 40);
+view.target.set(num('x', focusMill ? millView.x : farm ? 0 : -1), 0, num('z', focusMill ? millView.z : 0));
 view.update(0, true);
 renderer.settings.lines = num('lines', 1) !== 0;
 renderer.settings.shadows = num('shadows', 1) !== 0;
@@ -353,6 +360,17 @@ function hud() {
   map.title = 'The living wind from above, turned as the camera is: how hard it blows (or the shelter), which way, and the obstacles';
   map.onclick = () => { windMap = !windMap; if (windMap) document.body.append(windView.el); else windView.el.remove(); hud(); };
   hudEl.append(map);
+  if (farm) {
+    const mill = document.createElement('button');
+    mill.textContent = 'Wheat mill';
+    mill.title = 'Visit the wheat mill on the northern knoll';
+    mill.onclick = () => {
+      view.target.set(millView.x, 0, millView.z); view.zoom = millZoom(); view.view = millView.view;
+      view.update(0, true);
+      for (const refresh of refreshers) refresh();
+    };
+    hudEl.append(mill);
+  }
   // The clouds' speed follows the wind's: sent at once, as the game would.
   const windSet = (f: (v: number) => void) => (v: number) => { f(v); living.setGoal(windGoal()); send(sent); };
   hudEl.append(slider('Wind', 0, 45, 0.5, () => wind.speed, windSet((v) => { wind.speed = v; }), (v) => `${windName(v)} ${v.toFixed(1)} m/s`));
