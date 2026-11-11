@@ -26,6 +26,7 @@ import { TreeSprings, type TreeSpec } from './trees';
 import { WATER_EASE, WaterField, type WaterMap } from './water';
 import { GROUND_EASE, GroundField, HollowMap, type GroundMap } from './ground';
 import { SnowPaint } from './snow';
+import { DEFAULT_WET_LOOKS, grassHue, wetLookVector, type WetLooks } from './wet';
 import type { WindSnapshot } from '../wind/sim';
 
 // The renderer: the clouds' shade over the land (#8); a sun shadow map; for the water, the bed drawn without it and the
@@ -203,6 +204,12 @@ export class BrushRenderer {
   readonly hollows = new HollowMap();
   /** The lying snow's paint in the hour's light (#14), worked out once a frame. */
   private readonly snow = new SnowPaint();
+  /** The looks for wet things, while the developer picks (#11, WET_LOOKS). */
+  private readonly wetLook = {
+    uWetLook: { value: wetLookVector(DEFAULT_WET_LOOKS, new THREE.Vector4()) },
+    // The grass's hue as the season has turned it (OKLab degrees), for the mud to tell the earth from it (wet.ts).
+    uGrassHue: { value: grassHue(null) },
+  };
   /** The falling rain (#11): its strokes, and the uniforms for its veil and the water's rings. */
   readonly rain: Rain;
   /** Lightning (#12): the game says where and when (strike, flicker); the player's flash setting is lightning.setting. */
@@ -239,8 +246,9 @@ export class BrushRenderer {
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
     });
     this.shelter = new ShelterMap(options.shelterSize ?? 1024);
-    // Every material reads the shelter map, the ground's map and the land's hollows, for lying snow (#14).
-    Object.assign(this.shared, this.shelter.uniforms, this.ground.uniforms, this.hollows.uniforms, this.snow.uniforms);
+    // Every material reads the shelter map, the ground's map and the land's hollows, for lying snow (#14) and wet ground
+    // (#11).
+    Object.assign(this.shared, this.shelter.uniforms, this.ground.uniforms, this.hollows.uniforms, this.snow.uniforms, this.wetLook);
     this.rain = new Rain(this.shared, this.shelter.uniforms);
     this.scene.add(this.rain.mesh);
     this.cloudMap = new CloudMap(this.shared);
@@ -535,12 +543,16 @@ export class BrushRenderer {
   private waterShown = true;
 
   /**
-   * The game's ground (#14, see GroundMap and docs/GROUND.md): how deep the snow lies and where the frost is, over a grid
-   * as the water's is, sent again whenever it changes. A changed map eases in over `ease` seconds (0 at once). None
-   * settles under a roof, and less under a crown: that, and how a thin cover breaks along the land, are the renderer's.
+   * The game's ground (#14, #11, see GroundMap and docs/GROUND.md): how deep the snow lies, where the frost is, how wet
+   * the land is and how muddy, over a grid as the water's is, sent again whenever it changes. A changed map eases in over
+   * `ease` seconds (0 at once). None settles or wets under a roof, and less under a crown: that, and how a thin cover
+   * breaks along the land, are the renderer's.
    * Null: bare everywhere.
    */
   setGround(map: GroundMap | null, ease = GROUND_EASE) { this.ground.set(map, this.shared.uTime.value, ease); }
+
+  /** The looks for wet things, while the developer picks (#11, WET_LOOKS). */
+  setWetLooks(looks: WetLooks) { wetLookVector(looks, this.wetLook.uWetLook.value); }
 
 
   /**
@@ -587,6 +599,7 @@ export class BrushRenderer {
     // Its colours, turned once here (the season holds all level): from each mesh's own, as the game sent them.
     for (const g of this.seasonal.keys()) this.turn(g);
     colourLeafStorm(this.debris.geometry, season ? LEAF_STORM[season.season] : null);
+    this.wetLook.uGrassHue.value = grassHue(season);
   }
   /** A seasonal geometry's mesh is taken out: with its last, its colours go back to the game's. */
   private unseason(geometry: THREE.BufferGeometry) {

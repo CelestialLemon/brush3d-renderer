@@ -9,9 +9,10 @@ import { SHELTER_GLSL } from './shelter';
 // - snow: how deep it lies, 0 none, about 0.2 a dusting the grass pokes through, about 0.5 the grass covered, 1 deep
 //   (crops buried to their tops). Roofs and solar panels take the snow of the cells they stand over: to clear a panel,
 //   the game zeroes its cells (the ground under it is sheltered, and shows none anyway);
-// - frost: how much, 0..1 (#14, drawn in a later step).
-// Wet and mud (#11) have the map's two other slots kept free: wet ground was tried on this map in #50, closed unmerged
-// for its look, and is to be retried on it.
+// - frost: how much, 0..1 (#14, drawn in a later step);
+// - wet: how wet the ground is, 0 dry to 1 soaked (#11): rain wets it, sun and wind dry it, by the game's rules;
+// - mud: how muddy, 0..1 (#11): the game knows where its tracks and bare soil are, and mud may matter to its play.
+// Wet ground was first tried on this map in #50, closed unmerged for its puddles; #11's second try is drawn without them.
 //
 // What the renderer adds is only how it looks at a finer scale than the game's cells: none under a roof, to the roof's
 // edge, and less under a crown (the shelter map, #10); the land's own hollows and rises (HollowMap), found once from the
@@ -27,30 +28,40 @@ export interface GroundMap {
   snow?: Float32Array;
   /** How much frost per cell, 0..1. */
   frost?: Float32Array;
+  /** How wet the ground is per cell, 0 dry to 1 soaked (#11). */
+  wet?: Float32Array;
+  /** How muddy per cell, 0..1: tracks and bare soil, wet and churned (#11). */
+  mud?: Float32Array;
 }
 
 /** How long a changed map takes to ease in by default, seconds: the water's. */
 export const GROUND_EASE = 0.6;
 
-/** The values in the map's texture, in its channels' order: the last two kept for wet ground (#11). */
-const CHANNELS = ['snow', 'frost'] as const;
+/** The values in the map's texture, in its channels' order. */
+const CHANNELS = ['snow', 'frost', 'wet', 'mud'] as const;
 
 /**
- * The GLSL that reads the ground's map: `groundState(xz)` is (snow, frost, 0, 0) there, as eased (the last two kept for
- * wet and mud, #11); all 0 with no map, or one that's bare everywhere.
+ * The GLSL that reads the ground's map: `groundState(xz)` is (snow, frost, wet, mud) there, as eased; all 0 with no map,
+ * or one that's bare everywhere.
  */
 export const GROUND_GLSL = /* glsl */ `
-uniform sampler2D tGroundA;     // the ground as it was (snow, frost per cell, a byte each; two kept for wet ground)
+uniform sampler2D tGroundA;     // the ground as it was (snow, frost, wet, mud per cell, a byte each)
 uniform sampler2D tGroundB;     // the ground as last sent
 uniform float uGroundBlend;     // how far it has eased from A to B
 uniform vec4 uGroundGrid;       // x0, z0, 1 / the grid's width, 1 / its depth (metres)
 uniform float uGroundOn;        // 0 when it's bare everywhere, as it was and as last sent; 2 drawing the bed under the water
+// The last read, kept: a material's wet and its snow read the same point, and the second takes the first's (#11).
+vec2 gGroundAt = vec2(-1e30);
+vec4 gGroundHere = vec4(0.0);
 vec4 groundState(vec2 xz) {
   if (uGroundOn < 0.5) return vec4(0.0);
+  if (xz == gGroundAt) return gGroundHere;
   vec2 uv = (xz - uGroundGrid.xy) * uGroundGrid.zw;
   // Once it has eased in (nearly always), only the map last sent.
   vec4 b = texture(tGroundB, uv);
-  return uGroundBlend >= 1.0 ? b : mix(texture(tGroundA, uv), b, uGroundBlend);
+  gGroundAt = xz;
+  gGroundHere = uGroundBlend >= 1.0 ? b : mix(texture(tGroundA, uv), b, uGroundBlend);
+  return gGroundHere;
 }
 `;
 
@@ -66,7 +77,7 @@ export class GroundField {
     uGroundGrid: { value: new THREE.Vector4(0, 0, 1, 1) },
     uGroundOn: { value: 0 },
   };
-  /** Whether any of the land has snow or frost, as it was or as last sent. */
+  /** Whether any of the land has snow, frost, wet or mud, as it was or as last sent. */
   get any() { return this.uniforms.uGroundOn.value > 0.5; }
   private nx = 0; private nz = 0; private cell = 0; private x0 = 0; private z0 = 0;
   private from: Uint8Array | null = null;
@@ -110,7 +121,7 @@ export class GroundField {
     const data = new Uint8Array(n * 4);
     let any = false;
     CHANNELS.forEach((k, c) => {
-      const v = map[k];
+      const v = k === 'mud' && map.mud ? spread(map.mud, nx, nz) : map[k];
       if (!v) return;
       for (let i = 0; i < n; i++) {
         const b = Math.round(THREE.MathUtils.clamp(v[i] || 0, 0, 1) * 255);
@@ -141,6 +152,22 @@ export class GroundField {
     u.uGroundBlend.value = this.blend(time);
     u.uGroundOn.value = any || (ease > 0 && this.anyFrom) ? 1 : 0;
   }
+}
+
+/**
+ * The mud spread a cell further (each cell the muddiest of it and its neighbours'), for the shaders to find the earth in
+ * (wet.ts): a track is narrower than the game's cells and wanders through them, so the earth beside a muddy cell, in the
+ * next one, is mud too; the earth's own colour, not the cells, then draws the mud's edge.
+ */
+function spread(mud: Float32Array, nx: number, nz: number) {
+  const out = new Float32Array(mud.length);
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    let m = 0;
+    for (let b = Math.max(0, j - 1); b <= Math.min(nz - 1, j + 1); b++)
+      for (let a = Math.max(0, i - 1); a <= Math.min(nx - 1, i + 1); a++) m = Math.max(m, mud[b * nx + a] || 0);
+    out[j * nx + i] = m;
+  }
+  return out;
 }
 
 /** A cell texture: RGBA bytes per cell, filtered between cells' centres, clamped to the edge cells beyond. */
