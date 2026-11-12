@@ -122,7 +122,9 @@ renderer.setGround(null, ease);  // bare everywhere, eased out as any map is (at
   second while there's frost, after the shadow pass, it adds the sun now at each texel: the sun's height, the shadow
   map (six taps over 0.6 m), and the clouds' shade. It reads the game's clock: when the hour jumps (a still at 10, the
   hour dragged), the hours skipped are taken as if this sun had shone through them, what's in shade now counted at a
-  third of the open's, since the shadows swung through them. Going back, or nightfall, starts afresh.
+  third of the open's, since the shadows swung through them. Ground beyond the shadow map's window (it follows the
+  view) is counted the same way, a third, since its shade there is unknown. Going back, or nightfall, starts afresh;
+  night is told by the hour and the day's sunset, not the light's height, which at night is the moon's.
 
 `src/renderer/wet.ts` (#11):
 
