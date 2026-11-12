@@ -173,6 +173,11 @@ export class WaterField {
   iced = false;
   /** Per cell, whether the ice was falling (1: thawing) or rising (0) when last it changed. */
   private thaw = new Float32Array(1);
+  /** Per cell, the furthest the game's ice has gone the way it's going (the least while thawing, the most while
+   * freezing): it turns when the ice comes back from there, however small the steps it's sent in. */
+  private iceTurn = new Float32Array(1);
+  /** Whether any of the water as last sent is frozen (what's drawn is, too, once the ease is done). */
+  private toIced = false;
   /** x0, z0, 1 / cell, 1 with a map (0 without). */
   readonly grid = new THREE.Vector4(0, 0, 1, 0);
   /** The surface the reflection is drawn about: the middle of the water as last sent. */
@@ -200,8 +205,10 @@ export class WaterField {
     return t * t * (3 - 2 * t);
   }
 
-  /** Retires water that has drained away entirely once its ease is done; true if it has just gone. */
+  /** Once the ease is done: stops painting ice that has thawed away, and retires water that has drained away entirely
+   * (true if it has just gone). */
   settle(time: number) {
+    if (this.iced && !this.toIced && this.blend(time) >= 1) this.iced = false;
     if (!this.any || !this.to || this.to.mid !== null || this.blend(time) < 1) return false;
     this.any = false;
     return true;
@@ -213,14 +220,12 @@ export class WaterField {
    */
   set(map: WaterMap | null, time: number, ease = WATER_EASE) {
     if (!map) {
-      this.any = false; this.iced = false; this.from = this.to = null; this.grid.w = 0; this.floor = null;
+      this.any = false; this.iced = this.toIced = false; this.from = this.to = null; this.grid.w = 0; this.floor = null;
       return;
     }
     const laid = layWater(map);
     const same = this.geometry && this.to && map.nx === this.nx && map.nz === this.nz && map.cell === this.cell
       && map.x0 === this.x0 && map.z0 === this.z0;
-    /** The ice as last sent (what the game said, not what's drawn mid-ease), to tell which way it's going now. */
-    const sentIce = same ? this.to!.ice : null;
     if (!same) {
       this.nx = map.nx; this.nz = map.nz; this.cell = map.cell; this.x0 = map.x0; this.z0 = map.z0;
       this.build();
@@ -250,15 +255,21 @@ export class WaterField {
     this.start = time; this.ease = ease;
     this.upload(this.a, this.from.data);
     this.upload(this.b, this.to.data);
-    // The ice, and which way it's going in each cell: which way the game's value moved from the last it sent (not from
-    // what's drawn, which may still be easing the other way); as before, if it hasn't moved. A new grid starts freezing.
-    const thaw = this.thaw, fromIce = this.from.ice, toIce = this.to.ice;
-    let iced = false;
+    // The ice, and which way it's going in each cell: which way the game's value has moved (not what's drawn, which may
+    // still be easing the other way), turning when it comes back from the furthest it went; as before, if it hasn't
+    // moved. A new grid starts freezing.
+    const thaw = this.thaw, turn = this.iceTurn, fromIce = this.from.ice, toIce = this.to.ice;
+    if (!same) turn.set(toIce);
+    let toIced = false, fromIced = false;
     for (let i = 0; i < thaw.length; i++) {
-      if (sentIce) { if (toIce[i] < sentIce[i] - 1e-4) thaw[i] = 1; else if (toIce[i] > sentIce[i] + 1e-4) thaw[i] = 0; }
-      if (toIce[i] > 0 || (ease > 0 && fromIce[i] > 0)) iced = true;
+      const v = toIce[i];
+      if (thaw[i] > 0.5) { if (v > turn[i] + 1e-4) { thaw[i] = 0; turn[i] = v; } else turn[i] = Math.min(turn[i], v); }
+      else if (v < turn[i] - 1e-4) { thaw[i] = 1; turn[i] = v; } else turn[i] = Math.max(turn[i], v);
+      if (v > 0) toIced = true;
+      if (fromIce[i] > 0) fromIced = true;
     }
-    this.iced = iced;
+    this.toIced = toIced;
+    this.iced = toIced || (ease > 0 && fromIced);
     this.upload(this.iceA, iceData(fromIce, thaw, this.from.shore));
     this.upload(this.iceB, iceData(toIce, thaw, this.to.shore));
     this.grid.set(this.x0, this.z0, 1 / this.cell, 1);
@@ -284,7 +295,7 @@ export class WaterField {
     const { nx, nz, cell, x0, z0 } = this, vx = nx + 2, vz = nz + 2;
     this.a = cellTexture(nx, nz); this.b = cellTexture(nx, nz);
     this.iceA = cellTexture(nx, nz); this.iceB = cellTexture(nx, nz);
-    this.thaw = new Float32Array(nx * nz);
+    this.thaw = new Float32Array(nx * nz); this.iceTurn = new Float32Array(nx * nz);
     // Vertex i: the edge at 0 and nx + 1, else the centre of cell i - 1.
     const at = (i: number, n: number) => (i === 0 ? 0 : i === n + 1 ? n : i - 0.5);
     const pos = new Float32Array(vx * vz * 3), uv = new Float32Array(vx * vz * 2);

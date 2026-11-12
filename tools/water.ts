@@ -156,6 +156,21 @@ turning.set(withIce(0.8), 40, 0);
 turning.set(withIce(0.2), 41, 4);
 turning.set(withIce(0.4), 42, 4);
 check('ice: turning back mid-ease, freezing again', iceAt(turning, 'iceB', 2 * nx + 4)[1] === 0);
+// Sent in steps finer than a float's noise (a game easing the ice each frame), it still turns.
+const creeping = new WaterField();
+creeping.set(withIce(0.5), 50, 0);
+for (let k = 1; k <= 20; k++) creeping.set(withIce(0.5 - k * 5e-5), 50 + k * 0.016, 0);
+check('ice: thawing in tiny steps', iceAt(creeping, 'iceB', 2 * nx + 4)[1] === 1);
+for (let k = 1; k <= 20; k++) creeping.set(withIce(0.499 + k * 5e-5), 51 + k * 0.016, 0);
+check('ice: freezing again in tiny steps', iceAt(creeping, 'iceB', 2 * nx + 4)[1] === 0);
+// Thawed away with an ease: painted while it eases out, not after.
+const melting = new WaterField();
+melting.set(withIce(0.3), 60, 0);
+melting.set(withIce(0), 61, 2);
+melting.settle(62);
+check('ice: still painted while thawing away', melting.iced);
+melting.settle(63.5);
+check('ice: none painted once thawed away', !melting.iced);
 const allWet = (cell: number) => shoreDistance({ nx: 3, nz: 3, cell, x0: 0, z0: 0, level: new Float32Array(9).fill(1) });
 check('shore: a map all water has no shore, however coarse', allWet(20).every((v) => v === SHORE_MAX) && allWet(10).every((v) => v === SHORE_MAX));
 check('ice: the demo sends it only when there is some', near(demo.map({ rise: 0, flow: 1, mud: 0, ice: 0.4 }).ice?.[0] ?? 0, 0.4)

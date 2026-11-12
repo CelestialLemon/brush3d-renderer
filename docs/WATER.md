@@ -43,7 +43,8 @@ renderer.setWater(null);         // no water
 - **Mud** turns the water brown and opaque (see below).
 - **Ice** is how frozen the water is (see "In plain words"). Whether it's freezing or thawing the renderer tells from
   which way it last moved in each cell, so send it rising while it freezes and falling while it thaws; held, it keeps
-  the way it was going. With no `ice` (or all 0) the water's shader skips it.
+  the way it was going. Steps however small add up: it turns once the value comes back from the furthest it went. With
+  no `ice` (or all 0) the water's shader skips it, and once a thaw to 0 has eased out, it stops painting ice.
 - **Updates.** Send a new map when the water changes, a few times a second at most. Each one eases in from what's
   drawn at that moment, so maps sent faster than the ease still move smoothly. A map on a new grid comes in at once.
 - **Cost.** The map is laid out on the CPU when it's sent and uploaded as two textures; nothing is done per frame but a
@@ -85,8 +86,8 @@ cover only the cells within one of water (into one buffer per grid, with room fo
 
 - **Ice** (#14). `layWater` carries each wet cell's ice to the dry cells beyond it (as it does the mud), and works out how
   far each wet cell is from the nearest dry one (`shoreDistance`, metres, up to 8). `WaterField` keeps, per cell, the
-  ice, whether it's thawing (it fell when last it changed) and that distance, as two more textures (as it was and as last
-  sent), read by the sheet's vertices and smoothed between them. The water's shader (`WATER_FRAG`, materials.ts) ranks
+  ice, whether it's thawing (it has come back down from the most it reached since it last turned) and that distance,
+  as two more textures (as it was and as last sent), read by the sheet's vertices and smoothed between them. The water's shader (`WATER_FRAG`, materials.ts) ranks
   each point by how late it freezes: its distance from the shore (most of it, up to 3.5 m), how fast the flow is, and a
   noise breaking the edge up. Where the ice reaches past that, it's frozen; a pale line marks its edge. How long it's
   been frozen (how far past) turns a new dark skin to the look. Thawing, dark lanes along the flow cut it, and the open
