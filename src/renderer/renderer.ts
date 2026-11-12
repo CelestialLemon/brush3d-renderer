@@ -553,6 +553,7 @@ export class BrushRenderer {
     this.water.set(map, this.shared.uTime.value, ease);
     const s = this.shared;
     s.tWaterA.value = this.water.a; s.tWaterB.value = this.water.b; s.uWaterGrid.value.copy(this.water.grid);
+    s.tIceA.value = this.water.iceA; s.tIceB.value = this.water.iceB; s.uIceOn.value = this.water.iced ? 1 : 0;
     if (this.water.geometry !== before || !this.waterMesh) {
       if (this.waterMesh) this.remove(this.waterMesh);
       this.waterMesh = this.water.geometry ? this.add(this.water.geometry, 'water') : null;
@@ -986,6 +987,7 @@ export class BrushRenderer {
     this.weather.update(time);
     s.uWaterBlend.value = this.water.blend(time);
     if (this.water.settle(time) && this.waterMesh) this.waterMesh.visible = false;
+    s.uIceOn.value = this.water.iced ? 1 : 0;
     s.uMirrorY.value = this.water.mirror;
     s.uWaterHigh.value = this.water.any ? this.water.wetHigh : -1e6;
     this.ground.update(time);

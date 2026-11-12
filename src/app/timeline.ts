@@ -40,6 +40,8 @@ const FOG = WEATHER_PRESETS.fog.haze.color, DUST = WEATHER_PRESETS.dust.haze.col
 interface Key {
   hour: number; cloud: number; rain: number; haze?: number; top?: number; heat?: number; wind?: number;
   rise?: number; flow?: number; mud?: number;
+  /** How frozen the water is (0 open .. 1 frozen over, the game's water map, #14). */
+  ice?: number;
   /** How stormy the sky looks, the low sun under the deck (sunUnder), and strikes and distant flickers a minute. */
   storm?: number; sun?: number; bolts?: number; far?: number;
   /** How hard it snows (0..1), and how deep the snow lies on the land (0..1, the game's ground map, #14). */
@@ -238,6 +240,25 @@ export const SPELLS = {
     ],
     phase: (h) => (h < 3 ? 'a hard frost' : h < 8 ? 'the sun on it' : h < 10 ? 'hardening' : 'night'),
   },
+  'freeze-thaw': {
+    // A winter's day squeezed into eight hours, so it's all in daylight: the stream freezing over, then a thaw.
+    clock: 8,
+    keys: [
+      // A cold, still morning: ice along the banks and the slow water first, then over the middle...
+      { hour: 0, cloud: 0.2, rain: 0, wind: 1, lying: 0.35, frost: 0.5, rise: 0, flow: 1, mud: 0, ice: 0 },
+      { hour: 1.5, cloud: 0.2, rain: 0, wind: 1, lying: 0.35, frost: 0.5, rise: 0, flow: 1, mud: 0, ice: 0.3 },
+      { hour: 3, cloud: 0.25, rain: 0, wind: 1, lying: 0.35, frost: 0.5, rise: 0, flow: 1, mud: 0, ice: 0.75 },
+      { hour: 4, cloud: 0.3, rain: 0, wind: 1, lying: 0.35, frost: 0.4, rise: 0, flow: 1, mud: 0, ice: 1 },
+      // ...frozen over a while, until a mild wind brings a thaw: leads opening down the middle, floes going downstream,
+      // the ice along the banks last.
+      { hour: 4.5, cloud: 0.5, rain: 0, wind: 4, lying: 0.35, frost: 0.1, rise: 0, flow: 1, mud: 0, ice: 1 },
+      { hour: 5.5, cloud: 0.6, rain: 0, wind: 4, lying: 0.3, frost: 0, rise: 0, flow: 1, mud: 0, ice: 0.6 },
+      { hour: 6.5, cloud: 0.6, rain: 0, wind: 3, lying: 0.25, frost: 0, rise: 0, flow: 1, mud: 0, ice: 0.3 },
+      { hour: 7.5, cloud: 0.5, rain: 0, wind: 3, lying: 0.2, frost: 0, rise: 0, flow: 1, mud: 0, ice: 0.08 },
+      { hour: 8, cloud: 0.4, rain: 0, wind: 2, lying: 0.2, frost: 0, rise: 0, flow: 1, mud: 0, ice: 0 },
+    ],
+    phase: (h) => (h < 4 ? 'freezing' : h < 4.5 ? 'frozen over' : h < 8 ? 'thawing' : 'open'),
+  },
 } satisfies Record<string, Spell>;
 export type SpellName = keyof typeof SPELLS;
 
@@ -287,7 +308,7 @@ export function timelineWind(seconds: number, speed = 1, spell: SpellName = 'sho
 export function timelineWater(seconds: number, speed = 1, spell: SpellName = 'shower'): WaterState | null {
   if ((SPELLS[spell].keys as Key[])[0].rise === undefined) return null;
   const at = (k: (key: Key) => number) => valueAt(spell, seconds, speed, k);
-  return { rise: at((k) => k.rise ?? 0), flow: at((k) => k.flow ?? 1), mud: at((k) => k.mud ?? 0) };
+  return { rise: at((k) => k.rise ?? 0), flow: at((k) => k.flow ?? 1), mud: at((k) => k.mud ?? 0), ice: at((k) => k.ice ?? 0) };
 }
 
 /**

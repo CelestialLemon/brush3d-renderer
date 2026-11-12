@@ -7,7 +7,7 @@
 //    until the ridge is overtopped), never off the land.
 // 3. Easing: halfway through, the sheet is halfway between the two maps; a map sent mid-ease starts from what's drawn.
 // Exits with 1 if anything is off.
-import { DIVE, HIDDEN_DIVE, MAX_DIVE, REACH, WaterField, layWater, type WaterMap } from '../src/renderer/water.ts';
+import { DIVE, HIDDEN_DIVE, MAX_DIVE, REACH, WaterField, layWater, SHORE_MAX, shoreDistance, type WaterMap } from '../src/renderer/water.ts';
 import { DemoWater } from '../src/app/water.ts';
 import type { Stream } from '../src/scenes/kit.ts';
 
@@ -58,16 +58,16 @@ const stream: Stream = {
 };
 const demo = new DemoWater(stream, (x) => ground(x));
 const wetAt = (m: WaterMap, x: number) => !Number.isNaN(m.level[1 * 20 + Math.floor(x)]);
-const usual = demo.map({ rise: 0, flow: 1, mud: 0 });
+const usual = demo.map({ rise: 0, flow: 1, mud: 0, ice: 0 });
 check('as usual, only the channel', wetAt(usual, 10) && !wetAt(usual, 12) && !wetAt(usual, 7));
 check('flowing along it at the usual speed', near(usual.flowZ![1 * 20 + 10], -0.35));
-const risen = demo.map({ rise: 0.45, flow: 2, mud: 0.5 });
+const risen = demo.map({ rise: 0.45, flow: 2, mud: 0.5, ice: 0 });
 check('a rise spreads over lower ground', wetAt(risen, 12) && wetAt(risen, 7) && !wetAt(risen, 15));
 check('but not into the hollow behind the ridge', !wetAt(risen, 3));
 check('slower out of the channel', near(risen.flowZ![1 * 20 + 12], -0.35 * 2 * 0.25));
-const over = demo.map({ rise: 0.7, flow: 2, mud: 0.5 });
+const over = demo.map({ rise: 0.7, flow: 2, mud: 0.5, ice: 0 });
 check('over the ridge, into the hollow', wetAt(over, 3) && wetAt(over, 4.5));
-check('never off the land', !wetAt(demo.map({ rise: 5, flow: 1, mud: 0 }), 18.5));
+check('never off the land', !wetAt(demo.map({ rise: 5, flow: 1, mud: 0, ice: 0 }), 18.5));
 
 // 3. Easing between two maps.
 console.log('Easing');
@@ -122,5 +122,58 @@ field.set(a, 24, 1);
 check('coming back, it rises into sight within its bounds', inBounds(field) && field.any);
 field.set(null, 14);
 check('taken away', !field.any && field.grid.w === 0 && field.floor === null);
+
+// The ice (#14): what the game sends, carried to the dry cells as the mud is; how far into the water each cell is; and
+// whether it's thawing, from which way it last moved.
+const iced = layWater({ ...map, ice: new Float32Array(n).fill(0.4).map((v, i) => (i % nx === 4 ? 1.5 : v)) });
+check('ice: as sent on the wet, at most 1', near(iced.ice[2 * nx + 4], 1));
+check('ice: the dry cells take the nearest water\'s', near(iced.ice[2 * nx + 1], 1) && near(iced.ice[2 * nx + 7], 1));
+const wide = { ...map, level: new Float32Array(n).map((_, i) => (i % nx >= 2 && i % nx <= 6 ? 2 : NaN)) };
+const shore = shoreDistance(wide);
+check('shore: half a cell in at the edge, more towards the middle, none on the land',
+  near(shore[2 * nx + 2], 0.5) && near(shore[2 * nx + 3], 1.5) && near(shore[2 * nx + 4], 2.5) && shore[2 * nx + 1] === 0,
+  [...shore.subarray(2 * nx, 3 * nx)].map((v) => v.toFixed(2)).join(' '));
+check('shore: the grid\'s edge is not a shore', shore[4] > shore[2 * nx + 4] - 1e-6);
+const freezing = new WaterField();
+const iceAt = (f: WaterField, t: 'iceA' | 'iceB', i: number) => (f[t].image.data as Float32Array).subarray(i * 4, i * 4 + 4);
+const withIce = (v: number) => ({ ...wide, ice: new Float32Array(n).fill(v) });
+freezing.set(withIce(0.2), 30, 0);
+check('ice: none thawing at first', iceAt(freezing, 'iceB', 2 * nx + 4)[1] === 0 && freezing.iced);
+freezing.set(withIce(0.8), 31, 0);
+check('ice: rising, freezing', iceAt(freezing, 'iceB', 2 * nx + 4)[1] === 0 && near(iceAt(freezing, 'iceB', 2 * nx + 4)[0], 0.8));
+freezing.set(withIce(0.5), 32, 0);
+check('ice: falling, thawing', iceAt(freezing, 'iceB', 2 * nx + 4)[1] === 1 && iceAt(freezing, 'iceA', 2 * nx + 4)[1] === 1);
+freezing.set(withIce(0.5), 33, 0);
+check('ice: held, still thawing', iceAt(freezing, 'iceB', 2 * nx + 4)[1] === 1);
+check('ice: the shore distance goes with it', near(iceAt(freezing, 'iceB', 2 * nx + 4)[2], 2.5));
+freezing.set(withIce(0), 34, 0);
+check('ice: all gone (thawed)', !freezing.iced);
+freezing.set(wide, 35, 0);
+check('ice: none sent, none drawn', !freezing.iced);
+// Turning back mid-ease: rising again from a fall that's still being drawn is freezing, by what the game sent.
+const turning = new WaterField();
+turning.set(withIce(0.8), 40, 0);
+turning.set(withIce(0.2), 41, 4);
+turning.set(withIce(0.4), 42, 4);
+check('ice: turning back mid-ease, freezing again', iceAt(turning, 'iceB', 2 * nx + 4)[1] === 0);
+// Sent in steps finer than a float's noise (a game easing the ice each frame), it still turns.
+const creeping = new WaterField();
+creeping.set(withIce(0.5), 50, 0);
+for (let k = 1; k <= 20; k++) creeping.set(withIce(0.5 - k * 5e-5), 50 + k * 0.016, 0);
+check('ice: thawing in tiny steps', iceAt(creeping, 'iceB', 2 * nx + 4)[1] === 1);
+for (let k = 1; k <= 20; k++) creeping.set(withIce(0.499 + k * 5e-5), 51 + k * 0.016, 0);
+check('ice: freezing again in tiny steps', iceAt(creeping, 'iceB', 2 * nx + 4)[1] === 0);
+// Thawed away with an ease: painted while it eases out, not after.
+const melting = new WaterField();
+melting.set(withIce(0.3), 60, 0);
+melting.set(withIce(0), 61, 2);
+melting.settle(62);
+check('ice: still painted while thawing away', melting.iced);
+melting.settle(63.5);
+check('ice: none painted once thawed away', !melting.iced);
+const allWet = (cell: number) => shoreDistance({ nx: 3, nz: 3, cell, x0: 0, z0: 0, level: new Float32Array(9).fill(1) });
+check('shore: a map all water has no shore, however coarse', allWet(20).every((v) => v === SHORE_MAX) && allWet(10).every((v) => v === SHORE_MAX));
+check('ice: the demo sends it only when there is some', near(demo.map({ rise: 0, flow: 1, mud: 0, ice: 0.4 }).ice?.[0] ?? 0, 0.4)
+  && demo.map({ rise: 0, flow: 1, mud: 0, ice: 0 }).ice === undefined);
 
 if (failed) process.exit(1);

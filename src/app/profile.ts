@@ -24,6 +24,8 @@ export interface ProfileCase {
   lying?: number;
   /** Frost this hard (0..1) everywhere (#14): the cost of painting it, and of the sun's memory that melts it. */
   frost?: number;
+  /** The stream this frozen (0..1, #14): the cost of painting its ice. (Sent by the demo, in `restore`.) */
+  ice?: number;
   /** The land this wet and this muddy (0..1) everywhere (#11): the cost of painting it in the materials. */
   wet?: { wet: number; mud: number };
 }
@@ -62,16 +64,18 @@ export function defaultCases(): ProfileCase[] {
   cases.push({ label: '1080p blizzard', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS.blizzard, lying: 0.6 });
   // Frost (#14) over all the land, part melted (so each spot weighs the sun it's had), at the demo's hour.
   cases.push({ label: '1080p storm, frost', width: 1920, height: 1080, wind: STORM, frost: 0.6 });
+  // The stream frozen (#14), its banks white and its middle dark (the dearest look), the ice thawing (its leads and floes).
+  cases.push({ label: '1080p storm, stream thawing', width: 1920, height: 1080, wind: STORM, ice: 0.5 });
   cases.push({ label: '1080p heavy snow, calm', width: 1920, height: 1080, wind: 0, weather: { cloud: 1, snow: 1 }, lying: 0.6 });
   return cases;
 }
 
 /**
  * Runs the cases. `draw(time)` draws one frame as the demo does (the look, then the renderer); `restore` puts the demo's
- * size, wind, weather and ground back (and is called before each case). `progress` hears each row as it's done.
+ * size, wind, weather, ground and water back, with the case's water (it's called before each case). `progress` hears each row as it's done.
  */
 export async function runProfile(
-  renderer: BrushRenderer, draw: (time: number) => void, restore: () => void, cases: ProfileCase[],
+  renderer: BrushRenderer, draw: (time: number) => void, restore: (c?: ProfileCase) => void, cases: ProfileCase[],
   progress: (row: ProfileRow, i: number) => void = () => {}, frames = 90,
 ) {
   const gl = renderer.gl.getContext() as WebGL2RenderingContext;
@@ -90,7 +94,7 @@ export async function runProfile(
       output.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
       view.zoom = (zoom * c.height) / 1080;
       view.update(0, true);
-      restore();
+      restore(c);
       if (c.weather) renderer.setWeather(c.weather, true);
       // The same depth over all the land: a map of one cell, larger than any scene.
       const one = { nx: 1, nz: 1, cell: 2000, x0: -1000, z0: -1000 };

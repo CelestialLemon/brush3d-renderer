@@ -7,9 +7,12 @@ import type { Stream } from '../scenes/kit';
 // ground lower than that. So a small rise fills the channel to its banks, a bigger one spills over the floodplain and
 // into the hollows next to it, and stops at higher ground. The game owns the rule; the renderer only draws the map.
 
-/** The water as the demo holds it: how far it stands over the usual (m), how fast it runs (times the usual), how muddy. */
-export interface WaterState { rise: number; flow: number; mud: number }
-export const USUAL_WATER: WaterState = { rise: 0, flow: 1, mud: 0 };
+/**
+ * The water as the demo holds it: how far it stands over the usual (m), how fast it runs (times the usual), how muddy,
+ * and how frozen (#14, the game's: 0 open, about 0.3 ice along the banks, 1 frozen over).
+ */
+export interface WaterState { rise: number; flow: number; mud: number; ice: number }
+export const USUAL_WATER: WaterState = { rise: 0, flow: 1, mud: 0, ice: 0 };
 /** The stream's usual speed, m/s. */
 export const STREAM_SPEED = 0.35;
 /** Water over the land, out of the channel, runs this much slower than the stream (a flood spreading, then draining). */
@@ -68,6 +71,8 @@ export class DemoWater {
       }
       queue = next;
     }
-    return { ...this.stream.grid, level, flowX, flowZ, mud };
+    // The game's frost on the water (#14): one value over the whole stream here; the game may send it cell by cell.
+    const ice = state.ice > 0 ? new Float32Array(n).fill(state.ice) : undefined;
+    return { ...this.stream.grid, level, flowX, flowZ, mud, ...(ice ? { ice } : {}) };
   }
 }

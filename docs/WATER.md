@@ -15,6 +15,12 @@ A flood is no special case: it's the river's tiles spreading over the land, at w
 them. When the game sends a new map, the cloth moves to it over a moment rather than jumping, so a rising flood creeps
 over the land instead of stepping a tile at a time.
 
+**Ice** (#14) is one more number per tile: how frozen the water is. The game says how much; the renderer decides where
+inside each tile it forms first, as a pond does: along the banks and in the slow water, the middle and the fast water
+last. Freezing, it creeps out from the banks as a dark skin with a pale rim, and pales as it ages. Thawing (the number
+falling), dark leads open along the flow, the middle breaks into floes that drift downstream and shrink, and the ice
+along the banks goes last. Snow lying on the land dusts it.
+
 ## The contract
 
 ```ts
@@ -23,6 +29,7 @@ renderer.setWater({
   level,                         // Float32Array: the surface per cell, metres; NaN where it's dry
   flowX, flowZ,                  // optional Float32Arrays: the flow per cell, m/s (still water if left out)
   mud,                           // optional Float32Array: 0 clear to 1 brown with silt (clear if left out)
+  ice,                           // optional Float32Array: 0 open, about 0.3 ice along the banks, 1 frozen over (#14)
 }, ease);                        // seconds to ease in (0.6 by default; 0 at once: a level loading, a screenshot)
 renderer.setWater(null);         // no water
 ```
@@ -34,6 +41,10 @@ renderer.setWater(null);         // no water
 - **Flow** is the water's velocity. It carries the ripples and the glints along; calm water is glassy, fast water busy.
   The stream in the demo runs at 0.35 m/s, 3.5 times that in spate.
 - **Mud** turns the water brown and opaque (see below).
+- **Ice** is how frozen the water is (see "In plain words"). Whether it's freezing or thawing the renderer tells from
+  which way it last moved in each cell, so send it rising while it freezes and falling while it thaws; held, it keeps
+  the way it was going. Steps however small add up: it turns once the value comes back from the furthest it went. With
+  no `ice` (or all 0) the water's shader skips it, and once a thaw to 0 has eased out, it stops painting ice.
 - **Updates.** Send a new map when the water changes, a few times a second at most. Each one eases in from what's
   drawn at that moment, so maps sent faster than the ease still move smoothly. A map on a new grid comes in at once.
 - **Cost.** The map is laid out on the CPU when it's sent and uploaded as two textures; nothing is done per frame but a
@@ -73,6 +84,19 @@ cover only the cells within one of water (into one buffer per grid, with room fo
   below the highest water, not along blades and leaves (no foam line on them), and not on things that float (the boat:
   `addModel`'s `floats`). Left out: foam carried on fast water, milky mud with swirls of silt, the wet band alone.
 
+- **Ice** (#14). `layWater` carries each wet cell's ice to the dry cells beyond it (as it does the mud), and works out how
+  far each wet cell is from the nearest dry one (`shoreDistance`, metres, up to 8). `WaterField` keeps, per cell, the
+  ice, whether it's thawing (it has come back down from the most it reached since it last turned) and that distance,
+  as two more textures (as it was and as last sent), read by the sheet's vertices and smoothed between them. The water's shader (`WATER_FRAG`, materials.ts) ranks
+  each point by how late it freezes: its distance from the shore (most of it, up to 3.5 m), how fast the flow is, and a
+  noise breaking the edge up. Where the ice reaches past that, it's frozen; a pale line marks its edge. How long it's
+  been frozen (how far past) turns a new dark skin to the look. Thawing, dark lanes along the flow cut it, and the open
+  middle fills with floes: a cracked pattern carried by the flow as the ripples are (two copies crossfaded), shrinking
+  as the ice goes. Under the ice there are no ripples, glints, whitecaps or rain's rings; it mirrors the sky and the
+  banks whole. Lying snow (the ground's map) dusts it in drifts along the wind. Its look (the developer's pick of three
+  on #14): milky by the banks (pale, lit as snow is, streaked along the flow), dark over the channel (the bed faint
+  through it, a calm mirror, pale cracks).
+
 ## The demo
 
 The demo stands in for the game (`src/app/water.ts`): the scene describes its water (its usual level, its channel and
@@ -81,9 +105,11 @@ makes the map with the game's rule: the water stands at the stream's level plus 
 rise and reaches every cell lower than that which it can get to over lower ground, never off the land. Out of the
 channel it runs at a quarter of the stream's speed.
 
-- `?water=usual|spate|flood`, then `rise` (m over the usual), `flow` (times the usual speed) and `mud` over it.
-- The Water, flow and mud sliders.
+- `?water=usual|spate|flood`, then `rise` (m over the usual), `flow` (times the usual speed), `mud` and `ice` over it.
+- The Water, flow, mud and ice sliders (`?ice=`, #14).
 - `?timeline&spell=flood`: a storm swells the stream, which runs fast and brown, spills over the floodplain, and drains
   under clearing skies (17 game hours, about a minute at 3x).
+- `?timeline&spell=freeze-thaw&season=winter` (#14): the stream freezes over from its banks, holds, and thaws (8 game
+  hours, all in daylight, about 27 s at 3x).
 - `npm run test:water` checks the layout, the rule and the easing. `tools/video.ts` has `flood`, `flood-meadow`
-  (`QUERY=scene=meadow`), `stream-spate` and `stream-usual`.
+  (`QUERY=scene=meadow`), `stream-spate`, `stream-usual` and `river-freeze` (#14, `QUERY=season=winter`).

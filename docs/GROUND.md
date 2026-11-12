@@ -4,7 +4,8 @@ The game owns the ground's state: how deep the snow lies on the land, how much f
 how muddy, and the rules that change them (snow falling builds it up, the sun and a thaw take it away, a clear cold
 night brings frost, rain wets the land and the sun and wind dry it). The renderer
 draws whatever state it's given, as a map over the land in the water's format (docs/WATER.md), sent again whenever it
-changes. Ice on the river isn't here: it goes in the water's map (#18), since the water owns the river.
+changes. Ice on the river isn't here: it goes in the water's map (its `ice`, docs/WATER.md), since the water owns the
+river. Snow lying on the land dusts the ice too.
 
 Wet ground and mud (#11) were tried first, in #50, and that look wasn't kept: the developer didn't like its puddles
 (2026-11-11). The map's plumbing was sound, so #14 brought it back for the snow, and #11's second try put the wet and
