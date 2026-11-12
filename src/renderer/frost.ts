@@ -134,20 +134,23 @@ export class SunMemory {
 
   /**
    * Each frame, after the shadow map is drawn: the game's clock hour (null if it hasn't set one: nothing is added), the
-   * day's sunrise, the sun's height (degrees), how much of the light is the whole sky's (0 the sun's .. 1 overcast) and
-   * whether there's frost to draw (the map is kept, and added to, only then).
+   * day's sunrise and sunset, the light's height (degrees), how much of the light is the whole sky's (0 the sun's .. 1
+   * overcast) and whether there's frost to draw (the map is kept, and added to, only then). Night is told by the hour,
+   * not the light's height: at night that's the moon's, which melts nothing.
    */
-  update(gl: THREE.WebGLRenderer, hour: number | null, sunrise: number, sunEl: number, sky: number, frost: boolean,
-    hollowsMap: THREE.Matrix3, hollowsOn: boolean) {
+  update(gl: THREE.WebGLRenderer, hour: number | null, sunrise: number, sunset: number, sunEl: number, sky: number,
+    frost: boolean, hollowsMap: THREE.Matrix3, hollowsOn: boolean) {
     const u = this.uniforms;
     if (!frost || !hollowsOn) { this.on = false; u.uSunHadOn.value = 0; this.fresh = true; this.blank = false; this.hour = null; return; }
     if (!this.on) { this.on = true; this.fresh = true; this.blank = false; this.hour = null; }
+    // Day: from sunrise to sunset (a day can run past midnight's either side, so the hour is taken from sunrise round).
+    const day = hour !== null && ((hour - sunrise) % 24 + 24) % 24 < sunset - sunrise;
     // The sun's strength now, over the land in the open: none below the horizon, weak while low, less under a grey sky.
-    const sun = THREE.MathUtils.smoothstep(sunEl, 0, 25) * (1 - 0.85 * sky);
+    const sun = day ? THREE.MathUtils.smoothstep(sunEl, 0, 25) * (1 - 0.85 * sky) : 0;
     let add = 0, guess = 0;
     if (hour === null) {
       if (!this.fresh) return;
-    } else if (sunEl <= 0) {
+    } else if (!day) {
       // Night: forgotten (cleared once, then nothing to do till dawn), to start afresh at dawn.
       this.hour = hour; this.pending = 0;
       if (this.blank) return;
@@ -170,7 +173,7 @@ export class SunMemory {
       add = this.pending * sun;
       this.pending = 0;
     }
-    if (sunEl > 0) this.blank = false;
+    if (day) this.blank = false;
     const mu = this.material.uniforms;
     mu.uUnmap.value.copy(hollowsMap).invert();
     mu.tPrev.value = this.targets[0].texture;
@@ -212,7 +215,8 @@ uniform mat3 uUnmap;
 in vec2 vUv;
 out vec4 fragColor;
 // The sun at a point, over a patch about 0.6 m across (a shadow's edge moves through the morning, so what it leaves is
-// soft): out of the shadow map's window, in the sun.
+// soft). Out of the shadow map's window (the shadows follow the view), what's there is unknown: taken as a third of the
+// open's sun, as for the hours skipped by a jump (uGuess), so shade the view left keeps some of its frost.
 float sunAt(vec3 p) {
   float seen = 0.0;
   for (int i = 0; i < 6; i++) {
@@ -220,7 +224,7 @@ float sunAt(vec3 p) {
     vec4 s = uShadowMatrix * vec4(p + vec3(cos(a), 0.0, sin(a)) * 0.3, 1.0);
     vec3 uvz = s.xyz / s.w;
     bool out_ = any(lessThan(uvz.xy, vec2(0.0))) || any(greaterThan(uvz.xy, vec2(1.0))) || uvz.z > 1.0;
-    seen += out_ || uvz.z - 0.003 <= texture(uShadowMap, uvz.xy).r ? 1.0 : 0.0;
+    seen += out_ ? 0.33 : uvz.z - 0.003 <= texture(uShadowMap, uvz.xy).r ? 1.0 : 0.0;
   }
   return seen / 6.0;
 }

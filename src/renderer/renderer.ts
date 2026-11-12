@@ -1061,8 +1061,8 @@ export class BrushRenderer {
 
     // The frost's memory of the sun since dawn (#14): a few times a second, while there's frost (timed with the shadow's
     // pass: most frames it draws nothing).
-    this.sunMemory.update(gl, this.clockHour, this.dayNow.sunrise, this.sunElNow, s.uOvercast.value.x, this.ground.frost,
-      this.hollows.uniforms.uHollowsMap.value, this.hollows.uniforms.uHollowsOn.value > 0.5);
+    this.sunMemory.update(gl, this.clockHour, this.dayNow.sunrise, this.dayNow.sunset, this.sunElNow, s.uOvercast.value.x,
+      this.ground.frost, this.hollows.uniforms.uHollowsMap.value, this.hollows.uniforms.uHollowsOn.value > 0.5);
 
     // What the water shows: the bed without it, and the scene mirrored in it. Only round the water on screen, and not at
     // all when none shows. The farthest a lookup reaches (snoise peaks a little past 1, hence the tenth more):
