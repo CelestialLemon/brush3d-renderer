@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { SeasonSettings } from './season';
 import { seasonTurn } from './seasonLook';
+import { PARTIAL_COVER } from './shelter';
 
 // Wet ground and things (#11): the game says how wet the land is and how muddy (the ground's map, ground.ts); the renderer
 // draws it. Painted things (the ground, grass, crops, leaves, stones, wood) go darker and richer, as a stone darkens when
@@ -64,19 +65,25 @@ uniform float uGrassHue; // the grass's hue as the season has turned it (OKLab d
 float gWet = 0.0, gMud = 0.0;
 // The wet and the mud at p, less what shelters it: none under a roof, to its edge; under a crown, less. What stands low on
 // the ground (AT_GROUND: the ground, the grass, the crops, stones and wood) reads its shelter at the ground with the
-// land's hollows, in one lookup; the rest reads the shelter map where it is. In the water's reflection, not sheltered (a
-// dry patch under a roof wouldn't show through the ripples' blur); under the water, none (the bed is the water's).
+// land's hollows, in one lookup; what stands higher there (a branch over a low roof's edge) whether a roof or a crown is
+// over it, as the snow does (snowAt); the rest reads the shelter map where it is. Under the water, none (the bed is the
+// water's).
 float wetAt(vec3 p) {
   vec2 g = groundState(p.xz).zw;
   gWet = g.x; gMud = g.y;
   if (gWet + gMud < 0.004 || (uGroundOn > 1.5 && p.y < waterTop(p.xz))) { gWet = 0.0; gMud = 0.0; return 0.0; }
-  if (uMirror > 0.5 || uGroundOn > 1.5) return gWet + gMud;
 #ifdef AT_GROUND
   // Read a little off the point, by a wobble keyed to the world, so a dry patch's edge is painted, not ruled along the
   // roof's (a fifth of a metre either way).
   vec2 q = p.xz * 2.1;
   float h = hollowAt(p.xz + vec2(sin(q.y + 1.7 * sin(q.x * 0.71)), sin(q.x * 1.13 + 1.7 * sin(q.y * 0.83))) * 0.15).z;
-  float cover = h >= 0.0 ? h : shelter(p);
+#ifdef GROUND
+  float above = 0.0;
+#else
+  float above = h > 0.0 ? p.y - landTop(p) : 0.0;
+#endif
+  float cover = h < 0.0 ? shelter(p) : above < 0.3 ? h
+    : max(step(p.y, shelterTop(p) - 0.1), ${PARTIAL_COVER.toFixed(2)} * step(p.y, crownTop(p) - 0.1));
 #else
   float cover = shelter(p);
 #endif

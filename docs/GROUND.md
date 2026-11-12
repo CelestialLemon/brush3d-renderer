@@ -100,8 +100,9 @@ renderer.setGround(null, ease);  // bare everywhere, eased out as any map is (at
 `src/renderer/wet.ts` (#11):
 
 - **`WET_GLSL`** runs in every material but the water, before the snow (so snow on wet ground is still white). A
-  material reads how wet and muddy it is there, less what shelters it (`wetAt`), then darkens its own colour before
-  it's lit (`wetBase`: painted things, and the ground's earth muddy), or adds its sheen after (`wetInked`: inked things).
+  material reads how wet and muddy it is there, less what shelters it (`wetAt`). A painted thing is lit as it is dry,
+  then darkened and made richer (`wetFinish`); only the ground's mud changes its own colour before it's lit (`wetBase`).
+  An inked thing adds its sheen to its lit colour (`wetInked`).
   The mud tells the earth from the grass by the ground's colour: its hue, from the earth's to the grass's as the season
   has turned it (winter's straw is nearer the earth's).
 

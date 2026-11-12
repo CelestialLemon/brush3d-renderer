@@ -277,8 +277,9 @@ const pathDistance = (x: number, z: number) => Math.min(...PATHS.map((p) => p.di
 
 /**
  * How bare the ground is at a point, 0..1: the tracks' wheel ruts (not the grass strip up the middle), the earth worn
- * bare under the shed's porch, the farmyard and the ploughed field. The demo's stand-in for the game's map of where dust
- * lifts (#36).
+ * bare under the shed's porch, the farmyard, the ploughed field, and the fields the season has left bare (the
+ * sunflowers' in spring; in winter, the wheat's, the barley's and the sunflowers', ploughed). The demo's stand-in for the
+ * game's map of where dust lifts (#36) and where wet earth turns to mud (#11).
  */
 function bare(x: number, z: number) {
   const dp = pathDistance(x, z);
@@ -286,7 +287,11 @@ function bare(x: number, z: number) {
   const [lx, lz] = shedLocal(x, z);
   const porch = (1 - smooth(1.7, 2.5, Math.abs(lx))) * smooth(1.2, 1.6, lz) * (1 - smooth(3.4, 4.6, lz));
   const [u, v] = M(x, z);
-  return Math.max(track, 0.8 * porch, 0.7 * smooth(-0.5, 1, plotInside(YARD, u, v)), 0.9 * smooth(-0.5, 1, plotInside(PLOUGHED, u, v)));
+  const plot = (p: Plot) => smooth(-0.5, 1, plotInside(p, u, v));
+  const stage = STAGE[SEASON];
+  const fields = stage === 'bare' ? Math.max(smooth(-0.6, 0.2, wheatInside(u, v)), plot(BARLEY), plot(SUNFLOWERS))
+    : stage === 'young' ? plot(SUNFLOWERS) : 0;
+  return Math.max(track, 0.8 * porch, 0.7 * plot(YARD), 0.9 * plot(PLOUGHED), 0.9 * fields);
 }
 
 function height(x: number, z: number) {
