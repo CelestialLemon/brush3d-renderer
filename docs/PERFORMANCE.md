@@ -289,7 +289,8 @@ pass, medians of 90 frames; `1080p blizzard` and `1080p heavy snow, calm` in `no
 | A blizzard: snow 1 in a storm wind, its flakes, streaks, whiteout and wisps | +0.84 | +0.79 |
 | Heavy snow (1) in still air | +0.38 | +0.23 |
 
-About 0.16 of the blizzard's is the post pass (the whiteout's sheets and the wisps), the rest the flakes. The flakes'
+About 0.16 of the blizzard's is the post pass (the whiteout's sheets and the wisps), the rest the flakes. Keeping the
+wisps off sheltered ground (found in review: one read of the hollows map) added 0.04 after this table was measured. The flakes'
 cost is nearly all in the vertex shader, not in painting them (drawn a pixel across they cost the same): the roof trace
 was 0.9 ms of a first version's 1.45, tracing the whole path with up to 40 reads, and a blizzard's flakes thickened to
 2.5 times. Tracing only the path already fallen, at most 24 reads, and thickening to 1.75 times (the whiteout does the
