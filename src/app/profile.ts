@@ -36,7 +36,7 @@ export interface ProfileRow {
 }
 
 export const PASSES = ['setup', 'shelter', 'clouds', 'shadow', 'under', 'reflect', 'main', 'post', 'bolt'];
-const KINDS: DrawnKind[] = ['ground', 'paint', 'grass', 'foliage', 'crop', 'ink', 'water', 'debris', 'rain'];
+const KINDS: DrawnKind[] = ['ground', 'paint', 'grass', 'foliage', 'crop', 'ink', 'water', 'debris', 'rain', 'snow'];
 const STORM = WIND_SCALE.storm;
 
 /** The usual set: a calm and a stormy frame at 720p, 1080p, 1440p and 4K, then the stormy 1080p frame without each kind. */
@@ -55,6 +55,10 @@ export function defaultCases(): ProfileCase[] {
   cases.push({ label: '1080p storm, heat wave', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS['heat-wave'] });
   cases.push({ label: '1080p storm, snow lying', width: 1920, height: 1080, wind: STORM, lying: 0.6 });
   cases.push({ label: '1080p storm, wet ground', width: 1920, height: 1080, wind: STORM, wet: { wet: 1, mud: 1 } });
+  // The falling snow at its dearest (#14): a blizzard (heavy snow in a storm wind: its flakes, streaks and whiteout) over
+  // lying snow, and a heavy snowfall in still air (the most flakes that fall straight, without the whiteout's sheets).
+  cases.push({ label: '1080p blizzard', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS.blizzard, lying: 0.6 });
+  cases.push({ label: '1080p heavy snow, calm', width: 1920, height: 1080, wind: 0, weather: { cloud: 1, snow: 1 }, lying: 0.6 });
   return cases;
 }
 

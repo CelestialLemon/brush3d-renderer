@@ -2,6 +2,7 @@ import { hoursOf, type HourName } from '../renderer/look';
 import { CHARACTERS, clockHour, SEASONS, type Character, type Season } from '../renderer/season';
 import { BrushRenderer, type DrawnKind } from '../renderer/renderer';
 import { lightningHud, setupLightning, stormLightning } from './lightning';
+import { SNOW_LOOKS, type SnowLookName } from '../renderer/snowfall';
 import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
@@ -9,7 +10,7 @@ import { cloudDriftSpeed } from '../renderer/clouds';
 import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weather, type WeatherName } from '../renderer/weather';
 import { steadyWind, WIND_SCALE, windName, type WindStrength } from '../renderer/wind';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
-import { SPEEDS, SPELLS, TICK, timelineAt, timelineLightning, timelinePhase, timelineWater, timelineWet, timelineWind, type SpellName } from './timeline';
+import { SPEEDS, SPELLS, TICK, timelineAt, timelineLightning, timelineLying, timelinePhase, timelineWater, timelineWet, timelineWind, type SpellName } from './timeline';
 import { DemoWater, USUAL_WATER, type WaterState } from './water';
 import { DemoGround, type GroundState } from './ground';
 import { WindWorker } from '../wind/client';
@@ -33,15 +34,20 @@ import { WindView } from './windView';
 //   sunUnder (0..1: how much of a low sun gets in under the cloud at dawn and dusk, and at any hour of the day under a
 //     storm; the game's, now and then; 0 by default)
 //   timeline (play the scripted weather, standing in for the game; timeline=3 at 3x the game's speed)
-//   spell=shower|fog|dust|flood|thunderstorm|gale|hurricane (which scripted weather: a shower, a morning fog lifting, a
-//     dust storm blowing through, a storm flooding the stream over the land, or a thunderstorm, a gale or a hurricane, #12)
+//   spell=shower|fog|dust|flood|thunderstorm|gale|hurricane|snowfall|blizzard (which scripted weather: a shower, a morning
+//     fog lifting, a dust storm blowing through, a storm flooding the stream over the land, a thunderstorm, a gale or a
+//     hurricane, #12; a snowfall settling, or a blizzard rolling in on a gale, #14: best in winter)
 //   water=usual|spate|flood (the water, #18), then each value over it: rise (m over the usual), flow (times the usual
 //     speed), mud (0..1)
-//   lying (how deep the snow lies over the land, 0..1, the game's: 0.2 a dusting, 0.5 the grass covered, 1 deep; #14)
+//   lying (how deep the snow lies over the land, 0..1, the game's: 0.2 a dusting, 0.5 the grass covered, 1 deep; #14;
+//     0.4 by default where it snows)
 //   wet (how wet the land is, 0 dry .. 1 soaked, #11; soaked where it rains, by default)
 //   cloudSeed (which cloud field: a whole number)
-//   falling=0 (leave out the things in the air: the wind's leaves, the rain, and snow to come; dust is in the haze)
-//   fallingShare (the share of the rain's strokes drawn: 1 full quality, 0.33 reduced)
+//   falling=0 (leave out the things in the air: the wind's leaves, the rain, the snow and its whiteout; dust is in the haze)
+//   fallingShare (the share of the rain's strokes and the snow's flakes drawn: 1 full quality, 0.33 reduced)
+//   snowLook=a|b|c (the falling snow's look, candidates for #14: a soft dabs, b crisp flecks, c tumbling flakes; a by default)
+//   snowShade=a|b|c (a roof's snow in shade, candidates for #14's "tarp": a as it was, b quieter, c brushed; a by default)
+//   The blizzard preset comes with a gale (a blizzard is heavy snow in a strong wind, #14), unless wind is given.
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
 //   prepass=0 (paint without drawing the silhouettes first)  scissor=0 (the water's passes over the whole screen)
 //   equal=0 (paint at or nearer the silhouettes' depth, not only at it)
@@ -104,7 +110,9 @@ sendWater(water, true);
 // The ground (#14, #11), standing in for the game's: how deep the snow lies, how much frost, and how wet the land is,
 // sent as a map whenever it changes. (Its wet is set below, with the weather: soaked where it rains.)
 const demoGround = new DemoGround(scene.stream, scene.height, scene.bare);
-const ground: GroundState = { snow: num('lying', 0), frost: 0, wet: 0 };
+/** How deep the demo lays the snow when a snowy weather is picked (#14): the grass covered, the crops' tops showing. */
+const LYING_SNOWY = 0.4;
+const ground: GroundState = { snow: 0, frost: 0, wet: 0 };
 let groundSent = '';
 function sendGround(g: GroundState, immediate = false) {
   // The wet in steps of 1/400: the timeline dries it a little every frame, the game a few times a second.
@@ -171,7 +179,7 @@ function here() {
 const windParam = params.get('wind');
 /** The wind the demo asks for (the game's goal, with the rhythm below): m/s, radians it blows towards, gustiness 0..1. */
 const wind = {
-  speed: windParam === null ? WIND_SCALE.breeze : windParam in WIND_SCALE ? WIND_SCALE[windParam as WindStrength] : Number(windParam),
+  speed: windParam === null ? (params.get('weather') === 'blizzard' ? WIND_SCALE.gale : WIND_SCALE.breeze) : windParam in WIND_SCALE ? WIND_SCALE[windParam as WindStrength] : Number(windParam),
   direction: (num('windDir', 31) * Math.PI) / 180,
   gust: num('gust', 0.5),
 };
@@ -218,8 +226,9 @@ const weather: Sky & { haze: Haze } = {
   },
 };
 if (['cloud', 'storm', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase', 'hazeKind'].some((k) => params.has(k))) presetName = null;
-// The land soaked where it's raining, unless asked (#11).
+// The land soaked where it's raining, unless asked (#11); snow lying where it snows (#14).
 ground.wet = num('wet', weather.rain > 0 ? 1 : 0);
+ground.snow = num('lying', weather.snow > 0 ? LYING_SNOWY : 0);
 sendGround(ground, true);
 // The clouds' field (#8).
 const cloudSeed = num('cloudSeed', 1);
@@ -283,6 +292,20 @@ let lastTime = 0;
 send(weather, true, 0);
 renderer.settings.falling = num('falling', 1) !== 0;
 renderer.settings.fallingShare = num('fallingShare', 1);
+// The falling snow's look (#14): the candidates, for the developer to pick between.
+let snowLook: SnowLookName = (params.get('snowLook') ?? '') in SNOW_LOOKS ? params.get('snowLook') as SnowLookName : 'a';
+renderer.snowfall.look = SNOW_LOOKS[snowLook];
+// A roof's snow in shade (#14, the "tarp" from #58): the candidates.
+const SNOW_SHADES = ['a', 'b', 'c'] as const;
+let snowShade = SNOW_SHADES.find((s) => s === params.get('snowShade')) ?? 'a';
+renderer.snowShade = SNOW_SHADES.indexOf(snowShade);
+/** Sets a look option in the URL as it stands, so a reload or a shared link keeps it. */
+function urlOption(key: string, value: string) {
+  params.set(key, value);
+  const url = new URL(location.href);
+  url.searchParams.set(key, value);
+  history.replaceState(null, '', url);
+}
 // The scripted timeline, at a game speed: it sends the weather as the game would, a few times a second.
 let playing = params.has('timeline'), speed = Number(params.get('timeline')) || 1;
 let spell: SpellName = (params.get('spell') ?? '') in SPELLS ? params.get('spell') as SpellName : 'shower';
@@ -400,8 +423,12 @@ function hud() {
     Object.assign(weather, { cloud: p.cloud, storm: p.storm ?? 0, rain: p.rain ?? 0, snow: p.snow ?? 0, heat: p.heat ?? 0 });
     weather.haze = p.haze ? { ...p.haze } : { ...weather.haze, amount: 0 };
     presetName = pick.value as WeatherName; playing = false; timelineEl.textContent = ''; endSpellStorm();
+    // A blizzard is heavy snow in a strong wind (#14): it comes with a gale.
+    if (presetName === 'blizzard' && wind.speed < WIND_SCALE.gale) { wind.speed = WIND_SCALE.gale; living.setGoal(windGoal()); }
     // A rainy weather picked: the land as it would be after a while of it, soaked.
     if (weather.rain > 0) { ground.wet = 1; sendGround({ ...ground }); }
+    // A snowy one: snow lying, as after a while of it.
+    if (weather.snow > 0 && ground.snow < LYING_SNOWY) { ground.snow = LYING_SNOWY; sendGround({ ...ground }); }
     send(weather);
     hud();
   };
@@ -417,6 +444,25 @@ function hud() {
   hudEl.append(slider('Storm', 0, 1, 0.01, () => weather.storm, weatherSet((v) => { weather.storm = v; }), share, true));
   hudEl.append(slider('Rain', 0, 1, 0.01, () => weather.rain, weatherSet((v) => { weather.rain = v; }), share, true));
   hudEl.append(slider('Snow', 0, 1, 0.01, () => weather.snow, weatherSet((v) => { weather.snow = v; }), share, true));
+  const snowButton = Object.assign(document.createElement('button'), { textContent: `snow look ${snowLook.toUpperCase()}` });
+  snowButton.title = 'The falling snow\'s look, candidates for #14: A soft painted dabs, B small crisp flecks, C tumbling flakes with a short smear (snowLook=a|b|c)';
+  snowButton.onclick = () => {
+    const looks = Object.keys(SNOW_LOOKS) as SnowLookName[];
+    snowLook = looks[(looks.indexOf(snowLook) + 1) % looks.length];
+    renderer.snowfall.look = SNOW_LOOKS[snowLook];
+    urlOption('snowLook', snowLook);
+    hud();
+  };
+  hudEl.append(snowButton);
+  const shadeButton = Object.assign(document.createElement('button'), { textContent: `snow shade ${snowShade.toUpperCase()}` });
+  shadeButton.title = 'A roof\'s snow in shade (a big flat face read as a blue tarp), candidates for #14: A as it was, B quieter (lighter, softer blue), C brushed (broken by strokes) (snowShade=a|b|c)';
+  shadeButton.onclick = () => {
+    snowShade = SNOW_SHADES[(SNOW_SHADES.indexOf(snowShade) + 1) % SNOW_SHADES.length];
+    renderer.snowShade = SNOW_SHADES.indexOf(snowShade);
+    urlOption('snowShade', snowShade);
+    hud();
+  };
+  hudEl.append(shadeButton);
   hudEl.append(slider('Heat', 0, 1, 0.01, () => weather.heat, weatherSet((v) => { weather.heat = v; }), share, true));
   hudEl.append(slider('Haze', 0, 1, 0.01, () => weather.haze.amount, weatherSet((v) => { weather.haze.amount = v; }), share, true));
   hudEl.append(slider('from', -2, 20, 0.25, () => Math.max(-2, weather.haze.base ?? -2), weatherSet((v) => { weather.haze.base = v <= -2 ? undefined : v; }),
@@ -439,7 +485,8 @@ function hud() {
   for (const name of Object.keys(SPELLS)) spells.append(new Option(spellName(name), name, false, name === spell));
   spells.title = 'shower: clear, cloud building, a shower, clearing again · morning fog: a fog lifting, then mist gathering in the evening · ' +
     'dust storm: the wind getting up and blowing a dust storm through · flood: a storm swelling the stream, which floods the land and drains · ' +
-    'thunderstorm: a storm rolling in, lightning, and clearing · gale: squalls on a strong wind under a broken sky · hurricane: the strongest wind and driving rain';
+    'thunderstorm: a storm rolling in, lightning, and clearing · gale: squalls on a strong wind under a broken sky · hurricane: the strongest wind and driving rain · ' +
+    'snowfall: snow coming in, settling and clearing · blizzard: a blizzard rolling in on a gale and blowing itself out (best in winter)';
   spells.onchange = () => { spell = spells.value as SpellName; timelineStart = null; timelineSent = ''; };
   spells.onkeydown = (e) => e.stopPropagation();
   play.onclick = () => {
@@ -512,6 +559,9 @@ function playTimeline(time: number) {
   // The ground, as the game's rain and sun have wetted and dried it (#11).
   const wet = timelineWet(time - timelineStart, speed, spell);
   if (Math.abs(wet - ground.wet) > 1e-4) { ground.wet = wet; sendGround({ ...ground }); for (const r of refreshers) r(); }
+  // And the snow lying, as the game's snowfall has laid it (#14).
+  const lying = timelineLying(time - timelineStart, speed, spell);
+  if (lying !== null && Math.abs(lying - ground.snow) > 1e-4) { ground.snow = lying; sendGround({ ...ground }); for (const r of refreshers) r(); }
   // A storm's lightning, which the demo calls at the spell's rates, as the game would (#12).
   stormLightning(timelineLightning(time - timelineStart, speed, spell));
   if (key === timelineSent) return;
@@ -578,6 +628,7 @@ if (params.has('shot')) {
       const ws = timelineWater(t.time, t.speed ?? speed, t.spell ?? spell);
       if (ws) Object.assign(water, ws);
       ground.wet = timelineWet(t.time, t.speed ?? speed, t.spell ?? spell);
+      ground.snow = timelineLying(t.time, t.speed ?? speed, t.spell ?? spell) ?? ground.snow;
     }
     if (options.water) Object.assign(water, options.water);
     // The water's clock is the renderer's: put it at the frame's time first, so an ease starts from there.
@@ -589,7 +640,7 @@ if (params.has('shot')) {
     await windTo(time, windGoal(), !!options.ease);
     drawWind();
     if (windMap) windView.draw(view.target.x, view.target.z, view.heading);
-    const kinds: DrawnKind[] = ['ground', 'paint', 'crop', 'ink', 'water', 'foliage', 'grass', 'debris', 'rain'];
+    const kinds: DrawnKind[] = ['ground', 'paint', 'crop', 'ink', 'water', 'foliage', 'grass', 'debris', 'rain', 'snow'];
     for (const k of kinds) renderer.setVisible(k, !options.hide?.includes(k));
     const grain = renderer.settings.grain;
     if (options.grain === false) renderer.settings.grain = 0;

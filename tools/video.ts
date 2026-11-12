@@ -18,7 +18,9 @@
 //   flickers: QUERY="weather=storm&flashes=gentle", #12), thunderstorm, gale and hurricane (the demo's scripted storms rolling
 //   in and clearing, at 3x, the camera still and wide, lightning at the spell's rates from a fixed seed, so every look gets
 //   the same strikes: QUERY="hour=night", #12), snow-settle (snow settling on the shed, bare to deep; #14) and
-//   snow-pan (the camera panning over lying snow; QUERY="season=winter")
+//   snow-pan (the camera panning over lying snow; QUERY="season=winter"), snowfall and blizzard (the demo's scripted
+//   snowfall and blizzard at 3x; QUERY="season=winter"), snow-close (snow falling, still and close on the shed) and
+//   snow-fall-pan (panning through falling snow; QUERY="season=winter&weather=snow")
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
 // tools/browser.ts for the rest.
@@ -39,7 +41,7 @@ const STRENGTHS = { calm: 0, breeze: 5, gale: 17, storm: 25, hurricane: 35 };
  */
 interface Move {
   seconds: number; at: (t: number) => Cam; wind?: (t: number) => number; cloud?: (t: number) => number;
-  timeline?: (t: number) => number; spell?: 'shower' | 'fog' | 'dust' | 'flood' | 'thunderstorm' | 'gale' | 'hurricane';
+  timeline?: (t: number) => number; spell?: 'shower' | 'fog' | 'dust' | 'flood' | 'thunderstorm' | 'gale' | 'hurricane' | 'snowfall' | 'blizzard';
   ease?: boolean; extra?: boolean;
   /** The water (#18): how far it stands over the usual (m), how fast it runs (times the usual), how muddy (0..1). */
   water?: (t: number) => { rise?: number; flow?: number; mud?: number };
@@ -141,6 +143,14 @@ const MOVES: Record<string, Move> = {
   thunderstorm: { seconds: 40, at: () => STORM_CAM, timeline: (t) => t, spell: 'thunderstorm', ease: true, extra: true },
   gale: { seconds: 33, at: () => STORM_CAM, timeline: (t) => t, spell: 'gale', ease: true, extra: true },
   hurricane: { seconds: 47, at: () => STORM_CAM, timeline: (t) => t, spell: 'hurricane', ease: true, extra: true },
+  // Falling snow (#14), at 3x: the demo's snowfall coming in over the shed and the bridge, settling and clearing; and a
+  // blizzard rolling in on a gale, whiting out the distance and blowing itself out, wider (QUERY="season=winter").
+  snowfall: { seconds: 30, at: () => ({ x: 4, z: 14, zoom: 40, view: 0 }), timeline: (t) => 5 + t, spell: 'snowfall', ease: true, extra: true },
+  blizzard: { seconds: 34, at: () => STORM_CAM, timeline: (t) => t, spell: 'blizzard', ease: true, extra: true },
+  // Snow falling steadily, the camera still and close on the shed: the flakes' look (QUERY="season=winter&weather=snow").
+  'snow-close': { seconds: 8, at: () => ({ x: 10, z: 12, zoom: 64, view: 0 }), extra: true },
+  // The camera panning through falling snow: the flakes stay in the world, none jumps.
+  'snow-fall-pan': { seconds: 6, at: (t) => pan({ x: 4, z: 6, zoom: 44, view: 0 }, -t * 50, 0), extra: true },
   'stream-usual': { seconds: 8, at: () => ({ x: -14, z: 20, zoom: 64, view: 0 }), water: () => ({ rise: 0, flow: 1, mud: 0 }), extra: true },
 };
 

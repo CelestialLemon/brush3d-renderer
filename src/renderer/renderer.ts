@@ -14,6 +14,7 @@ import { fogNoiseTexture, litFog } from './fog';
 import { POST_FRAG, POST_VERT } from './post';
 import { Lightning, type Flicker, type Strike } from './lightning';
 import { Rain } from './rain';
+import { Snowfall } from './snowfall';
 import { ShelterMap, type Cover } from './shelter';
 import type { PassTimer } from './timer';
 import { WeatherState, type Weather } from './weather';
@@ -84,12 +85,13 @@ export interface Settings {
   shelterDebug: boolean;
 }
 
-/** What the renderer draws, by kind: the scene's materials, and the rain (rain.ts), which is the renderer's own. */
-export type DrawnKind = MaterialKind | 'rain';
+/** What the renderer draws, by kind: the scene's materials, and the rain and snow (rain.ts, snowfall.ts), its own. */
+export type DrawnKind = MaterialKind | 'rain' | 'snow';
 
-/** The kinds in the air, which settings.falling leaves out: the leaves the wind lifts and the rain, with its veil and
- * rings (snow to come). Dust is drawn in the haze (post.ts), keyed to the world like a fog's patches, so it stays. */
-export const FALLING: readonly DrawnKind[] = ['debris', 'rain'];
+/** The kinds in the air, which settings.falling leaves out: the leaves the wind lifts, the rain with its veil and rings,
+ * and the snow with its whiteout and wisps. Dust is drawn in the haze (post.ts), keyed to the world like a fog's
+ * patches, so it stays. */
+export const FALLING: readonly DrawnKind[] = ['debris', 'rain', 'snow'];
 
 /** How a mesh takes part in the passes. */
 export interface MeshOptions {
@@ -204,6 +206,8 @@ export class BrushRenderer {
   readonly hollows = new HollowMap();
   /** The lying snow's paint in the hour's light (#14), worked out once a frame. */
   private readonly snow = new SnowPaint();
+  /** How a roof's snow in shade is painted, the candidates for #14 (snow.ts, snowPaintTop): 0 as it was, 1 quieter, 2 brushed. */
+  set snowShade(look: number) { this.snow.uniforms.uSnowTarp.value = look; }
 
   /** The falling rain (#11): its strokes, and the uniforms for its veil and the water's rings. */
   readonly rain: Rain;
@@ -211,6 +215,10 @@ export class BrushRenderer {
   readonly lightning = new Lightning();
   /** Whether the rain is shown (setVisible), apart from whether it's raining. */
   private rainShown = true;
+  /** The falling snow and the blizzard (#14): its flakes, and the uniforms for its whiteout and the wisps. */
+  readonly snowfall: Snowfall;
+  /** Whether the snow is shown (setVisible), apart from whether it's snowing. */
+  private snowShown = true;
   /** The cloud field's shade over the land, drawn each frame the clouds move (#8). */
   readonly cloudMap: CloudMap;
   /** The cloud field again, coarser and further out: the sky the water and the solar glass mirror (MIRROR). */
@@ -246,6 +254,8 @@ export class BrushRenderer {
     Object.assign(this.shared, this.shelter.uniforms, this.ground.uniforms, this.hollows.uniforms, this.snow.uniforms);
     this.rain = new Rain(this.shared, this.shelter.uniforms);
     this.scene.add(this.rain.mesh);
+    this.snowfall = new Snowfall(this.shared, this.shelter.uniforms);
+    this.scene.add(this.snowfall.mesh);
     this.cloudMap = new CloudMap(this.shared);
     this.skyMap = new CloudMap({ uCloudMap: this.shared.uSkyMap, uCloudRect: this.shared.uSkyRect }, MIRROR.size);
     this.underTarget = half();
@@ -268,11 +278,13 @@ export class BrushRenderer {
         uDust: { value: new THREE.Vector3() }, uFogFrame: { value: new THREE.Vector4(1, 0, 1, 0) },
         uFogNext: { value: new THREE.Vector4(1, 0, 1, 0) }, uFogFade: { value: 0 }, uFogStreak: { value: new THREE.Vector2() },
         uWindSpeed: this.shared.uWindSpeed, uWindDir: this.shared.uWindDir, tWindA: this.shared.tWindA, tWindB: this.shared.tWindB,
-        uWindBlend: this.shared.uWindBlend, uWindGrid: this.shared.uWindGrid, uWindOn: this.shared.uWindOn,
+        uWindBlend: this.shared.uWindBlend, uWindGrid: this.shared.uWindGrid, uWindOn: this.shared.uWindOn, tWindUsual: this.shared.tWindUsual,
         uShimmer: { value: new THREE.Vector2() },
         tDustA: { value: this.dust.a }, tDustB: { value: this.dust.b }, uDustBlend: { value: 0 },
         uDustGrid: { value: this.dust.grid }, uDustOn: { value: 0 }, uDustColor: { value: new THREE.Color() }, uDustReach: { value: 4.5 },
         ...this.rain.veil,
+        // The blizzard's whiteout, and the wisps over the lying snow (which read the ground's map and the land's height).
+        ...this.snowfall.veil, ...this.ground.uniforms, ...this.shelter.uniforms,
         ...this.lightning.post, uShadowMap: this.shared.uShadowMap, uShadowMatrix: this.shared.uShadowMatrix,
       },
     });
@@ -510,6 +522,7 @@ export class BrushRenderer {
   /** Shows or hides every mesh of a kind (for A/B comparisons). */
   setVisible(kind: DrawnKind, visible: boolean) {
     if (kind === 'rain') { this.rainShown = visible; return; }
+    if (kind === 'snow') { this.snowShown = visible; return; }
     if (kind === 'water') {
       this.waterShown = visible;
       if (this.waterMesh) this.waterMesh.visible = visible && this.water.any;
@@ -740,6 +753,7 @@ export class BrushRenderer {
     u.uDustReach.value = f.look.top + 0.5;
     litFog(u.uDustColor.value, FRESH_DUST.clone().lerp(w.hazeColor, w.dust), s.uSunColor.value, s.uSkyColor.value);
     this.rain.setVeilColor((out, base) => litFog(out, base, s.uSunColor.value, s.uSkyColor.value));
+    this.snowfall.setVeilColor((out, base) => litFog(out, base, s.uSunColor.value, s.uSkyColor.value));
   }
 
   private updateSunCamera() {
@@ -994,6 +1008,9 @@ export class BrushRenderer {
     this.rain.update(time, this.weather.rain, this.view.zoom, this.pixelRatio / this.screenRatio, this.settings.fallingShare,
       this.settings.falling && this.rainShown, this.windNowVector.copy(s.uWindDir.value).multiplyScalar(s.uWindSpeed.value),
       cam, this.view.target.y);
+    // The snow, the same way (#14).
+    this.snowfall.update(time, this.weather.snow, this.view.zoom, this.pixelRatio / this.screenRatio, this.settings.fallingShare,
+      this.settings.falling && this.snowShown, this.ground.any, this.windNowVector, cam, this.view.target.y);
     this.scene.updateMatrixWorld();
     for (const [mesh, twin] of this.twins) twin.matrixWorld.copy(mesh.matrixWorld);
     const gl = this.gl;

@@ -30,6 +30,7 @@ ${GROUND_GLSL}
 ${HOLLOW_GLSL}
 uniform vec3 uSnowGap[4];    // the snow's paint in the gaps' light: its shade, half-tone, lit band and a stroke in it
 uniform vec3 uSnowCloud[4];  // and under a cloud
+uniform float uSnowTarp;     // how a roof's snow in shade is painted, the candidates for #14: 0 as it was, 1 quieter, 2 brushed
 const float SNOW_METRES = ${SNOW_METRES.toFixed(2)};
 // The snow lying here (0..1, the game's depth, less under shelter), and the land's hollow here (hollowAt), read by snowAt.
 float gSnow = 0.0;
@@ -94,6 +95,20 @@ vec3 snowPaint(float light, float soft, float brush) {
   float t2 = smoothstep(0.62 - soft, 0.62 + soft, light);
   return mix(mix(shade, half_, t1), lit, t2);
 }
+// The snow on a built thing's top, painted as snowPaint, but for its shade on a big flat face (a roof's back at noon),
+// which as one even blue reads as a tarp (#58's follow-up, #14): the candidates, for the developer to pick between.
+// Quieter (1): the shade lighter and softer, towards the half-tone. Brushed (2): broken by the brush, lighter strokes and
+// a soft mottle through it, so it reads as paint. 'uneven' is the snow's unevenness there (about -1..1), 'p' the point.
+vec3 snowPaintTop(float light, float soft, float uneven, vec3 p) {
+  vec3 c = snowPaint(light, soft, uneven * 0.3);
+  if (uSnowTarp < 0.5) return c;
+  float inShade = 1.0 - smoothstep(0.30, 0.62, light);
+  vec3 half_ = mix(uSnowGap[1], uSnowCloud[1], gCloud);
+  if (uSnowTarp < 1.5) return mix(c, half_, inShade * 0.45);
+  float strokes = snoise(vec2(dot(p.xz, vec2(0.8, 0.6)) * 0.9, dot(p.xz, vec2(-0.6, 0.8)) * 4.5));
+  float mottle = clamp(0.5 + 0.35 * uneven + 0.45 * strokes, 0.0, 1.0);
+  return mix(c, half_, inShade * mottle * 0.6);
+}
 `;
 
 
@@ -150,6 +165,8 @@ export class SnowPaint {
   readonly uniforms = {
     uSnowGap: { value: [0, 1, 2, 3].map(() => new THREE.Color()) },
     uSnowCloud: { value: [0, 1, 2, 3].map(() => new THREE.Color()) },
+    /** How a roof's snow in shade is painted (snowPaintTop): the candidates for #14, 0 as it was, 1 quieter, 2 brushed. */
+    uSnowTarp: { value: 0 },
   };
 
   /** Sets the snow's colours for the light in the gaps and under a cloud. */

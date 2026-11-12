@@ -57,25 +57,62 @@ export const RAIN_LOOK: RainLook = {
 /** The zoom (screen px a metre) the look's density and width are set at: the demo's usual framing. */
 export const REFERENCE_ZOOM = 44;
 /** The most drops drawn at once: far more than any view needs (a few thousand), a guard against a huge screen. */
-const MAX_DROPS = 65536;
+export const MAX_DROPS = 65536;
 /**
  * The side of a cell of land (m). The drops belong to cells keyed to the world, each cell its own handful, and those on
  * the land the view can see (and a margin round it) are drawn: the same drop falls in the same place whichever cells
  * are drawn, so panning or zooming never moves one.
  */
-const CELL = 8;
+export const CELL = 8;
 /** How high over where it stops a drop starts (m): over the tallest crown; and the most, with its jitter. */
-const COLUMN = 16;
-const COLUMN_TOP = COLUMN * 1.15;
+export const COLUMN = 16;
+export const COLUMN_TOP = COLUMN * 1.15;
 /** A drop fades in over this much of a drop a cell as the rain grows (by its rank in the cell). */
-const RANK_FADE = 0.3;
+export const RANK_FADE = 0.3;
 /** How far the wind slants a stroke at most (horizontal metres a metre of fall). */
 const MAX_SLANT = 1.2;
 /** How far the land in view can lie under and over the camera's target (m), for the cells to draw. */
-const LAND_BELOW = 8, LAND_ABOVE = 8;
+export const LAND_BELOW = 8, LAND_ABOVE = 8;
 
 /** The drops' light: pale, lit by the sky more than the sun, as rain catches the light. Linear. */
 const RAIN_BASE = '0.78, 0.82, 0.86';
+
+/**
+ * What anything falling through the shelter map needs (rain, snow #14): where a point is on the screen, and where a slanted
+ * path first meets the cover a map holds. Needs SHELTER_GLSL.
+ */
+export const FALLING_GLSL = /* glsl */ `
+vec2 screenOf(vec3 p, out float z) {
+  vec4 c = projectionMatrix * viewMatrix * vec4(p, 1.0);
+  z = c.z / c.w;
+  return c.xy / c.w;
+}
+// Where a drop falling down its slanted path (at height y it is over g - slant (y - base)) from \`top\` first meets the
+// cover a map holds: stepping down the path to the first point under the cover, then halving the step between it and
+// the last point over it. The steps are about a metre apart across the land (so a panel's edge isn't stepped over) and
+// two up and down, \`most\` of them at most; straight down, one look. Far below the land if it meets none. A path that
+// grazes the downwind edge of cover between two steps (a strip under a metre, in a wind) gets by, as rain blows in under
+// an eave.
+float coverAlong(highp sampler2D map, vec2 g, vec2 slant, float base, float top, float most) {
+  if (dot(slant, slant) < 1e-4) return shelterHeightIn(map, vec3(g.x, 0.0, g.y));
+  float over = top;
+  int steps = int(clamp(ceil((top - base) * max(length(slant), 0.5)), 8.0, most));
+  for (int i = 0; i <= steps; i++) {
+    float y = mix(top, base, float(i) / float(steps));
+    vec2 at = g - slant * (y - base);
+    if (shelterHeightIn(map, vec3(at.x, 0.0, at.y)) < y) { over = y; continue; }
+    if (i == 0) return top;
+    float under = y;
+    for (int j = 0; j < 3; j++) {
+      float m = 0.5 * (over + under);
+      vec2 am = g - slant * (m - base);
+      if (shelterHeightIn(map, vec3(am.x, 0.0, am.y)) < m) over = m; else under = m;
+    }
+    return under;
+  }
+  return -1e9;
+}
+`;
 
 const RAIN_VERT = /* glsl */ `
 ${LIGHT_UNIFORMS}
@@ -102,36 +139,7 @@ const float RANK_FADE = ${RANK_FADE};
 // Starting high over the land, a drop fades in over its first few metres, so none appears out of nothing.
 const float FADE_IN = 3.0;
 
-vec2 screenOf(vec3 p, out float z) {
-  vec4 c = projectionMatrix * viewMatrix * vec4(p, 1.0);
-  z = c.z / c.w;
-  return c.xy / c.w;
-}
-// Where a drop falling down its slanted path (at height y it is over g - slant (y - base)) from \`top\` first meets the
-// cover a map holds: stepping down the path to the first point under the cover, then halving the step between it and
-// the last point over it. The steps are about a metre apart across the land (so a panel's edge isn't stepped over) and
-// two up and down; straight down, one look. Far below the land if it meets none. A path that grazes the downwind edge of
-// cover between two steps (a strip under a metre, in a wind) gets by, as rain blows in under an eave.
-float coverAlong(highp sampler2D map, vec2 g, vec2 slant, float base, float top) {
-  if (dot(slant, slant) < 1e-4) return shelterHeightIn(map, vec3(g.x, 0.0, g.y));
-  float over = top;
-  int steps = int(clamp(ceil((top - base) * max(length(slant), 0.5)), 8.0, 24.0));
-  for (int i = 0; i <= steps; i++) {
-    float y = mix(top, base, float(i) / float(steps));
-    vec2 at = g - slant * (y - base);
-    if (shelterHeightIn(map, vec3(at.x, 0.0, at.y)) < y) { over = y; continue; }
-    if (i == 0) return top;
-    float under = y;
-    for (int j = 0; j < 3; j++) {
-      float m = 0.5 * (over + under);
-      vec2 am = g - slant * (m - base);
-      if (shelterHeightIn(map, vec3(am.x, 0.0, am.y)) < m) over = m; else under = m;
-    }
-    return under;
-  }
-  return -1e9;
-}
-
+${FALLING_GLSL}
 void main() {
   gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   vShape = vec4(0.0); vColor = vec4(0.0); vPart = aCorner.z;
@@ -170,11 +178,11 @@ void main() {
 
   // Where it stops: there, or a roof, or (some of the time) a crown, along the way.
   float stop = base;
-  float roof = coverAlong(uShelterFull, g, slant, base, top);
+  float roof = coverAlong(uShelterFull, g, slant, base, top, 24.0);
   if (roof > stop) { stop = roof; wet = false; }
   bool caught = false;
   if (rnd.w < ${PARTIAL_COVER.toFixed(2)}) {
-    float crown = coverAlong(uShelterPartial, g, slant, base, top);
+    float crown = coverAlong(uShelterPartial, g, slant, base, top, 24.0);
     // Lost among the leaves somewhere under the crown's top.
     if (crown > stop) { stop = max(crown - fract(rnd.z * 7.31) * 2.0, stop); caught = true; }
   }
@@ -350,6 +358,24 @@ function dropsGeometry(): THREE.InstancedBufferGeometry {
   return g;
 }
 
+const corner = new THREE.Vector3(), forward = new THREE.Vector3();
+/**
+ * The land the view sees, between the lowest land under it and the tops of the columns over the highest (see LAND_BELOW,
+ * COLUMN_TOP): what a falling thing can be seen falling through, as a box (x, z; y is left as found).
+ */
+export function landInView(camera: THREE.Camera, groundY: number, box: THREE.Box3) {
+  box.makeEmpty();
+  const fwd = forward.set(0, 0, -1).transformDirection(camera.matrixWorld);
+  for (const y of [groundY - LAND_BELOW, groundY + LAND_ABOVE + COLUMN_TOP]) {
+    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const p = corner.set(sx, sy, 0).unproject(camera);
+      p.addScaledVector(fwd, (y - p.y) / fwd.y);
+      box.expandByPoint(p);
+    }
+  }
+  return box;
+}
+
 /** The rain as drawn: the drops' mesh, and the uniforms for the drops, the water's rings and the post pass's veil. */
 export class Rain {
   readonly uniforms = {
@@ -372,7 +398,6 @@ export class Rain {
   private last = NaN;
   private box = new THREE.Box3();
   private corner = new THREE.Vector3();
-  private forward = new THREE.Vector3();
 
   constructor(shared: SharedUniforms, shelter: Record<string, THREE.IUniform>) {
     const geometry = dropsGeometry();
@@ -424,15 +449,7 @@ export class Rain {
     // and as far round it as the wind can slant a stroke (a drop landing out of sight can fall through the view).
     const u = this.uniforms;
     const slant = Math.min(MAX_SLANT, (wind.length() / Math.max(speed, 1)) * L.slant * 1.5 + 0.1);
-    const box = this.box.makeEmpty();
-    const fwd = this.forward.set(0, 0, -1).transformDirection(camera.matrixWorld);
-    for (const y of [groundY - LAND_BELOW, groundY + LAND_ABOVE + COLUMN_TOP]) {
-      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-        const p = this.corner.set(sx, sy, 0).unproject(camera);
-        p.addScaledVector(fwd, (y - p.y) / fwd.y);
-        box.expandByPoint(p);
-      }
-    }
+    const box = landInView(camera, groundY, this.box);
     const pad = slant * (COLUMN_TOP + LAND_ABOVE) + 2;
     const x0 = Math.floor((box.min.x - pad) / CELL), z0 = Math.floor((box.min.z - pad) / CELL);
     const across = Math.floor((box.max.x + pad) / CELL) - x0 + 1, deep = Math.floor((box.max.z + pad) / CELL) - z0 + 1;

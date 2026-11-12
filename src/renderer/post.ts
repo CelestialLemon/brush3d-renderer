@@ -1,7 +1,10 @@
 import { FOG_NOISE_CELLS } from './fog';
 import { NOISE, OKLAB } from './glsl';
 import { LIGHTNING_GLSL } from './lightning';
+import { GROUND_GLSL } from './ground';
 import { RAIN_VEIL_GLSL } from './rain';
+import { SHELTER_GLSL } from './shelter';
+import { SNOW_VEIL_GLSL, WHITEOUT } from './snowfall';
 import { STREAK_STRETCH, WIND_GLSL } from './wind';
 
 // The post pass: the heat's shimmer, lines on inked things, the fog or dust lying on the land, the distance's haze, the sky,
@@ -87,6 +90,9 @@ const float FOG_MAX = 0.85;
 // The baked noise (fog.ts) at a point in noise cells: about -1..1.
 float fogNoise(vec2 p) { return texture2D(tFogNoise, p / FOG_NOISE_CELLS).r * 2.0 - 1.0; }
 ${RAIN_VEIL_GLSL}
+${GROUND_GLSL}
+${SHELTER_GLSL}
+${SNOW_VEIL_GLSL}
 
 // How thick the fog is at a height, 0..1.
 float fogProfile(float y) {
@@ -236,6 +242,9 @@ void main() {
   // Fresh dust, lifted by the gusts: over the fog, a veil of the earth's colour.
   if (!sky && uDustOn > 0.0) c = mix(c, uDustColor, freshDust(worldAt(uv, d)));
 
+  // Snow blowing low over the lying snow in a gale (#14): wisps of the whiteout's colour over the land.
+  if (!sky && uSnowVeilFrame.z > 0.0) c = mix(c, uSnowVeilColor, snowDrifting(worldAt(uv, d)));
+
   // Haze: the hour's air over everything, thickening with distance past the camera's target.
   if (!sky) {
     float far = max(d - uTargetDepth, 0.0);
@@ -245,10 +254,15 @@ void main() {
 
   // The veil of rain over the distance (#11), over the haze: rain between the eye and the far land.
   c = mix(c, uRainVeilColor, rainVeil(uv * 2.0 - 1.0, d));
+  // The blizzard's whiteout (#14), over it all but the sky: the air between the eye and the land white with snow.
+  float white = sky ? 0.0 : snowVeil(worldAt(uv, d), d);
+  c = mix(c, uSnowVeilColor, white);
 
   // In fog, lines fade halfway with what they draw. The developer's pick (#9, 'soft'): fading all the way looked more like
   // a painting, but the things the player can use got lost in the fog.
   edge *= 1.0 - fog / FOG_MAX * 0.5;
+  // And halfway into the whiteout, as into fog (#14).
+  edge *= 1.0 - white / ${WHITEOUT.far.toFixed(2)} * 0.5;
   if (edge > 0.0) {
     vec3 lab = linToOklab(c);
     vec3 ink = hueToward(lchShift(lab, -0.45 * lab.x, 1.25, 0.0), uShadeHue, 0.25);

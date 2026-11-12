@@ -63,7 +63,11 @@ export interface Weather {
   storm?: number;
   /** How hard it rains, 0..1. */
   rain?: number;
-  /** How hard it snows, 0..1. Rain and snow are apart, so sleet is both and one can ease into the other. */
+  /**
+   * How hard it snows, 0..1. Rain and snow are apart, so sleet is both and one can ease into the other. A blizzard is
+   * heavy snow in a strong wind (setWind), no value of its own (#14, the developer's call): the renderer turns the flakes
+   * sideways, fast and white, and whites out the distance, as the wind rises from about 7 m/s to 20 (snowfall.ts).
+   */
   snow?: number;
   /** How warm the light is, 0..1 (a heat wave). */
   heat?: number;
