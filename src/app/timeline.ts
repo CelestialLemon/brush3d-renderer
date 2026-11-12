@@ -14,6 +14,9 @@ import { soakStep } from './ground';
 // hurricane. They send how stormy the sky looks (storm), the gold breaking under the deck as the storm comes and goes
 // (sunUnder), and how often lightning strikes and flickers in the distance, which the demo calls as the game would
 // (renderer.strike and renderer.flicker, #12).
+// Two snowy spells (#14): a snowfall coming in, falling and clearing, and a blizzard rolling in on a gale and blowing
+// itself out. They send how hard it snows, the wind, and how deep the snow lies (the game's ground map: it builds up
+// while it snows, as the game's rule would; the demo scripts it).
 // Every spell wets the land as it rains and dries it after, faster in sun (#11): the game's rule, which the demo's
 // timelineWet stands in for. A thunderstorm and a hurricane leave the stream muddy, clearing slowly after (#11, the
 // water's mud, #18).
@@ -36,6 +39,8 @@ interface Key {
   rise?: number; flow?: number; mud?: number;
   /** How stormy the sky looks, the low sun under the deck (sunUnder), and strikes and distant flickers a minute. */
   storm?: number; sun?: number; bolts?: number; far?: number;
+  /** How hard it snows (0..1), and how deep the snow lies on the land (0..1, the game's ground map, #14). */
+  snow?: number; lying?: number;
 }
 /** A spell's keys, its haze's colour and kind, and what it's doing at an hour. */
 interface Spell { keys: Key[]; haze?: { color: number; kind: HazeKind }; phase: (hour: number) => string }
@@ -166,6 +171,38 @@ export const SPELLS = {
     ],
     phase: (h) => (h < 2 ? 'the wind getting up' : h < 3.5 ? 'the hurricane coming in' : h < 11 ? 'a hurricane' : 'passing'),
   },
+  snowfall: {
+    keys: [
+      // A grey winter morning, an old snow lying thin...
+      { hour: 0, cloud: 0.5, rain: 0, wind: 3, snow: 0, lying: 0.15 },
+      { hour: 1, cloud: 0.8, rain: 0, wind: 4, snow: 0, lying: 0.15 },
+      // ...snow coming in, light at first, then steady, settling deeper...
+      { hour: 2, cloud: 0.95, rain: 0, wind: 4, snow: 0.25, lying: 0.17 },
+      { hour: 3.5, cloud: 1, rain: 0, wind: 5, snow: 0.6, lying: 0.3 },
+      { hour: 6, cloud: 1, rain: 0, wind: 4, snow: 0.7, lying: 0.55 },
+      // ...easing off, and the sky clearing over a fresh snow.
+      { hour: 7.5, cloud: 0.9, rain: 0, wind: 3, snow: 0.15, lying: 0.6 },
+      { hour: 8.5, cloud: 0.6, rain: 0, wind: 3, snow: 0, lying: 0.6 },
+      { hour: 10, cloud: 0.3, rain: 0, wind: 3, snow: 0, lying: 0.6 },
+    ],
+    phase: (h) => (h < 2 ? 'grey' : h < 3.5 ? 'snow coming in' : h < 7.5 ? 'snowing' : h < 8.5 ? 'easing off' : 'clearing'),
+  },
+  blizzard: {
+    keys: [
+      // A raw day, the wind getting up...
+      { hour: 0, cloud: 0.7, rain: 0, wind: 7, snow: 0, lying: 0.3 },
+      { hour: 1.5, cloud: 1, rain: 0, wind: 11, snow: 0.3, lying: 0.32 },
+      // ...the blizzard rolling in: thick, fast, sideways, whiting out the distance...
+      { hour: 3, cloud: 1, rain: 0, wind: 19, snow: 0.85, lying: 0.42 },
+      { hour: 4, cloud: 1, rain: 0, wind: 24, snow: 1, lying: 0.5 },
+      { hour: 6.5, cloud: 1, rain: 0, wind: 23, snow: 1, lying: 0.75 },
+      // ...and blowing itself out, the wind still lifting the snow off the land for a while after.
+      { hour: 8, cloud: 1, rain: 0, wind: 16, snow: 0.45, lying: 0.82 },
+      { hour: 9.5, cloud: 0.85, rain: 0, wind: 12, snow: 0.05, lying: 0.85 },
+      { hour: 11, cloud: 0.6, rain: 0, wind: 7, snow: 0, lying: 0.85 },
+    ],
+    phase: (h) => (h < 1.5 ? 'the wind getting up' : h < 4 ? 'the blizzard coming in' : h < 8 ? 'a blizzard' : h < 9.5 ? 'blowing itself out' : 'drifting'),
+  },
 } satisfies Record<string, Spell>;
 export type SpellName = keyof typeof SPELLS;
 
@@ -198,6 +235,7 @@ export function timelineAt(seconds: number, speed = 1, spell: SpellName = 'showe
   const first: Key = SPELLS[spell].keys[0];
   return {
     cloud: at((k) => k.cloud), rain: rain >= RAIN_FROM ? rain : 0, heat: at((k) => k.heat ?? 0), storm: at((k) => k.storm ?? 0),
+    snow: at((k) => k.snow ?? 0),
     // The low sun under the deck, if the spell sends it: else it's the demo's.
     ...(first.sun !== undefined ? { sunUnder: at((k) => k.sun ?? 0) } : {}),
     haze: haze > 0 ? { amount: haze, color: kind?.color ?? FOG, top: at((k) => k.top ?? 0), kind: kind?.kind ?? 'fog' } : null,
@@ -236,6 +274,12 @@ function soak(spell: SpellName, wet: number, end: number) {
     wet = soakStep(wet, rain >= RAIN_FROM ? rain : 0, valueAtHour(spell, mid, (k) => k.cloud), Math.min(STEP, end - h));
   }
   return wet;
+}
+
+/** How deep the snow lies at a time (#14, the game's ground map, 0..1), or null if the spell leaves the ground's snow alone. */
+export function timelineLying(seconds: number, speed = 1, spell: SpellName = 'shower'): number | null {
+  if ((SPELLS[spell].keys as Key[])[0].lying === undefined) return null;
+  return valueAt(spell, seconds, speed, (k) => k.lying ?? 0);
 }
 
 /** How often lightning strikes and flickers in the distance at a time (a minute, of real time), or null if never. */

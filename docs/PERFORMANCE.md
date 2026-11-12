@@ -271,6 +271,38 @@ before it, fog, dust and the heat wave (0.2, 0.3 and 0.05 ms here), read 3.0 to 
 `no rain` read slower than the storm with the rain. So most of the 4.7 is the machine slowing, not the snow; its own
 share there is still to read. Still to read on the laptop: the `snow lying` line against `1080p storm`.
 
+### Falling snow and the blizzard (#14)
+
+The budget's 1.5 ms line, shared with the rain (they don't fall together: sleet is both, light). One instanced draw in
+the main view, see-through paint as the rain's, and two functions in the post pass: the blizzard's whiteout
+(`snowVeil`) and the wisps blowing over lying snow (`snowDrifting`). Not in the shadow, reflection, under-water or
+silhouette passes. A flake belongs to an 8 m cell of the air the wind carries, and the cells over the view are drawn
+(the air above the land in view reaches well past the screen's edges, so most are dropped first thing, before anything
+is looked up). Each traces the path it has come down through the roof and crown maps for where a roof stopped it: up to
+24 reads of each in a blizzard's long slant, one straight down.
+
+RX 570, 1080p, snow lying 0.6 everywhere, against the same frame without the falling snow (the main view and the post
+pass, medians of 90 frames; `1080p blizzard` and `1080p heavy snow, calm` in `node tools/profile.ts` and `?profile`):
+
+| | the farm | the meadow |
+|---|---:|---:|
+| A blizzard: snow 1 in a storm wind, its flakes, streaks, whiteout and wisps | +0.84 | +0.79 |
+| Heavy snow (1) in still air | +0.38 | +0.23 |
+
+About 0.16 of the blizzard's is the post pass (the whiteout's sheets and the wisps), the rest the flakes. Keeping the
+wisps off sheltered ground (found in review: one read of the hollows map) added 0.04 after this table was measured. The flakes'
+cost is nearly all in the vertex shader, not in painting them (drawn a pixel across they cost the same): the roof trace
+was 0.9 ms of a first version's 1.45, tracing the whole path with up to 40 reads, and a blizzard's flakes thickened to
+2.5 times. Tracing only the path already fallen, at most 24 reads, and thickening to 1.75 times (the whiteout does the
+rest of the thickening) took it to 0.84. If it needs to come down further, the next step is a small pass working out each
+flake once (where it is, whether a roof stopped it) into a texture the quads read: each flake's work is now done four
+times, once for each corner of its quad.
+
+Crawl (`AB=2 tools/motion.ts`, winter, snow lying 0.6, `falling=0`, both scenes): the same as main to the third
+decimal, with each of the roof-shade candidates (A, as it was, was picked). Pops in a gale (`tools/pops.ts`): the same as main, none at the short step.
+Still to read on the laptop: `?profile` on the PR's preview, the `1080p blizzard` and `1080p heavy snow, calm` lines
+against `1080p storm, snow lying`.
+
 ### Wet ground (#11)
 
 In the materials, from the ground's map, as the snow: each reads how wet and muddy it is where it is, less what shelters

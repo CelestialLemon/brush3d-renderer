@@ -111,3 +111,31 @@ renderer.setGround(null, ease);  // bare everywhere, eased out as any map is (at
 demo's `Lying` slider or `?lying=0..1`; the land wetting in rain and drying after, hollows last and rises first, from the
 `Wet` slider, `?wet=0..1` or the timeline's showers and storms; and the tracks and the yard (the scene's bare ground)
 muddy as they wet.
+
+## Falling snow and the blizzard (#14, part 2)
+
+Not the ground's state: the snow in the air, from the weather's `snow` (0..1) and the wind (`setWind`). Here because it's
+#14's, beside the snow it lays (which is the game's map alone: the falling snow adds nothing to it).
+
+In plain words:
+
+- **Soft, slow flakes drifting on the wind**, each swaying on its own beat, the gusts hurrying them on and holding them
+  back as they pass (#36's wind map). In a breeze they drift at part of the wind's speed, so a light snow still falls.
+- **None under a roof**, and fewer under a tree: each flake stops where its slanted path down meets a roof or (some of the
+  time) a crown, as the rain's drops do (#10's shelter map). It fades where it lands: no puff, no rings on the water.
+- **Painted a little brighter than the lying snow's lit band**, so it reads as white flecks over a white land as well as
+  over the dark. Close up, a flake shows its form: its lower side in the snow's blue shade.
+- **A blizzard is heavy snow in a strong wind**, not a value of its own (the developer's call, 2026-11-12): from about
+  7 m/s to 20 the flakes turn sideways, fall faster, thicken and streak; the distance whites out (the middle of the view
+  at most about 30%, the far land up to 85%) in sheets that sweep with the gusts, and the ink lines fade halfway into it.
+- **Snow blows along the ground** in a gale, low white wisps over the lying snow only (the dust's streaks, #9).
+
+How it's drawn (`src/renderer/snowfall.ts`): one instanced draw in the main view, see-through paint as the rain's (no
+depth, no ink lines round it), and two functions in the post pass (`snowVeil` for the whiteout, `snowDrifting` for the
+wisps). A flake belongs to a cell of the air (8 m) that the wind carries along, not to the spot it lands on as a raindrop
+does: a blizzard's flakes travel far further sideways than they fall. The cells over the view are drawn; panning or
+zooming moves no flake. The stops share the rain's tracing (`coverAlong`, `FALLING_GLSL` in rain.ts), up to 24 reads of
+each map (and a few to refine the stop), only down the part of the path a flake has already fallen. `falling=0` leaves it all out, the whiteout and wisps too; `fallingShare` thins it.
+
+The demo: the `Snow` slider, the `blizzard` preset (with a gale), and the `snowfall` and `blizzard` spells on the
+timeline, which lay the snow as they go (`timelineLying`).
