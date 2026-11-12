@@ -38,7 +38,6 @@ import { WindView } from './windView';
 //     hurricane, #12; a snowfall settling, or a blizzard rolling in on a gale, #14: best in winter)
 //   water=usual|spate|flood (the water, #18), then each value over it: rise (m over the usual), flow (times the usual
 //     speed), mud (0..1), ice (how frozen, 0..1, the game's: 0.3 ice along the banks, 1 frozen over; #14)
-//   iceLook=a|b|c (the ice's look, candidates for #14: a black, b milky, c both: milky at the banks, dark in the channel)
 //   lying (how deep the snow lies over the land, 0..1, the game's: 0.2 a dusting, 0.5 the grass covered, 1 deep; #14;
 //     0.4 by default where it snows)
 //   frost (how much frost, 0..1, the game's: 1 a hard frost everywhere in the open; where it lies and how the morning's
@@ -299,10 +298,6 @@ let lastTime = 0;
 send(weather, true, 0);
 renderer.settings.falling = num('falling', 1) !== 0;
 renderer.settings.fallingShare = num('fallingShare', 1);
-// The ice's look (#14): the candidates.
-const ICE_LOOKS = ['a', 'b', 'c'] as const;
-let iceLook = ICE_LOOKS.find((s) => s === params.get('iceLook')) ?? 'a';
-renderer.iceLook = ICE_LOOKS.indexOf(iceLook);
 /** Sets a look option in the URL as it stands, so a reload or a shared link keeps it. */
 function urlOption(key: string, value: string) {
   params.set(key, value);
@@ -497,18 +492,8 @@ function hud() {
     (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)} m`, true));
   hudEl.append(slider('flow', 0, 5, 0.05, () => water.flow, waterSet((v) => { water.flow = v; }), (v) => `${v.toFixed(2)}×`, true));
   hudEl.append(slider('mud', 0, 1, 0.01, () => water.mud, waterSet((v) => { water.mud = v; }), share, true));
-  // The ice (#14), what the game would send (the freeze-thaw spell moves it too), and its look's candidates.
+  // The ice (#14), what the game would send (the freeze-thaw spell moves it too).
   hudEl.append(slider('ice', 0, 1, 0.01, () => water.ice, waterSet((v) => { water.ice = v; }), share, true));
-  const iceButton = Object.assign(document.createElement('button'), { textContent: `ice look ${iceLook.toUpperCase()}` });
-  iceButton.title = 'The ice\'s look, candidates for #14: A black (clear and dark, a calm mirror), B milky (pale and streaked), C both (milky at the banks, dark over the deep channel) (iceLook=a|b|c)';
-  iceButton.onclick = () => {
-    iceLook = ICE_LOOKS[(ICE_LOOKS.indexOf(iceLook) + 1) % ICE_LOOKS.length];
-    renderer.iceLook = ICE_LOOKS.indexOf(iceLook);
-    urlOption('iceLook', iceLook);
-    iceButton.textContent = `ice look ${iceLook.toUpperCase()}`;
-    hud();
-  };
-  hudEl.append(iceButton);
 
   // The ground (#14): the snow lying, what the game would send.
   hudEl.append(slider('Lying', 0, 1, 0.01, () => ground.snow, (v) => { ground.snow = v; sendGround({ ...ground }); }, share, true));

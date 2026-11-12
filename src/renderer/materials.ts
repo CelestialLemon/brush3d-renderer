@@ -60,7 +60,6 @@ export function createSharedUniforms() {
     tIceA: { value: null as THREE.Texture | null },
     tIceB: { value: null as THREE.Texture | null },
     uIceOn: { value: 0 },
-    uIceLook: { value: 0 },
     // The land's square (the ground's, see MeshOptions.fields): its centre's x and z, half its side, its turn. The water
     // stops at its edge (half 0: no edge).
     uLandSquare: { value: new THREE.Vector4(0, 0, 0, 0) },
@@ -868,10 +867,10 @@ varying vec2 vMirrorShift;
 ${WATER_SHEET_GLSL}
 ${RAIN_RINGS_GLSL}
 // The ice (#14): how frozen the water is here and whether it's thawing (the game's map, per cell, see WaterField), and
-// how it's painted (the candidates: 0 black, 1 milky, 2 both: dark in the channel, milky at the banks).
+// how it's painted: milky along the banks, dark over the deep channel (the developer's pick of three candidates on #14;
+// the others were black all over, and milky all over).
 varying vec3 vIce;
 uniform float uIceOn;
-uniform float uIceLook;
 // A cracked sheet's cells (and the floes it breaks into): how far inside its cell a point is (the gap to the next
 // cell's centre, 0 on an edge), and the cell's id.
 vec3 iceCells(vec2 q) {
@@ -1098,9 +1097,9 @@ void main() {
         vec3 mirror0 = sky * (1.0 - r0.a) + r0.rgb;
         vec3 black = bed * through * 0.35 + scatter * (1.0 - through) * 0.5;
         black = mix(black, mirror0, 0.32) + (clouded - sky) * (1.0 - solid) * 0.25;
-        // Milky ice: pale blue-white, lit as the snow is, streaked along the flow by how it froze.
-        float m = uIceLook < 0.5 ? 0.0 : uIceLook < 1.5 ? 1.0 : 1.0 - smoothstep(0.8, 2.2, shore + breakup * 0.5);
-        // A floe's broken ice is paler, in any look.
+        // Milky ice by the banks: pale blue-white, lit as the snow is, streaked along the flow by how it froze.
+        float m = 1.0 - smoothstep(0.8, 2.2, shore + breakup * 0.5);
+        // A floe's broken ice is paler.
         m = max(m * age, floes * 0.55);
         vec3 iceCol = black;
         if (m > 0.0) {

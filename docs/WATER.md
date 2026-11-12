@@ -93,9 +93,9 @@ cover only the cells within one of water (into one buffer per grid, with room fo
   been frozen (how far past) turns a new dark skin to the look. Thawing, dark lanes along the flow cut it, and the open
   middle fills with floes: a cracked pattern carried by the flow as the ripples are (two copies crossfaded), shrinking
   as the ice goes. Under the ice there are no ripples, glints, whitecaps or rain's rings; it mirrors the sky and the
-  banks whole. Lying snow (the ground's map) dusts it in drifts along the wind. The looks (the developer's pick, to come):
-  A black (dark, the bed faint through it, a calm mirror, pale cracks), B milky (pale, lit as snow is, streaked along
-  the flow), C both (milky by the banks, dark over the channel).
+  banks whole. Lying snow (the ground's map) dusts it in drifts along the wind. Its look (the developer's pick of three
+  on #14): milky by the banks (pale, lit as snow is, streaked along the flow), dark over the channel (the bed faint
+  through it, a calm mirror, pale cracks).
 
 ## The demo
 
@@ -106,7 +106,7 @@ rise and reaches every cell lower than that which it can get to over lower groun
 channel it runs at a quarter of the stream's speed.
 
 - `?water=usual|spate|flood`, then `rise` (m over the usual), `flow` (times the usual speed), `mud` and `ice` over it.
-- The Water, flow, mud and ice sliders, and the ice look button (`?iceLook=a|b|c`, #14).
+- The Water, flow, mud and ice sliders (`?ice=`, #14).
 - `?timeline&spell=flood`: a storm swells the stream, which runs fast and brown, spills over the floodplain, and drains
   under clearing skies (17 game hours, about a minute at 3x).
 - `?timeline&spell=freeze-thaw&season=winter` (#14): the stream freezes over from its banks, holds, and thaws (8 game

@@ -330,24 +330,26 @@ Still to read on the laptop: the `1080p storm, frost` line against `1080p storm`
 In the water's shader only, and only while some of the water is frozen (`WaterField.iced`): per pixel of water, two
 noise lookups to break the ice's edge, its paint where there's ice (a calm mirror of the reflection already drawn, a
 cracked pattern where the cells are bigger than a few pixels), and while it thaws, the leads (one noise lookup) and in
-the open water the floes (two cracked patterns, crossfaded). The milky looks add two noise lookups, lying snow two
-more. No pass of its own; the water's other passes draw as before.
+the open water the floes (two cracked patterns, crossfaded). The milky ice by the banks adds two noise lookups, lying
+snow two more. No pass of its own; the water's other passes draw as before.
 
 RX 570, 1080p in a storm, snow lying 0.3, against the same frame with open water, two runs each (`1080p storm, stream
 thawing` in `node tools/profile.ts` and `?profile`, which sends the stream at 0.5 and falling, at the demo's camera):
 
 | | the farm, its stream across the screen (`x=-14&z=20&zoom=40`) | the meadow |
 |---|---:|---:|
-| **Thawing**, ice 0.5 (leads and floes) | +0.17 ms | +0.09 ms |
-| **Frozen over**, ice 1 | +0.15 ms | +0.12 ms |
+| **Thawing**, ice 0.5 (leads and floes) | +0.21 ms | +0.13 ms |
+| **Frozen over**, ice 1 | +0.18 ms | +0.13 ms |
+
+Timed with the picked look (milky by the banks, dark over the channel); the black-only candidate cost 0.03 to 0.04 less.
 
 It shares the materials' line with the frost and the snow (ice comes with them; wet ground and rain don't), so it
-comes from the spare too: 0.40 → about 0.25 with the stream across the screen. (A first version, painting every look
+comes from the spare too: 0.40 → about 0.20 with the stream across the screen. (A first version, painting every look
 and pattern everywhere on the water, cost +0.27; guarding each part to where it shows took it to this.)
 
 Crawl (`AB=2 tools/motion.ts`, a 1 px pan, winter at 11:00, `falling=0`, the farm's stream): the water's share of it
-0.135 open, 0.17 to 0.19 with the black ice (look A, ice 0.3 and 1), 0.03 milky (B), 0.06 both (C, ice 0.6); the meadow
-0.067 open, 0.072 frozen. Black ice mirrors the banks and trees whole, with no ripples to break up the reflection's
+0.135 open, 0.06 with the picked look (ice 0.6); of the other candidates, 0.17 to 0.19 black all over (ice 0.3 and 1),
+0.03 milky all over. The meadow 0.067 open, 0.072 frozen. Black ice mirrors the banks and trees whole, with no ripples to break up the reflection's
 half-size texels, so a little more of that resampling shows; its mirror is blurred a little wider than open water's to
 keep it down. Pops in a gale (`tools/pops.ts`): none new (2 at the short step, as with open water and without water).
 Still to read on the laptop: the `1080p storm, stream thawing` line against `1080p storm` (on the meadow, `?scene=meadow`,

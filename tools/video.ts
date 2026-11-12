@@ -153,7 +153,7 @@ const MOVES: Record<string, Move> = {
   'frost-dawn': { seconds: 22, at: () => ({ x: 10, z: 12, zoom: 52, view: 0 }), timeline: (t) => 10 + t, spell: 'late-frost', ease: true, extra: true },
   'cold-snap': { seconds: 40, at: () => ({ x: 4, z: 10, zoom: 36, view: 0 }), timeline: (t) => t, spell: 'cold-snap', ease: true, extra: true },
   // The farm's stream freezing over and thawing (#14), the demo's scripted freeze-thaw at 3x, close on its bend
-  // (QUERY="season=winter", and iceLook=a|b|c for each look).
+  // (QUERY="season=winter").
   'river-freeze': { seconds: 80 / 3, at: () => ({ x: -14, z: 20, zoom: 56, view: 0 }), timeline: (t) => t, spell: 'freeze-thaw', ease: true, extra: true },
   // Snow falling steadily, the camera still and close on the shed: the flakes' look (QUERY="season=winter&weather=snow").
   'snow-close': { seconds: 8, at: () => ({ x: 10, z: 12, zoom: 64, view: 0 }), extra: true },
