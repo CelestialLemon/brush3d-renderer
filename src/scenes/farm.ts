@@ -8,7 +8,7 @@ import barnModel from './models/barn.glb?url';
 import coopModel from './models/coop.glb?url';
 import wellModel from './models/well.glb?url';
 import glasshouseModel from './models/glasshouse.glb?url';
-import windmillModel from './models/windmill.glb?url';
+import wheatmillModel from './models/wheatmill.glb?url';
 import haywagonModel from './models/haywagon.glb?url';
 import rowboatModel from './models/rowboat.glb?url';
 import scarecrowModel from './models/scarecrow.glb?url';
@@ -157,7 +157,8 @@ const BUILDINGS: Building[] = [
   { url: coopModel, u: 73.5, v: 8, facing: -Math.PI / 2, hx: 1.6, hz: 1.4, height: 1.9, pad: true },
   { url: wellModel, u: 61, v: 7.5, facing: 0.3, hx: 0.9, hz: 0.9, height: 2.3, pad: true },
   { url: glasshouseModel, u: 71, v: -4.5, facing: 0, hx: 3.9, hz: 2.2, height: 3.3, pad: true },
-  { url: windmillModel, u: -40, v: 54, facing: 0, hx: 2.8, hz: 2.8, height: 15.4, pad: true },
+  // Includes the milling house, loading deck and sack hoist; sails overhang this ground footprint.
+  { url: wheatmillModel, u: -40, v: 54, facing: 0, hx: 6.1, hz: 3.6, height: 14.4, pad: true },
   { url: haywagonModel, u: 49, v: 16.5, facing: Math.PI / 2 + 0.25, hx: 2.2, hz: 1.2, height: 2.4 },
   { url: scarecrowModel, u: -41, v: -54, facing: 0.4, hx: 0.4, hz: 0.4, height: 2 },
 ];

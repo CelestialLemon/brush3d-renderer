@@ -56,6 +56,10 @@ solar panels' power); the looks ease over about a second and a half, hiding the 
 The renderer is only the presentation layer: the game owns the state and the logic of the wind, the water and the weather, and
 anything they cause, and the renderer draws what it's given. Weather is an epic, #3.
 
+The farm includes a detailed Blender-built wheat mill. Use the **Wheat mill** button or
+`?focus=mill` to visit it. See [the asset notes](docs/WHEAT_MILL.md) for its editable Blender
+source, export command and visual checks.
+
 ## How it draws
 
 - **One G-buffer pass** at the screen's resolution, 4× MSAA: colour, plus view normal, view depth and an ink flag. Its
