@@ -24,7 +24,8 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   8. #11 rain and wet ground (done 2026-11-12: the falling rain #53, wet ground #60: see Weather);
   9. #12 storms and lightning (done 2026-11-11, #55 and #57: see Weather);
   10. #13 seasons (parts 1 and 2, the hour following the game's sun and the season's look for the rest, merged 2026-11-07 as #51 and #52; part 3, the trees' look, in #54);
-  11. #14 snow, frost and ice (the lying snow done 2026-11-11, #58: see Weather; falling snow, frost and river ice are open);
+  11. #14 snow, frost and ice (done 2026-11-13: the lying snow #58, falling snow and the blizzard #61, frost #62, ice on
+      the water #63: see Weather);
   12. #19 the water's own look, chosen under every weather.
 - **The demo on GitHub Pages** (#15, shipped 2026-10-30): https://celestiallemon.github.io/brush3d-renderer/main/, and a preview
   of every open pull request from this repo at `.../pr-<number>/`, removed when it closes.
@@ -189,15 +190,39 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   Open: the dry patch under the solar panels reads as a gold zigzag of dry wheat (physically right; the developer may
   soften it). The contract in `docs/GROUND.md`, costs in `docs/PERFORMANCE.md`.
 
-- **Lying snow (#14, part 1, #58; falling snow, frost and river ice are open).** The game owns the ground's state and
+- **Lying snow (#14, part 1, #58).** The game owns the ground's state and
   sends it as a map in the water's format, `renderer.setGround(...)` (#50's plumbing, without its wet look; wet ground
-  and mud keep two free slots for #11): snow in it now, frost carried but not yet drawn. The renderer lays the snow on
+  and mud keep two free slots for #11): the snow and the frost (drawn since #62, below). The renderer lays the snow on
   what faces up, none under a roof (the shelter map) and less under a crown; a thin snow lies in patches along the
   land's own hollows (found once, `HollowMap`), the grass and crops poking through it and buried as it deepens. Its paint
   is the developer's pick of three ('A'): white in the sun, a clear blue shade following the hour's (violet at dusk,
-  lavender at night), a pale cool tint under an overcast sky, never grey. Follow-up to try: a large flat roof face in
-  shade reads as a flat, slightly strong blue; less colour there. The contract in `docs/GROUND.md`, costs in
-  `docs/PERFORMANCE.md`.
+  lavender at night), a pale cool tint under an overcast sky, never grey. A large flat roof face in shade reads as a
+  flat, slightly strong blue; tried quieter and brushed versions in #61, and the developer kept it as it is. The contract
+  in `docs/GROUND.md`, costs in `docs/PERFORMANCE.md`.
+
+- **Falling snow and the blizzard (#14, #61).** No new contract: `setWeather`'s `snow`, and a blizzard is heavy snow in
+  a strong wind (building from about 7 m/s, full by 20). Flakes are soft painted dabs (the developer's pick of three),
+  each carried by an 8 m cell of air so panning or zooming moves none; they stop on roofs (none under the porch or the
+  panels) and fade as they land, and the game raises the lying snow. A blizzard's whiteout keeps the middle of the
+  screen readable (at most about 30% white) and lets the distance go white (up to 85%), in sheets that sweep with the
+  gusts; low wisps blow off the lying snow in a gale. Within the rain's budget line (+0.84 ms in a blizzard on the
+  RX 570). In `docs/GROUND.md` and `docs/PERFORMANCE.md`. Still to read on the laptop: the `1080p blizzard` and
+  `1080p heavy snow, calm` profile lines.
+
+- **Frost (#14, #62).** The ground map's `frost` is drawn: a matte rime (the developer's pick of three) the land's
+  colours read through, on the ground, grass and crop tips, built tops, branches and crowns, the hollows and tips
+  first; none under a roof, and snow covers it. The renderer melts it by the sun each spot has had since dawn
+  (`SunMemory`, by the game's clock; forgotten at nightfall), so it lingers in the shadows. +0.60 ms on the RX 570,
+  of which 0.29 is the ground map's read it shares with the snow: double its aim, from the spare. To see it alone,
+  no snow and the morning. Fallback if it reads too faint at the usual zoom: a version between matte and crisp. Still
+  to read on the laptop: the `1080p storm, frost` profile line.
+
+- **Ice on the water (#14, #63).** The water's map gains `ice` (0 open, about 0.3 along the banks, 1 frozen over); the
+  renderer tells freezing from thawing by which way it moves. It freezes from the banks and the slow water inward and
+  thaws with dark leads and drifting floes, the bank ice last. The look is the developer's pick of three: milky along
+  the banks, dark over the channel, a pale rim at its edge, lying snow dusting it. +0.21 ms with the stream across the
+  screen. In `docs/WATER.md` and `docs/PERFORMANCE.md`. Still to read on the laptop: `1080p storm, stream thawing` on
+  the meadow.
 
 - **Lightning (#12, #55).** The game says where and when: `renderer.strike({ x, z })` and
   `renderer.flicker()` (distant lightning, the developer's call: the game calls each one, #12). The renderer draws a bolt, a
