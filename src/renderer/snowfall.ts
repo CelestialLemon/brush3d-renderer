@@ -22,16 +22,14 @@ import { WIND_GLSL } from './wind';
 // roof (coverAlong, the rain's), and it fades there: no puff, no rings on the water (the developer's call, #14). What lies
 // on the land is the game's map alone (snow.ts).
 
-/** How the falling snow looks: the candidates for the developer to pick between (#14). */
-export interface SnowLook {
+/** How the falling snow looks (#14). */
+interface SnowLook {
   /** Flakes a square metre at the heaviest snow, at the reference zoom (REFERENCE_ZOOM). */
   density: number;
   /** A flake: its size across (screen px at the reference zoom), how soft its edge is (0 crisp .. 1), how opaque. */
   flake: [size: number, soft: number, opacity: number];
   /** How long a flake's smear is: the seconds of its motion it's drawn over (a short streak, longer as it goes faster). */
   smear: number;
-  /** How far its width flickers as it turns over, edge on and face on: 0 not at all .. 1 to a sliver. */
-  tumble: number;
   /** How much of its lower side takes the snow's blue shade, a flake big enough to show its form (close up): 0 none .. 1. */
   rim: number;
   /** How far it sways (m) and how often (a second). */
@@ -40,13 +38,9 @@ export interface SnowLook {
   speed: [light: number, heavy: number];
 }
 
-/** The candidates (#14): A soft painted dabs, B small crisp flecks (as the rain's look B), C tumbling flakes with a short smear. */
-export const SNOW_LOOKS = {
-  a: { density: 1.5, flake: [6.0, 0.7, 0.9], smear: 0.03, tumble: 0, rim: 0.9, sway: [0.4, 0.3], speed: [0.9, 1.3] },
-  b: { density: 2.4, flake: [2.8, 0.1, 0.95], smear: 0.02, tumble: 0, rim: 0.6, sway: [0.25, 0.45], speed: [1.0, 1.5] },
-  c: { density: 1.8, flake: [4.6, 0.35, 0.9], smear: 0.045, tumble: 0.75, rim: 0.8, sway: [0.35, 0.55], speed: [1.0, 1.4] },
-} as const satisfies Record<string, SnowLook>;
-export type SnowLookName = keyof typeof SNOW_LOOKS;
+/** Soft painted dabs: the developer's pick of three candidates on #14 (the others were small crisp flecks, and tumbling
+ * flakes that turned edge-on and back). */
+const SNOW_LOOK: SnowLook = { density: 1.5, flake: [6.0, 0.7, 0.9], smear: 0.03, rim: 0.9, sway: [0.4, 0.3], speed: [0.9, 1.3] };
 
 /** How far a flake drifts sideways at most (horizontal metres a metre of fall): a blizzard's, near flat. */
 const MAX_SLANT = 4;
@@ -99,7 +93,7 @@ uniform vec4 uSnowCells;  // the air's cells drawn: x, y the first, z how many a
 uniform vec4 uSnow;       // x the flakes a cell shown (by rank), y how far the snow has fallen (m), z a flake's cycle (m), w how fast it falls (m/s)
 uniform vec4 uSnowAir;    // x, y how far the air has carried the flakes (m, wrapped), z, w how far a flake drifts a metre of fall
 uniform vec4 uSnowFlake;  // its size (px), softness, opacity, smear (s)
-uniform vec4 uSnowMove;   // its sway (m), how often (a second), its tumble, its rim
+uniform vec4 uSnowMove;   // its sway (m), how often (a second), its rim
 uniform vec2 uSnowWind;   // the wind as a whole (m/s): a gust surges a flake on by as much more as it blows there
 uniform float uSnowSmearMost; // the longest a smear is drawn (px)
 uniform float uSnowGround; // the land's height at the view's target (m): the land in view is within LAND_BELOW and LAND_ABOVE of it
@@ -189,13 +183,12 @@ void main() {
   vec2 d = sb - sa;
   float len = length(d);
   vec2 dir = len > 1e-3 ? d / len : vec2(0.0, -1.0), across = vec2(-dir.y, dir.x);
-  // Each a little bigger or smaller than the next; turning over, it narrows to its edge and back.
+  // Each a little bigger or smaller than the next.
   float r = 0.5 * uSnowFlake.x * (0.7 + 0.6 * fract(rnd.w * 11.3));
   // A fast flake (a blizzard's, close up) stretches only so far: a long dash reads as rain.
   len = min(len, uSnowSmearMost);
   sa = sb - dir * len;
-  float turn = abs(sin(uTime * (1.5 + 2.0 * fract(rnd.z * 3.3)) + phase * 2.0));
-  float ra = r * mix(1.0, 0.25 + 0.75 * turn, uSnowMove.z), rb = r;
+  float ra = r, rb = r;
   float pad = max(ra, rb) + 1.0;
   float t = aCorner.y;
   vec2 sp = mix(sa, sb, t) + dir * (t * 2.0 - 1.0) * pad + across * aCorner.x * pad;
@@ -243,7 +236,7 @@ void main() {
   // Its lower side on the screen in the snow's shade.
   vec2 off = vAxes.zw * q.x + vAxes.xy * q.y;
   // Only a flake big enough to show its form, and only its round end, not a streak's length.
-  float rim = smoothstep(-0.45, 0.55, -off.y / max(ra, rb)) * uSnowMove.w * smoothstep(2.0, 5.0, max(ra, rb))
+  float rim = smoothstep(-0.45, 0.55, -off.y / max(ra, rb)) * uSnowMove.z * smoothstep(2.0, 5.0, max(ra, rb))
     * (2.0 * rb) / (len + 2.0 * rb);
   vec3 c = mix(vColor.rgb, vShade, rim);
   gColor = vec4(c * a, a);
@@ -332,8 +325,6 @@ export class Snowfall {
     uSnowVeilColor: { value: new THREE.Color() },
   };
   readonly mesh: THREE.Mesh;
-  /** The look, of the candidates (#14). */
-  look: SnowLook = SNOW_LOOKS.a;
   /** How far the snow has fallen (m), and the air carried it (m, x and z), from which each flake's place is worked out. */
   private fallen = 0;
   private air = new THREE.Vector2();
@@ -371,7 +362,7 @@ export class Snowfall {
    */
   update(time: number, snow: number, zoom: number, px: number, share: number, shown: boolean, lying: boolean,
     wind: THREE.Vector2, camera: THREE.OrthographicCamera, groundY: number) {
-    const L = this.look, s = shown ? THREE.MathUtils.clamp(snow, 0, 1) : 0;
+    const L = SNOW_LOOK, s = shown ? THREE.MathUtils.clamp(snow, 0, 1) : 0;
     const windSpeed = wind.length(), blizzard = blizzardOf(s, windSpeed);
     const speed = THREE.MathUtils.lerp(L.speed[0], L.speed[1], s) + WIND_FALL * windSpeed * blizzard;
     // How far a flake drifts a metre of fall: as far as the wind carries it while it falls, at most MAX_SLANT. Soft snow
@@ -405,7 +396,7 @@ export class Snowfall {
     u.uSnow.value.set(perCell, this.fallen % (cycle * 4096), cycle, speed);
     u.uSnowAir.value.set(this.air.x, this.air.y, sx, sz);
     u.uSnowFlake.value.set(L.flake[0] * Math.sqrt(zoom / REFERENCE_ZOOM) * px, L.flake[1], L.flake[2], L.smear * (1 + WIND_SMEAR * blizzard));
-    u.uSnowMove.value.set(L.sway[0], L.sway[1], L.tumble, L.rim);
+    u.uSnowMove.value.set(L.sway[0], L.sway[1], L.rim, 0);
     u.uSnowWind.value.copy(wind);
     u.uSnowGround.value = groundY;
     u.uSnowSmearMost.value = SMEAR_MOST * px;

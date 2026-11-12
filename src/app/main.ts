@@ -2,7 +2,6 @@ import { hoursOf, type HourName } from '../renderer/look';
 import { CHARACTERS, clockHour, SEASONS, type Character, type Season } from '../renderer/season';
 import { BrushRenderer, type DrawnKind } from '../renderer/renderer';
 import { lightningHud, setupLightning, stormLightning } from './lightning';
-import { SNOW_LOOKS, type SnowLookName } from '../renderer/snowfall';
 import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
@@ -43,14 +42,11 @@ import { WindView } from './windView';
 //   lying (how deep the snow lies over the land, 0..1, the game's: 0.2 a dusting, 0.5 the grass covered, 1 deep; #14;
 //     0.4 by default where it snows)
 //   frost (how much frost, 0..1, the game's: 1 a hard frost everywhere in the open; where it lies and how the morning's
-//     sun has taken it is the renderer's; #14)  frostLook=a|b|c (the frost's look, candidates for #14: a matte, b crisp
-//     with a deeper blue shade, c glittering; a by default)
+//     sun has taken it is the renderer's; #14)
 //   wet (how wet the land is, 0 dry .. 1 soaked, #11; soaked where it rains, by default)
 //   cloudSeed (which cloud field: a whole number)
 //   falling=0 (leave out the things in the air: the wind's leaves, the rain, the snow and its whiteout; dust is in the haze)
 //   fallingShare (the share of the rain's strokes and the snow's flakes drawn: 1 full quality, 0.33 reduced)
-//   snowLook=a|b|c (the falling snow's look, candidates for #14: a soft dabs, b crisp flecks, c tumbling flakes; a by default)
-//   snowShade=a|b|c (a roof's snow in shade, candidates for #14's "tarp": a as it was, b quieter, c brushed; a by default)
 //   The blizzard preset comes with a gale (a blizzard is heavy snow in a strong wind, #14), unless wind is given.
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
 //   prepass=0 (paint without drawing the silhouettes first)  scissor=0 (the water's passes over the whole screen)
@@ -303,17 +299,6 @@ let lastTime = 0;
 send(weather, true, 0);
 renderer.settings.falling = num('falling', 1) !== 0;
 renderer.settings.fallingShare = num('fallingShare', 1);
-// The falling snow's look (#14): the candidates, for the developer to pick between.
-let snowLook: SnowLookName = (params.get('snowLook') ?? '') in SNOW_LOOKS ? params.get('snowLook') as SnowLookName : 'a';
-renderer.snowfall.look = SNOW_LOOKS[snowLook];
-// A roof's snow in shade (#14, the "tarp" from #58): the candidates.
-const SNOW_SHADES = ['a', 'b', 'c'] as const;
-let snowShade = SNOW_SHADES.find((s) => s === params.get('snowShade')) ?? 'a';
-renderer.snowShade = SNOW_SHADES.indexOf(snowShade);
-// The frost's look (#14): the candidates.
-const FROST_LOOKS = ['a', 'b', 'c'] as const;
-let frostLook = FROST_LOOKS.find((s) => s === params.get('frostLook')) ?? 'a';
-renderer.frostLook = FROST_LOOKS.indexOf(frostLook);
 // The ice's look (#14): the candidates.
 const ICE_LOOKS = ['a', 'b', 'c'] as const;
 let iceLook = ICE_LOOKS.find((s) => s === params.get('iceLook')) ?? 'a';
@@ -463,25 +448,6 @@ function hud() {
   hudEl.append(slider('Storm', 0, 1, 0.01, () => weather.storm, weatherSet((v) => { weather.storm = v; }), share, true));
   hudEl.append(slider('Rain', 0, 1, 0.01, () => weather.rain, weatherSet((v) => { weather.rain = v; }), share, true));
   hudEl.append(slider('Snow', 0, 1, 0.01, () => weather.snow, weatherSet((v) => { weather.snow = v; }), share, true));
-  const snowButton = Object.assign(document.createElement('button'), { textContent: `snow look ${snowLook.toUpperCase()}` });
-  snowButton.title = 'The falling snow\'s look, candidates for #14: A soft painted dabs, B small crisp flecks, C tumbling flakes with a short smear (snowLook=a|b|c)';
-  snowButton.onclick = () => {
-    const looks = Object.keys(SNOW_LOOKS) as SnowLookName[];
-    snowLook = looks[(looks.indexOf(snowLook) + 1) % looks.length];
-    renderer.snowfall.look = SNOW_LOOKS[snowLook];
-    urlOption('snowLook', snowLook);
-    hud();
-  };
-  hudEl.append(snowButton);
-  const shadeButton = Object.assign(document.createElement('button'), { textContent: `snow shade ${snowShade.toUpperCase()}` });
-  shadeButton.title = 'A roof\'s snow in shade (a big flat face read as a blue tarp), candidates for #14: A as it was, B quieter (lighter, softer blue), C brushed (broken by strokes) (snowShade=a|b|c)';
-  shadeButton.onclick = () => {
-    snowShade = SNOW_SHADES[(SNOW_SHADES.indexOf(snowShade) + 1) % SNOW_SHADES.length];
-    renderer.snowShade = SNOW_SHADES.indexOf(snowShade);
-    urlOption('snowShade', snowShade);
-    hud();
-  };
-  hudEl.append(shadeButton);
   hudEl.append(slider('Heat', 0, 1, 0.01, () => weather.heat, weatherSet((v) => { weather.heat = v; }), share, true));
   hudEl.append(slider('Haze', 0, 1, 0.01, () => weather.haze.amount, weatherSet((v) => { weather.haze.amount = v; }), share, true));
   hudEl.append(slider('from', -2, 20, 0.25, () => Math.max(-2, weather.haze.base ?? -2), weatherSet((v) => { weather.haze.base = v <= -2 ? undefined : v; }),
@@ -548,15 +514,6 @@ function hud() {
   hudEl.append(slider('Lying', 0, 1, 0.01, () => ground.snow, (v) => { ground.snow = v; sendGround({ ...ground }); }, share, true));
   // The frost (#14), what the game would send (the frosty spells move it too), and its look's candidates.
   hudEl.append(slider('Frost', 0, 1, 0.01, () => ground.frost, (v) => { ground.frost = v; sendGround({ ...ground }); }, share, true));
-  const frostButton = Object.assign(document.createElement('button'), { textContent: `frost look ${frostLook.toUpperCase()}` });
-  frostButton.title = 'The frost\'s look, candidates for #14: A matte rime, B crisp (whiter where whole, a deeper blue shade), C glittering (points of light in the sun) (frostLook=a|b|c)';
-  frostButton.onclick = () => {
-    frostLook = FROST_LOOKS[(FROST_LOOKS.indexOf(frostLook) + 1) % FROST_LOOKS.length];
-    renderer.frostLook = FROST_LOOKS.indexOf(frostLook);
-    urlOption('frostLook', frostLook);
-    hud();
-  };
-  hudEl.append(frostButton);
   // How wet the land is (#11), what the game would send (the timeline wets and dries it too).
   hudEl.append(slider('Wet', 0, 1, 0.01, () => ground.wet, (v) => { ground.wet = v; sendGround({ ...ground }); send(sent); },
     (v) => (v <= 0 ? 'dry' : v < 0.4 ? `drying ${v.toFixed(2)}` : v < 0.85 ? `wet ${v.toFixed(2)}` : `soaked ${v.toFixed(2)}`)));
