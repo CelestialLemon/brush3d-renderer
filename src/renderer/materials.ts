@@ -795,7 +795,7 @@ void main() {
     if (gSnow > 0.0) {
       float uneven = snoise(p.xz * 1.3) * 0.7 + snoise(p.xz * 5.0) * 0.3;
       float cover = snowCover(gSnow, smoothstep(0.4, 0.65, n.y), uneven * 0.25, 0.45);
-      col = mix(col, snowPaintTop(light, 0.02, uneven, p), cover);
+      col = mix(col, snowPaint(light, 0.02, uneven * 0.3), cover);
     }
   }
   writeGBuffer(exposeHere(col), n, vViewDepth, 1.0, 1.0);

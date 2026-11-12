@@ -299,7 +299,7 @@ flake once (where it is, whether a roof stopped it) into a texture the quads rea
 times, once for each corner of its quad.
 
 Crawl (`AB=2 tools/motion.ts`, winter, snow lying 0.6, `falling=0`, both scenes): the same as main to the third
-decimal, with each of the roof-shade candidates. Pops in a gale (`tools/pops.ts`): the same as main, none at the short step.
+decimal, with each of the roof-shade candidates (A, as it was, was picked). Pops in a gale (`tools/pops.ts`): the same as main, none at the short step.
 Still to read on the laptop: `?profile` on the PR's preview, the `1080p blizzard` and `1080p heavy snow, calm` lines
 against `1080p storm, snow lying`.
 
