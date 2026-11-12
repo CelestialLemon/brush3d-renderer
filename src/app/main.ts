@@ -12,7 +12,6 @@ import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } fr
 import { SPEEDS, SPELLS, TICK, timelineAt, timelineLightning, timelinePhase, timelineWater, timelineWet, timelineWind, type SpellName } from './timeline';
 import { DemoWater, USUAL_WATER, type WaterState } from './water';
 import { DemoGround, type GroundState } from './ground';
-import { DEFAULT_WET_LOOKS, WET_LOOKS, type WetLooks } from '../renderer/wet';
 import { WindWorker } from '../wind/client';
 import { TICK as WIND_TICK, type WindGoal, type WindSave } from '../wind/sim';
 import { WindView } from './windView';
@@ -38,8 +37,7 @@ import { WindView } from './windView';
 //   water=usual|spate|flood (the water, #18), then each value over it: rise (m over the usual), flow (times the usual
 //     speed), mud (0..1)
 //   lying (how deep the snow lies over the land, 0..1, the game's: 0.2 a dusting, 0.5 the grass covered, 1 deep; #14)
-//   wet (how wet the land is, 0 dry .. 1 soaked, #11; soaked where it rains, by default), then the looks for wet things
-//     while the developer picks (see WET_LOOKS): damp=a|b (painted things), sheen=a|b|c (inked things), mudLook=a|b
+//   wet (how wet the land is, 0 dry .. 1 soaked, #11; soaked where it rains, by default)
 //   cloudSeed (which cloud field: a whole number)
 //   falling=0 (leave out the things in the air: the wind's leaves, the rain, and snow to come; dust is in the haze)
 //   fallingShare (the share of the rain's strokes drawn: 1 full quality, 0.33 reduced)
@@ -114,11 +112,6 @@ function sendGround(g: GroundState, immediate = false) {
   groundSent = key;
   renderer.setGround(demoGround.map(g), immediate ? 0 : undefined);
 }
-// The looks for wet things, while the developer picks (#11).
-const wetLookParam = <K extends keyof WetLooks>(k: K) =>
-  (Object.hasOwn(WET_LOOKS[k], params.get(k) ?? '') ? params.get(k) : DEFAULT_WET_LOOKS[k]) as WetLooks[K];
-const wetLooks: WetLooks = { damp: wetLookParam('damp'), sheen: wetLookParam('sheen'), mudLook: wetLookParam('mudLook') };
-renderer.setWetLooks(wetLooks);
 const view = renderer.view;
 view.view = num('view', 0); view.zoom = num('zoom', 40);
 view.target.set(num('x', farm ? 0 : -1), 0, num('z', 0));
@@ -163,7 +156,6 @@ function here() {
   next.set('gust', String(wind.gust ?? 0.5)); next.set('rhythm', String(rhythm));
   next.set('rise', String(water.rise)); next.set('flow', String(water.flow)); next.set('mud', String(water.mud));
   next.set('lying', String(ground.snow)); next.set('wet', String(ground.wet));
-  for (const k of Object.keys(wetLooks) as (keyof WetLooks)[]) next.set(k, wetLooks[k]);
   next.set('view', String(view.view)); next.set('zoom', view.zoom.toFixed(1));
   next.set('x', view.target.x.toFixed(2)); next.set('z', view.target.z.toFixed(2));
   next.set('hour', was ? Object.keys(HOUR_NAMES).find((k) => HOUR_NAMES[k] === was)! : hour.toFixed(2));
@@ -457,20 +449,9 @@ function hud() {
 
   // The ground (#14): the snow lying, what the game would send.
   hudEl.append(slider('Lying', 0, 1, 0.01, () => ground.snow, (v) => { ground.snow = v; sendGround({ ...ground }); }, share, true));
-  // How wet the land is (#11), what the game would send (the timeline wets and dries it too); and the looks for wet
-  // things, while the developer picks.
+  // How wet the land is (#11), what the game would send (the timeline wets and dries it too).
   hudEl.append(slider('Wet', 0, 1, 0.01, () => ground.wet, (v) => { ground.wet = v; sendGround({ ...ground }); send(sent); },
     (v) => (v <= 0 ? 'dry' : v < 0.4 ? `drying ${v.toFixed(2)}` : v < 0.85 ? `wet ${v.toFixed(2)}` : `soaked ${v.toFixed(2)}`)));
-  const labels: Record<keyof WetLooks, string> = { damp: 'Painted', sheen: 'Inked', mudLook: 'Mud' };
-  for (const k of Object.keys(WET_LOOKS) as (keyof WetLooks)[]) {
-    hudEl.append(Object.assign(document.createElement('span'), { textContent: labels[k] }));
-    for (const [l, title] of Object.entries(WET_LOOKS[k])) {
-      const b = document.createElement('button');
-      b.textContent = l.toUpperCase(); b.className = wetLooks[k] === l ? 'on' : ''; b.title = title;
-      b.onclick = () => { (wetLooks as Record<string, string>)[k] = l; renderer.setWetLooks(wetLooks); hud(); };
-      hudEl.append(b);
-    }
-  }
 }
 const timelineEl = document.createElement('span');
 /** A clock hour as 14:45. */

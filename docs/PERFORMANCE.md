@@ -274,7 +274,7 @@ share there is still to read. Still to read on the laptop: the `snow lying` line
 ### Wet ground (#11)
 
 In the materials, from the ground's map, as the snow: each reads how wet and muddy it is where it is, less what shelters
-it; a painted one is darkened and made richer once it's lit, an inked one takes its sheen. While the land is dry the
+it; a painted one is darkened and made richer once it's lit, an inked one takes its glaze. While the land is dry the
 materials skip it all.
 
 RX 570, 1080p in a storm, the land soaked (the demo's own map: its tracks and yard muddy), wet against dry, medians of

@@ -26,7 +26,7 @@ import { TreeSprings, type TreeSpec } from './trees';
 import { WATER_EASE, WaterField, type WaterMap } from './water';
 import { GROUND_EASE, GroundField, HollowMap, type GroundMap } from './ground';
 import { SnowPaint } from './snow';
-import { DEFAULT_WET_LOOKS, earthShares, wetLookVector, type WetLooks } from './wet';
+import { earthShares } from './wet';
 import type { WindSnapshot } from '../wind/sim';
 
 // The renderer: the clouds' shade over the land (#8); a sun shadow map; for the water, the bed drawn without it and the
@@ -204,10 +204,7 @@ export class BrushRenderer {
   readonly hollows = new HollowMap();
   /** The lying snow's paint in the hour's light (#14), worked out once a frame. */
   private readonly snow = new SnowPaint();
-  /** The looks for wet things, while the developer picks (#11, WET_LOOKS). */
-  private readonly wetLook = {
-    uWetLook: { value: wetLookVector(DEFAULT_WET_LOOKS, new THREE.Vector4()) },
-  };
+
   /** The falling rain (#11): its strokes, and the uniforms for its veil and the water's rings. */
   readonly rain: Rain;
   /** Lightning (#12): the game says where and when (strike, flicker); the player's flash setting is lightning.setting. */
@@ -246,7 +243,7 @@ export class BrushRenderer {
     this.shelter = new ShelterMap(options.shelterSize ?? 1024);
     // Every material reads the shelter map, the ground's map and the land's hollows, for lying snow (#14) and wet ground
     // (#11).
-    Object.assign(this.shared, this.shelter.uniforms, this.ground.uniforms, this.hollows.uniforms, this.snow.uniforms, this.wetLook);
+    Object.assign(this.shared, this.shelter.uniforms, this.ground.uniforms, this.hollows.uniforms, this.snow.uniforms);
     this.rain = new Rain(this.shared, this.shelter.uniforms);
     this.scene.add(this.rain.mesh);
     this.cloudMap = new CloudMap(this.shared);
@@ -554,8 +551,6 @@ export class BrushRenderer {
    */
   setGround(map: GroundMap | null, ease = GROUND_EASE) { this.ground.set(map, this.shared.uTime.value, ease); }
 
-  /** The looks for wet things, while the developer picks (#11, WET_LOOKS). */
-  setWetLooks(looks: WetLooks) { wetLookVector(looks, this.wetLook.uWetLook.value); }
 
 
   /**

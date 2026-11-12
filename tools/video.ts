@@ -109,7 +109,7 @@ const MOVES: Record<string, Move> = {
   // stopping at the roof and the trees, splashing on the ground and ringing on the water (QUERY="hour=dusk").
   shower: { seconds: 18, at: () => ({ x: 2, z: 15, zoom: 32, view: 0 }), timeline: (t) => 12 + t, ease: true, extra: true },
   // The ground wetting and drying (#11): the scripted shower over the shed, from the cloud building (its hour 4) to the
-  // ground drying after (its hour 12), at 3x: the land darkening, the track turning to mud, the roof's sheen, the porch
+  // ground drying after (its hour 12), at 3x: the land darkening, the track turning to mud, the roof's glaze, the porch
   // staying dry; then drying in patches, rises first (QUERY="hour=sunset", "hour=night").
   'wet-shower': { seconds: 80 / 3, at: () => ({ x: 11, z: 15, zoom: 48, view: 0 }), timeline: (t) => 40 / 3 + t, ease: true, extra: true },
   'fog-lift': { seconds: 22, at: () => ({ x: -6, z: 4, zoom: 28, view: 0 }), timeline: (t) => t, spell: 'fog', ease: true, extra: true },

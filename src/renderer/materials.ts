@@ -546,9 +546,6 @@ void main() {
   vec3 col = paintBands(base, light, 0.05, n.y * 0.5 + 0.5);
   col = wetFinish(col);
   col += rimColorHere() * rimLight(n, vPaint.w);
-#ifdef GROUND
-  if (gMudShown > 0.0) col = churned(col, p);
-#endif
   // Lying snow (#14, snow.ts).
   if (uGroundOn > 0.5 && snowAt(p) > 0.0) {
 #ifdef GROUND
@@ -758,8 +755,8 @@ void main() {
     glass = mix(glass, vec3(1.0) * sunTint(), sun * 0.6 * vis * (1.0 - gCloud));
     col = mix(glass, glass * 1.3 + 0.04, grid * 0.35);
   }
-  // Wet (#11, wet.ts): darker, with a sheen (not the solar glass, which is glass wet or dry).
-  if (uGroundOn > 0.5 && (finish < 0.5 || finish > 1.5) && wetAt(p) > 0.0) col = wetInked(col, n, p, vis);
+  // Wet (#11, wet.ts): darker, with the sky glazed over it (not the solar glass, which is glass wet or dry).
+  if (uGroundOn > 0.5 && (finish < 0.5 || finish > 1.5) && wetAt(p) > 0.0) col = wetInked(col, n, p);
   // Lying snow (#14): on the tops of built things and their roofs' slopes (a solar panel's too). A thin cover is a veil
   // the roof shows through, thickening to white (patches on a roof read as camouflage), a little uneven.
   if (uGroundOn > 0.5 && snowAt(p) > 0.0) {

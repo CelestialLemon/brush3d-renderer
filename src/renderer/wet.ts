@@ -3,39 +3,19 @@ import { PARTIAL_COVER } from './shelter';
 
 // Wet ground and things (#11): the game says how wet the land is and how muddy (the ground's map, ground.ts); the renderer
 // draws it. Painted things (the ground, grass, crops, leaves, stones, wood) go darker and richer, as a stone darkens when
-// splashed; inked things (what people build) darken a little and take a sheen, a bright band on their lit side; bare earth
-// turns to mud where the game says it's muddy. None under a roof, to its edge, and less under a crown (the shelter map,
-// #10), finer than the game's cells. No puddles: #50 tried them, and the developer didn't like them (2026-11-11).
+// splashed; inked things (what people build) darken a little and take a glaze, the sky mirrored faintly in them; bare
+// earth turns to mud where the game says it's muddy. None under a roof, to its edge, and less under a crown (the shelter
+// map, #10), finer than the game's cells. No puddles: #50 tried them, and the developer didn't like them (2026-11-11).
+//
+// The developer's picks (2026-11-12), from candidates on #60's preview: painted things "richer" (a little darker, the
+// colour deeper; not "darker", much darker and a little deeper); what people build a "glaze" (not "streaks" of shine
+// where the surface turns to the light, which came and went with the light's angle and lit a roof's slope brightly on a
+// clear night, nor both); mud "dark" (not "churned", streaked with the sky's shine, which read as white specks).
 //
 // How it's painted: a painted material is lit as it is dry, then darkened and made richer (wetFinish), its lit and its
 // shade alike, so the shade is still the hour's teal or violet, deeper; the mud is the ground's own colour before it's lit
-// (wetBase). An inked one takes its sheen over the lit colour (wetInked). Before the snow, so snow lying on wet ground is
+// (wetBase). An inked one takes its glaze over the lit colour (wetInked). Before the snow, so snow lying on wet ground is
 // still white.
-
-/**
- * The looks for wet things, while the developer picks (#11): the demo's buttons and URL options. Each value is its letter
- * (a, b, c); the ones not picked are removed before the pull request merges.
- */
-export const WET_LOOKS = {
-  /** Painted things (the ground, grass, crops, leaves, stones) when wet. */
-  damp: {
-    a: 'richer: a little darker, the colour deeper',
-    b: 'darker: much darker, the colour a little deeper',
-  },
-  /** Inked things (what people build) when wet. */
-  sheen: {
-    a: 'streaks: bright streaks of wet shine where the surface turns to the light (the sun, or the bright sky overhead under cloud)',
-    b: 'glaze: the surface mirrors the sky faintly, the clouds drifting over it, more at a glancing angle',
-    c: 'both',
-  },
-  /** Mud on tracks and bare soil. */
-  mudLook: {
-    a: 'dark: dark, rich brown earth',
-    b: 'churned: dark brown, with streaks of wet shine',
-  },
-} as const;
-export type WetLooks = { [K in keyof typeof WET_LOOKS]: keyof (typeof WET_LOOKS)[K] };
-export const DEFAULT_WET_LOOKS: WetLooks = { damp: 'a', sheen: 'a', mudLook: 'a' };
 
 /** The earth's hue (OKLab degrees): the tracks' dirt 76°, their ruts 73°. */
 const EARTH_HUE = 76;
@@ -67,19 +47,12 @@ export function earthShares(rgb: ArrayLike<number>): Float32Array {
   return out;
 }
 
-/** The looks as the shaders take them: each letter as 0, 1, 2. */
-export function wetLookVector(looks: WetLooks, out: THREE.Vector4) {
-  const n = (l: string) => l.charCodeAt(0) - 97;
-  return out.set(n(looks.damp), n(looks.sheen), n(looks.mudLook), 0);
-}
-
 /**
  * Wet things, for every material but the water (FRAG_HEAD, after SNOW_GLSL, whose ground map and hollows it reads). A
  * material calls wetAt(p) once (how wet and how muddy it is there, less what shelters it); a painted one then wetBase on
  * its own colour before it's lit and wetFinish on the lit colour, an inked one wetInked on its lit colour (WET_INK_GLSL).
  */
 export const WET_GLSL = /* glsl */ `
-uniform vec4 uWetLook;   // the looks being picked (#11): painted, inked, mud; 0 for A, 1 B, 2 C
 // How wet and how muddy it is here (0..1, the game's, less under shelter), set by wetAt.
 float gWet = 0.0, gMud = 0.0;
 // The wet and the mud at p, less what shelters it: none under a roof, to its edge; under a crown, less. What stands low on
@@ -114,10 +87,8 @@ float wetShow() { return smoothstep(0.0, 0.6, gWet); }
 const vec3 WET_LUMA = vec3(0.2126, 0.7152, 0.0722);
 // How much of the ground's earth is mud here (set by wetBase).
 float gMudShown = 0.0;
-// Wet paint, darker and richer: how much darker and how much richer (look A: a little darker, the colour deeper; B: much
-// darker, a little deeper). In plain RGB, not OKLab: it's paid on every pixel of the ground while it's wet.
-vec2 wetK() { return uWetLook.x < 0.5 ? vec2(0.42, 0.3) : vec2(0.6, 0.15); }
-// Both once it's lit (wetFinish, on paintBands' colour), as a wet stone takes the same light as a dry one and is darker
+// Wet paint, darker and richer: 42% darker at its wettest, its colour 30% deeper. In plain RGB, not OKLab: it's paid on
+// every pixel of the ground while it's wet. Both once it's lit (wetFinish, on paintBands' colour), as a wet stone takes the same light as a dry one and is darker
 // and deeper for it: the lit and the shade alike, so the shade keeps its teal or violet in proportion, only deeper. Not
 // before: paintBands would see a darker, richer colour, its shade (darker and cooler) would fall past the colours a screen
 // can show, and it would pull each back by a search, on nearly half the screen, for 0.15 ms or so (Sol, #11). Here the
@@ -125,10 +96,9 @@ vec2 wetK() { return uWetLook.x < 0.5 ? vec2(0.42, 0.3) : vec2(0.6, 0.15); }
 vec3 wetFinish(vec3 c) {
   if (gWet <= 0.0) return c;
   float w = wetShow();
-  vec2 k = wetK();
   // The mud has its own colour (muddy): richer still would turn it orange.
-  float y = dot(c, WET_LUMA), s = 1.0 + k.y * w * (1.0 - gMudShown);
-  return max(mix(vec3(y), c, s), 0.0) * (1.0 - k.x * w);
+  float y = dot(c, WET_LUMA), s = 1.0 + 0.3 * w * (1.0 - gMudShown);
+  return max(mix(vec3(y), c, s), 0.0) * (1.0 - 0.42 * w);
 }
 #ifdef GROUND
 // How much of the ground here is earth (earthShares, by vertex).
@@ -159,22 +129,15 @@ vec3 wetBase(vec3 c) {
 #endif
   return c;
 }
-// The churned mud's streaks of wet shine (look B), on the ground's lit colour: the sky caught in the ruts.
-vec3 churned(vec3 c, vec3 p) {
-  float m = gMudShown;
-  if (uWetLook.z < 0.5 || m <= 0.0) return c;
-  float s = smoothstep(0.45, 0.8, strokes(p.xz * 1.6, 0.6) + fbm2(p.xz * 0.7) * 0.3);
-  return mix(c, skyTint() * 0.85, s * m * 0.4);
-}
 `;
 
 /**
- * Wet inked things (INK_FRAG, after MIRROR_SKY): wetInked(col, n, p, vis) on the lit colour, after wetAt. They darken a
- * little (wet paint and timber) and take a sheen: streaks of shine where the mirrored view meets the light (the sun's or,
- * under cloud, the bright sky's overhead), or a glaze of the sky mirrored, or both. Not exposed (the material does that).
+ * Wet inked things (INK_FRAG, after MIRROR_SKY): wetInked(col, n, p) on the lit colour, after wetAt. They darken a little
+ * (wet paint and timber) and take a glaze: the sky mirrored faintly, its clouds drifting over, more at a glancing angle.
+ * Not exposed (the material does that).
  */
 export const WET_INK_GLSL = /* glsl */ `
-vec3 wetInked(vec3 c, vec3 n, vec3 p, float vis) {
+vec3 wetInked(vec3 c, vec3 n, vec3 p) {
   float w = wetShow();
   if (w <= 0.0) return c;
   float y = dot(c, WET_LUMA);
@@ -182,27 +145,10 @@ vec3 wetInked(vec3 c, vec3 n, vec3 p, float vis) {
   vec3 v = toCamera();
   if (uMirror > 0.5) v.y = -v.y;
   vec3 r = reflect(-v, n);
-  float sky = overcastHere().x;
-  if (uWetLook.y < 0.5 || uWetLook.y > 1.5) {
-    // Streaks: where the mirrored view meets the light. Under cloud the bright sky is broad, and so is its band; in the sun,
-    // only where the sun reaches.
-    vec3 l = normalize(mix(uSunDir, vec3(0.0, 1.0, 0.0), sky));
-    float band = smoothstep(mix(0.7, 0.5, sky), mix(0.88, 0.66, sky), dot(r, l)) * mix(vis, 1.0, sky);
-    // In streaks down the surface, as the water runs (a flat roof faces one way: a band alone would light it all).
-    vec3 down = normalize(vec3(0.0, -1.0, 0.0) - n * -n.y + vec3(1e-4, 0.0, 0.0));
-    vec3 across = cross(n, down);
-    band *= smoothstep(0.1, 0.6, strokes(vec2(dot(p, down) * 0.6, dot(p, across) * 1.2), 0.0) * 0.5 + 0.5);
-    vec3 shine = mix(mix(uGapSkyBottom, vec3(1.0), 0.6) * skyTint(), vec3(1.0) * sunTint(), 1.0 - sky);
-    c = mix(c, shine, band * w * 0.55);
-  }
-  if (uWetLook.y > 0.5) {
-    // Glaze: the sky mirrored, with its clouds, more at a glancing angle.
-    float cloud;
-    vec3 seen = mirrorSky(skyPoint(p, r), 1.0 - clamp(r.y * 1.5, 0.0, 1.0), cloud);
-    float fres = 0.1 + 0.35 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 3.0);
-    c = mix(c, seen, fres * w);
-  }
-  return c;
+  float cloud;
+  vec3 seen = mirrorSky(skyPoint(p, r), 1.0 - clamp(r.y * 1.5, 0.0, 1.0), cloud);
+  float fres = 0.1 + 0.35 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 3.0);
+  return mix(c, seen, fres * w);
 }
 `;
 

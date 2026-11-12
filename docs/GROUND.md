@@ -32,8 +32,8 @@ And a number for how wet each tile is, and one for how muddy:
 
 - **Wet things go darker and richer**, as a stone darkens when it's splashed: the ground, grass, crops, leaves, stones
   and wood. They're still lit by the same light, so a wet field's shade is still the hour's teal or violet, only deeper.
-- **What people build takes a sheen** as well: a bright band of wet shine on the side facing the light (the sun, or the
-  bright sky overhead under cloud), in streaks down it as the water runs.
+- **What people build takes a glaze** as well: the sky mirrored faintly in it, its clouds drifting over, more where you
+  see the surface at a low angle, as on a wet road.
 - **Bare earth turns to mud**: the tracks, the yard, a ploughed bed. Only the earth itself, not the grass beside it,
   though the game's tiles are coarser than a track: the renderer tells the earth from the grass by its colour.
 - **Under a roof it stays dry**, to the roof's edge (with a painted edge, not a ruled one), and less wet under a tree,
@@ -102,7 +102,7 @@ renderer.setGround(null, ease);  // bare everywhere, eased out as any map is (at
 - **`WET_GLSL`** runs in every material but the water, before the snow (so snow on wet ground is still white). A
   material reads how wet and muddy it is there, less what shelters it (`wetAt`). A painted thing is lit as it is dry,
   then darkened and made richer (`wetFinish`); only the ground's mud changes its own colour before it's lit (`wetBase`).
-  An inked thing adds its sheen to its lit colour (`wetInked`).
+  An inked thing adds its glaze to its lit colour (`wetInked`).
   The mud tells the earth from the grass by the ground's own colour, as the game sent it (`earthShares`, once per vertex
   as the ground is added): its hue, from the earth's to the grass's. Not the colour the season has turned it to: a dry
   winter turns a yellow-green to a straw the dirt's own colour.
