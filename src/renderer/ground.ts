@@ -9,7 +9,7 @@ import { SHELTER_GLSL } from './shelter';
 // - snow: how deep it lies, 0 none, about 0.2 a dusting the grass pokes through, about 0.5 the grass covered, 1 deep
 //   (crops buried to their tops). Roofs and solar panels take the snow of the cells they stand over: to clear a panel,
 //   the game zeroes its cells (the ground under it is sheltered, and shows none anyway);
-// - frost: how much, 0..1 (#14, drawn in a later step);
+// - frost: how much, 0..1 (#14, frost.ts);
 // - wet: how wet the ground is, 0 dry to 1 soaked (#11): rain wets it, sun and wind dry it, by the game's rules;
 // - mud: how muddy, 0..1 (#11): the game knows where its tracks and bare soil are, and mud may matter to its play.
 // Wet ground was first tried on this map in #50, closed unmerged for its puddles; #11's second try is drawn without them.
@@ -79,10 +79,13 @@ export class GroundField {
   };
   /** Whether any of the land has snow, frost, wet or mud, as it was or as last sent. */
   get any() { return this.uniforms.uGroundOn.value > 0.5; }
+  /** Whether any of the land has frost, as it was or as last sent (the frost's sun memory is kept only then). */
+  get frost() { return this.any && (this.frostFrom || this.frostTo); }
   private nx = 0; private nz = 0; private cell = 0; private x0 = 0; private z0 = 0;
   private from: Uint8Array | null = null;
   private to: Uint8Array | null = null;
   private anyFrom = false; private anyTo = false;
+  private frostFrom = false; private frostTo = false;
   private start = 0;
   private ease = 0;
 
@@ -97,6 +100,7 @@ export class GroundField {
   update(time: number) {
     const b = this.blend(time);
     this.uniforms.uGroundBlend.value = b;
+    if (b >= 1) this.frostFrom = this.frostTo;
     if (b >= 1 && this.anyFrom !== this.anyTo) { this.anyFrom = this.anyTo; this.uniforms.uGroundOn.value = this.anyTo ? 1 : 0; }
   }
 
@@ -110,7 +114,7 @@ export class GroundField {
       // Easing: to a bare map on the same grid (it turns off once the ease is done).
       const { nx, nz, cell, x0, z0 } = this;
       if (this.to && ease > 0) { this.set({ nx, nz, cell, x0, z0 }, time, ease); return; }
-      this.from = this.to = null; this.anyFrom = this.anyTo = false; u.uGroundOn.value = 0;
+      this.from = this.to = null; this.anyFrom = this.anyTo = this.frostFrom = this.frostTo = false; u.uGroundOn.value = 0;
       return;
     }
     const { nx, nz, cell, x0, z0 } = map, n = nx * nz;
@@ -119,14 +123,14 @@ export class GroundField {
       if (v && v.length !== n) throw new Error(`ground map: ${v.length} ${k} values for ${nx} x ${nz} cells`);
     }
     const data = new Uint8Array(n * 4);
-    let any = false;
+    let any = false, frost = false;
     CHANNELS.forEach((k, c) => {
       const v = k === 'mud' && map.mud ? spread(map.mud, nx, nz) : map[k];
       if (!v) return;
       for (let i = 0; i < n; i++) {
         const b = Math.round(THREE.MathUtils.clamp(v[i] || 0, 0, 1) * 255);
         data[i * 4 + c] = b;
-        if (b) any = true;
+        if (b) { any = true; if (k === 'frost') frost = true; }
       }
     });
     const same = this.to && nx === this.nx && nz === this.nz && cell === this.cell && x0 === this.x0 && z0 === this.z0;
@@ -135,17 +139,17 @@ export class GroundField {
       u.tGroundA.value.dispose(); u.tGroundB.value.dispose();
       u.tGroundA.value = cellTexture(nx, nz); u.tGroundB.value = cellTexture(nx, nz);
       u.uGroundGrid.value.set(x0, z0, 1 / (nx * cell), 1 / (nz * cell));
-      this.from = data; this.anyFrom = any; ease = 0;
+      this.from = data; this.anyFrom = any; this.frostFrom = frost; ease = 0;
     } else {
       // What's drawn now becomes where it eases from.
       const b = this.blend(time), from = this.from!, to = this.to!;
-      if (b >= 1) { this.from = to; this.anyFrom = this.anyTo; } else {
+      if (b >= 1) { this.from = to; this.anyFrom = this.anyTo; this.frostFrom = this.frostTo; } else {
         const now = new Uint8Array(from.length);
         for (let i = 0; i < now.length; i++) now[i] = Math.round(from[i] + (to[i] - from[i]) * b);
-        this.from = now; this.anyFrom ||= this.anyTo;
+        this.from = now; this.anyFrom ||= this.anyTo; this.frostFrom ||= this.frostTo;
       }
     }
-    this.to = data; this.anyTo = any;
+    this.to = data; this.anyTo = any; this.frostTo = frost;
     this.start = time; this.ease = ease;
     upload(u.tGroundA.value, this.from);
     upload(u.tGroundB.value, data);

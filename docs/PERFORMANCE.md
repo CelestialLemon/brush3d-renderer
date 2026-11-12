@@ -303,6 +303,27 @@ decimal, with each of the roof-shade candidates. Pops in a gale (`tools/pops.ts`
 Still to read on the laptop: `?profile` on the PR's preview, the `1080p blizzard` and `1080p heavy snow, calm` lines
 against `1080p storm, snow lying`.
 
+### Frost (#14)
+
+In the materials, from the ground's map, as the snow: each reads the frost where it is (with the snow, one read), what
+shelters it, and the sun that spot has had since dawn (one read of the sun's memory, a 512² map), and lays a pale rime
+over what faces up. Its grain is each material's own brushwork and its breakup the land's pattern from the hollows map,
+not noise of its own: a first version with five noise lookups a pixel cost 2.0 ms, most of it in the grass. The sun's
+memory is added to a few times a second while the clock runs (six shadow taps a texel), only while there's frost.
+
+RX 570, the farm at 1080p in a storm, frost 0.6 everywhere at 10:00 (`1080p storm, frost` in `node tools/profile.ts`
+and `?profile`), medians of three: **11.40 → 12.00 ms, +0.60** (the meadow 5.09 → 5.74, +0.65). Of that, 0.29 is
+reading the ground's map and what shelters it, which lying snow and wet ground pay too (the same frame with snow lying
+0.6: +0.60), and **0.30 is the frost's own**: its paint about 0.17, the grass's tips 0.07, the sun's memory read 0.06.
+That's double its aim of 0.15: the overrun comes from the spare (0.55 → 0.40 here). Frost and snow together cost no
+more than snow alone plus the 0.3, since they share the read.
+
+Crawl (`AB=2 tools/motion.ts`, a 1 px pan, winter at 10:00, frost 0.75, `falling=0`): the ground's own steady (without
+the trees, 0.026 → 0.033); with the trees, 0.096 → 0.125 (the meadow 0.088 → 0.095), all at the bare branches' edges against the paler ground, as
+with lying snow (0.108 → 0.193): with the branches' own rime turned off it reads the same. Pops in a gale
+(`tools/pops.ts`, the glittering look): none at the short step, as without frost.
+Still to read on the laptop: the `1080p storm, frost` line against `1080p storm`.
+
 ### Wet ground (#11)
 
 In the materials, from the ground's map, as the snow: each reads how wet and muddy it is where it is, less what shelters

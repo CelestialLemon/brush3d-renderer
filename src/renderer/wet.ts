@@ -58,7 +58,7 @@ float gWet = 0.0, gMud = 0.0;
 // The wet and the mud at p, less what shelters it: none under a roof, to its edge; under a crown, less. What stands low on
 // the ground (AT_GROUND: the ground, the grass, the crops, stones and wood) reads its shelter at the ground with the
 // land's hollows, in one lookup; what stands higher there (a branch over a low roof's edge) whether a roof or a crown is
-// over it, as the snow does (snowAt); the rest reads the shelter map where it is. Under the water, none (the bed is the
+// over it, as the snow does (groundAt); the rest reads the shelter map where it is. Under the water, none (the bed is the
 // water's).
 float wetAt(vec3 p) {
   vec2 g = groundState(p.xz).zw;

@@ -41,7 +41,7 @@ const STRENGTHS = { calm: 0, breeze: 5, gale: 17, storm: 25, hurricane: 35 };
  */
 interface Move {
   seconds: number; at: (t: number) => Cam; wind?: (t: number) => number; cloud?: (t: number) => number;
-  timeline?: (t: number) => number; spell?: 'shower' | 'fog' | 'dust' | 'flood' | 'thunderstorm' | 'gale' | 'hurricane' | 'snowfall' | 'blizzard';
+  timeline?: (t: number) => number; spell?: 'shower' | 'fog' | 'dust' | 'flood' | 'thunderstorm' | 'gale' | 'hurricane' | 'snowfall' | 'blizzard' | 'late-frost' | 'cold-snap';
   ease?: boolean; extra?: boolean;
   /** The water (#18): how far it stands over the usual (m), how fast it runs (times the usual), how muddy (0..1). */
   water?: (t: number) => { rise?: number; flow?: number; mud?: number };
@@ -147,6 +147,10 @@ const MOVES: Record<string, Move> = {
   // blizzard rolling in on a gale, whiting out the distance and blowing itself out, wider (QUERY="season=winter").
   snowfall: { seconds: 30, at: () => ({ x: 4, z: 14, zoom: 40, view: 0 }), timeline: (t) => 5 + t, spell: 'snowfall', ease: true, extra: true },
   blizzard: { seconds: 34, at: () => STORM_CAM, timeline: (t) => t, spell: 'blizzard', ease: true, extra: true },
+  // A late frost melting in the morning sun (#14), at 3x from just before dawn, close on the shed and the orchard
+  // (QUERY="season=spring"); and a cold snap's day, wider (QUERY="season=winter").
+  'frost-dawn': { seconds: 22, at: () => ({ x: 10, z: 12, zoom: 52, view: 0 }), timeline: (t) => 10 + t, spell: 'late-frost', ease: true, extra: true },
+  'cold-snap': { seconds: 40, at: () => ({ x: 4, z: 10, zoom: 36, view: 0 }), timeline: (t) => t, spell: 'cold-snap', ease: true, extra: true },
   // Snow falling steadily, the camera still and close on the shed: the flakes' look (QUERY="season=winter&weather=snow").
   'snow-close': { seconds: 8, at: () => ({ x: 10, z: 12, zoom: 64, view: 0 }), extra: true },
   // The camera panning through falling snow: the flakes stay in the world, none jumps.

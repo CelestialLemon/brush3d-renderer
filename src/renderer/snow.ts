@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FROST_GLSL } from './frost';
 import { GROUND_GLSL, HOLLOW_GLSL } from './ground';
 import { PARTIAL_COVER } from './shelter';
 
@@ -22,8 +23,9 @@ export const SNOW_WHOLE = 0.3;
 
 /**
  * Lying snow, for every material but the water (FRAG_HEAD): needs the light model (PAINT, CLOUD_LIGHT), OKLab and the
- * shelter map. A material calls snowAt(p) once (the snow lying there, as deep as the game says less what shelters it),
- * then works out how much of its surface the snow covers, and mixes in snowPaint.
+ * shelter map. A material calls groundAt(p) once (the snow lying there, as deep as the game says less what shelters it,
+ * in gSnow, and the frost in gFrost), then works out how much of its surface the snow covers, and mixes in snowPaint; the
+ * frost (frost.ts, FROST_GLSL, appended here) is laid first, so the snow covers it.
  */
 export const SNOW_GLSL = /* glsl */ `
 ${GROUND_GLSL}
@@ -32,18 +34,21 @@ uniform vec3 uSnowGap[4];    // the snow's paint in the gaps' light: its shade, 
 uniform vec3 uSnowCloud[4];  // and under a cloud
 uniform float uSnowTarp;     // how a roof's snow in shade is painted, the candidates for #14: 0 as it was, 1 quieter, 2 brushed
 const float SNOW_METRES = ${SNOW_METRES.toFixed(2)};
-// The snow lying here (0..1, the game's depth, less under shelter), and the land's hollow here (hollowAt), read by snowAt.
+// The snow lying here (0..1, the game's depth, less under shelter), the frost (0..1, the game's, less under shelter), and
+// the land's hollow here (hollowAt), read by groundAt.
 float gSnow = 0.0;
+float gFrost = 0.0;
 vec4 gHollow = vec4(0.0, 0.0, -1.0, 0.0);
-// The snow lying at p: none under a roof, to its edge; under a crown, less. What stands low on the ground (the ground, the
+// The snow lying at p, and the frost: none under a roof, to its edge; under a crown, less. What stands low on the ground (the ground, the
 // grass, the crops, stones, wood, the foot of a trunk) reads the shelter at the ground with the land's hollows, in one
 // lookup (AT_GROUND), rather than the shelter map's eight at p; what stands higher (a branch, a tall stone over a low
 // roof's edge) reads it where it is. While the bed under the water is drawn (uGroundOn 2), none below the water's top.
+// Returns the more of the two (0: neither here).
 float gAbove = 0.0;   // how high p is over the land under it (AT_GROUND)
-float snowAt(vec3 p) {
-  gSnow = groundState(p.xz).x;
-  if (gSnow < 0.004) { gSnow = 0.0; return 0.0; }
-  if (uGroundOn > 1.5 && p.y < waterTop(p.xz)) { gSnow = 0.0; return 0.0; }
+float groundAt(vec3 p) {
+  vec2 g = groundState(p.xz).xy;
+  gSnow = g.x; gFrost = g.y;
+  if (max(gSnow, gFrost) < 0.004 || (uGroundOn > 1.5 && p.y < waterTop(p.xz))) { gSnow = gFrost = 0.0; return 0.0; }
 #ifdef AT_GROUND
   gHollow = hollowAt(p.xz);
 #ifndef GROUND
@@ -57,12 +62,13 @@ float snowAt(vec3 p) {
 #else
   float cover = shelter(p);
 #endif
-  gSnow *= 1.0 - cover;
-  return gSnow;
+  gSnow = gSnow < 0.004 ? 0.0 : gSnow * (1.0 - cover);
+  gFrost = gFrost < 0.004 ? 0.0 : gFrost * (1.0 - cover);
+  return max(gSnow, gFrost);
 }
 // A pattern over the land a thin cover breaks along (about -1..1; low first covered), the same for everything at a
 // place, so the grass is white where the ground under it is: the land's hollows fill first and its rises go bare, broken
-// up by its unevenness and a finer drift (worked out once, in the hollows map). Call after snowAt.
+// up by its unevenness and a finer drift (worked out once, in the hollows map). Call after groundAt.
 float snowPattern(vec2 xz) {
   if (gHollow.z >= 0.0) return gHollow.w;
   return snoise(xz * 0.6 + 4.0) * 0.6 + snoise(xz * 1.9 + 23.0) * 0.4;
@@ -75,7 +81,7 @@ float snowCover(float d, float up, float pattern, float edge) {
   return smoothstep(th - edge, th + edge, t);
 }
 // How far up a thing standing on the ground the snow buries it, 0..1 (things at the ground: grass, crops, stones; call
-// after snowAt, under AT_GROUND), with a soft line: the height of the snow's surface, at its depth, over the land. Only
+// after groundAt, under AT_GROUND), with a soft line: the height of the snow's surface, at its depth, over the land. Only
 // as far as the ground round it is white (a thin snow's patches, less on a slope), so it comes in with the ground's.
 float snowBuries(vec3 p, float d) {
   float under = 1.0 - smoothstep(-0.02, 0.03, gAbove - d * SNOW_METRES);
@@ -109,6 +115,7 @@ vec3 snowPaintTop(float light, float soft, float uneven, vec3 p) {
   float mottle = clamp(0.5 + 0.35 * uneven + 0.45 * strokes, 0.0, 1.0);
   return mix(c, half_, inShade * mottle * 0.6);
 }
+${FROST_GLSL}
 `;
 
 

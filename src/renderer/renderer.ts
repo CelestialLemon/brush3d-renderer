@@ -27,6 +27,7 @@ import { TreeSprings, type TreeSpec } from './trees';
 import { WATER_EASE, WaterField, type WaterMap } from './water';
 import { GROUND_EASE, GroundField, HollowMap, type GroundMap } from './ground';
 import { SnowPaint } from './snow';
+import { SunMemory } from './frost';
 import { earthShares } from './wet';
 import type { WindSnapshot } from '../wind/sim';
 
@@ -208,6 +209,14 @@ export class BrushRenderer {
   private readonly snow = new SnowPaint();
   /** How a roof's snow in shade is painted, the candidates for #14 (snow.ts, snowPaintTop): 0 as it was, 1 quieter, 2 brushed. */
   set snowShade(look: number) { this.snow.uniforms.uSnowTarp.value = look; }
+  /** The sun each spot of the ground has had since dawn, for the frost's melt (#14, frost.ts). */
+  private readonly sunMemory: SunMemory;
+  /** How the frost's rime is painted, the candidates for #14 (frost.ts, frostPaint): 0 matte, 1 crisp, 2 glittering. */
+  set frostLook(look: number) { this.sunMemory.uniforms.uFrostLook.value = look; }
+  /** The game's clock hour as setHour last set it (the frost's sun memory adds by it), or null before. */
+  private clockHour: number | null = null;
+  /** The sun's height as the light was last set (degrees, below the horizon too). */
+  private sunElNow = 90;
 
   /** The falling rain (#11): its strokes, and the uniforms for its veil and the water's rings. */
   readonly rain: Rain;
@@ -258,6 +267,8 @@ export class BrushRenderer {
     this.scene.add(this.snowfall.mesh);
     this.cloudMap = new CloudMap(this.shared);
     this.skyMap = new CloudMap({ uCloudMap: this.shared.uSkyMap, uCloudRect: this.shared.uSkyRect }, MIRROR.size);
+    this.sunMemory = new SunMemory(this.shared);
+    Object.assign(this.shared, this.sunMemory.uniforms);
     this.underTarget = half();
     this.reflectTarget = half();
     this.shared.uUnder.value = this.underTarget.textures[0];
@@ -645,7 +656,7 @@ export class BrushRenderer {
   get day(): Day { return this.dayNow; }
 
   /** Sets the look at a clock hour of the season's day (look.ts's lookAt): what the game calls as its clock runs. */
-  setHour(hour: number) { this.look = seasonLight(lookAt(hour, this.dayNow), this.seasonSet); }
+  setHour(hour: number) { this.look = seasonLight(lookAt(hour, this.dayNow), this.seasonSet); this.clockHour = hour; }
 
   /**
    * Sets the light's uniforms from the hour's look under the weather as drawn. Three looks: the grade's (the post pass's
@@ -677,6 +688,7 @@ export class BrushRenderer {
     s.uCloudOvercast.value.set(rs.sky, THREE.MathUtils.lerp(THREE.MathUtils.lerp(UNDER_CLOUD_FADE, r.shadowFade, lift), rs.shadowFade, g), rs.shadowBlur);
     s.uCloudStrength.value = strength;
     const az = THREE.MathUtils.degToRad(look.sunAz), el = THREE.MathUtils.degToRad(Math.max(look.sunEl, 4));
+    this.sunElNow = look.sunEl;
     s.uSunDir.value.set(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
     // The shadows that are left fall from the sky's brightest part, overhead, the thicker the cloud.
     this.shadowDir.copy(s.uSunDir.value);
@@ -1043,6 +1055,11 @@ export class BrushRenderer {
       for (const o of hidden) o.visible = true;
     }
     this.shadowDirty = false;
+
+    // The frost's memory of the sun since dawn (#14): a few times a second, while there's frost (timed with the shadow's
+    // pass: most frames it draws nothing).
+    this.sunMemory.update(gl, this.clockHour, this.dayNow.sunrise, this.sunElNow, s.uOvercast.value.x, this.ground.frost,
+      this.hollows.uniforms.uHollowsMap.value, this.hollows.uniforms.uHollowsOn.value > 0.5);
 
     // What the water shows: the bed without it, and the scene mirrored in it. Only round the water on screen, and not at
     // all when none shows. The farthest a lookup reaches (snoise peaks a little past 1, hence the tenth more):

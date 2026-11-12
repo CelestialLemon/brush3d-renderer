@@ -10,7 +10,7 @@ import { cloudDriftSpeed } from '../renderer/clouds';
 import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weather, type WeatherName } from '../renderer/weather';
 import { steadyWind, WIND_SCALE, windName, type WindStrength } from '../renderer/wind';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
-import { SPEEDS, SPELLS, TICK, timelineAt, timelineLightning, timelineLying, timelinePhase, timelineWater, timelineWet, timelineWind, type SpellName } from './timeline';
+import { SPEEDS, SPELLS, TICK, timelineAt, timelineClock, timelineFrost, timelineLightning, timelineLying, timelinePhase, timelineWater, timelineWet, timelineWind, type SpellName } from './timeline';
 import { DemoWater, USUAL_WATER, type WaterState } from './water';
 import { DemoGround, type GroundState } from './ground';
 import { WindWorker } from '../wind/client';
@@ -41,6 +41,9 @@ import { WindView } from './windView';
 //     speed), mud (0..1)
 //   lying (how deep the snow lies over the land, 0..1, the game's: 0.2 a dusting, 0.5 the grass covered, 1 deep; #14;
 //     0.4 by default where it snows)
+//   frost (how much frost, 0..1, the game's: 1 a hard frost everywhere in the open; where it lies and how the morning's
+//     sun has taken it is the renderer's; #14)  frostLook=a|b|c (the frost's look, candidates for #14: a matte, b crisp
+//     with a deeper blue shade, c glittering; a by default)
 //   wet (how wet the land is, 0 dry .. 1 soaked, #11; soaked where it rains, by default)
 //   cloudSeed (which cloud field: a whole number)
 //   falling=0 (leave out the things in the air: the wind's leaves, the rain, the snow and its whiteout; dust is in the haze)
@@ -170,7 +173,7 @@ function here() {
   next.set('wind', wind.speed.toFixed(2)); next.set('windDir', ((wind.direction * 180) / Math.PI).toFixed(1));
   next.set('gust', String(wind.gust ?? 0.5)); next.set('rhythm', String(rhythm));
   next.set('rise', String(water.rise)); next.set('flow', String(water.flow)); next.set('mud', String(water.mud));
-  next.set('lying', String(ground.snow)); next.set('wet', String(ground.wet));
+  next.set('lying', String(ground.snow)); next.set('frost', String(ground.frost)); next.set('wet', String(ground.wet));
   next.set('view', String(view.view)); next.set('zoom', view.zoom.toFixed(1));
   next.set('x', view.target.x.toFixed(2)); next.set('z', view.target.z.toFixed(2));
   next.set('hour', was ? Object.keys(HOUR_NAMES).find((k) => HOUR_NAMES[k] === was)! : hour.toFixed(2));
@@ -229,6 +232,7 @@ if (['cloud', 'storm', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', '
 // The land soaked where it's raining, unless asked (#11); snow lying where it snows (#14).
 ground.wet = num('wet', weather.rain > 0 ? 1 : 0);
 ground.snow = num('lying', weather.snow > 0 ? LYING_SNOWY : 0);
+ground.frost = num('frost', 0);
 sendGround(ground, true);
 // The clouds' field (#8).
 const cloudSeed = num('cloudSeed', 1);
@@ -299,6 +303,10 @@ renderer.snowfall.look = SNOW_LOOKS[snowLook];
 const SNOW_SHADES = ['a', 'b', 'c'] as const;
 let snowShade = SNOW_SHADES.find((s) => s === params.get('snowShade')) ?? 'a';
 renderer.snowShade = SNOW_SHADES.indexOf(snowShade);
+// The frost's look (#14): the candidates.
+const FROST_LOOKS = ['a', 'b', 'c'] as const;
+let frostLook = FROST_LOOKS.find((s) => s === params.get('frostLook')) ?? 'a';
+renderer.frostLook = FROST_LOOKS.indexOf(frostLook);
 /** Sets a look option in the URL as it stands, so a reload or a shared link keeps it. */
 function urlOption(key: string, value: string) {
   params.set(key, value);
@@ -486,7 +494,8 @@ function hud() {
   spells.title = 'shower: clear, cloud building, a shower, clearing again · morning fog: a fog lifting, then mist gathering in the evening · ' +
     'dust storm: the wind getting up and blowing a dust storm through · flood: a storm swelling the stream, which floods the land and drains · ' +
     'thunderstorm: a storm rolling in, lightning, and clearing · gale: squalls on a strong wind under a broken sky · hurricane: the strongest wind and driving rain · ' +
-    'snowfall: snow coming in, settling and clearing · blizzard: a blizzard rolling in on a gale and blowing itself out (best in winter)';
+    'snowfall: snow coming in, settling and clearing · blizzard: a blizzard rolling in on a gale and blowing itself out (best in winter) · ' +
+    'late-frost: a spring night\'s frost forming and the morning sun taking it (best in spring) · cold-snap: a winter day of hard frost, the sun clearing only what it shines on (best in winter); both run the clock';
   spells.onchange = () => { spell = spells.value as SpellName; timelineStart = null; timelineSent = ''; };
   spells.onkeydown = (e) => e.stopPropagation();
   play.onclick = () => {
@@ -514,6 +523,17 @@ function hud() {
 
   // The ground (#14): the snow lying, what the game would send.
   hudEl.append(slider('Lying', 0, 1, 0.01, () => ground.snow, (v) => { ground.snow = v; sendGround({ ...ground }); }, share, true));
+  // The frost (#14), what the game would send (the frosty spells move it too), and its look's candidates.
+  hudEl.append(slider('Frost', 0, 1, 0.01, () => ground.frost, (v) => { ground.frost = v; sendGround({ ...ground }); }, share, true));
+  const frostButton = Object.assign(document.createElement('button'), { textContent: `frost look ${frostLook.toUpperCase()}` });
+  frostButton.title = 'The frost\'s look, candidates for #14: A matte rime, B crisp (whiter where whole, a deeper blue shade), C glittering (points of light in the sun) (frostLook=a|b|c)';
+  frostButton.onclick = () => {
+    frostLook = FROST_LOOKS[(FROST_LOOKS.indexOf(frostLook) + 1) % FROST_LOOKS.length];
+    renderer.frostLook = FROST_LOOKS.indexOf(frostLook);
+    urlOption('frostLook', frostLook);
+    hud();
+  };
+  hudEl.append(frostButton);
   // How wet the land is (#11), what the game would send (the timeline wets and dries it too).
   hudEl.append(slider('Wet', 0, 1, 0.01, () => ground.wet, (v) => { ground.wet = v; sendGround({ ...ground }); send(sent); },
     (v) => (v <= 0 ? 'dry' : v < 0.4 ? `drying ${v.toFixed(2)}` : v < 0.85 ? `wet ${v.toFixed(2)}` : `soaked ${v.toFixed(2)}`)));
@@ -562,6 +582,14 @@ function playTimeline(time: number) {
   // And the snow lying, as the game's snowfall has laid it (#14).
   const lying = timelineLying(time - timelineStart, speed, spell);
   if (lying !== null && Math.abs(lying - ground.snow) > 1e-4) { ground.snow = lying; sendGround({ ...ground }); for (const r of refreshers) r(); }
+  // The frost, as the game's night and sun have laid and taken it, and the game's clock, which the frost spells keep (#14).
+  const frost = timelineFrost(time - timelineStart, speed, spell);
+  if (frost !== null && Math.abs(frost - ground.frost) > 1e-4) { ground.frost = frost; sendGround({ ...ground }); for (const r of refreshers) r(); }
+  const at = timelineClock(time - timelineStart, speed, spell);
+  if (at !== null) {
+    timelineEl.textContent += ` · ${clock(at)}`;
+    if (at !== hour) { hour = at; for (const r of refreshers) r(); }
+  }
   // A storm's lightning, which the demo calls at the spell's rates, as the game would (#12).
   stormLightning(timelineLightning(time - timelineStart, speed, spell));
   if (key === timelineSent) return;
@@ -629,6 +657,8 @@ if (params.has('shot')) {
       if (ws) Object.assign(water, ws);
       ground.wet = timelineWet(t.time, t.speed ?? speed, t.spell ?? spell);
       ground.snow = timelineLying(t.time, t.speed ?? speed, t.spell ?? spell) ?? ground.snow;
+      ground.frost = timelineFrost(t.time, t.speed ?? speed, t.spell ?? spell) ?? ground.frost;
+      hour = timelineClock(t.time, t.speed ?? speed, t.spell ?? spell) ?? hour;
     }
     if (options.water) Object.assign(water, options.water);
     // The water's clock is the renderer's: put it at the frame's time first, so an ease starts from there.
