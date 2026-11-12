@@ -134,8 +134,8 @@ How it's drawn (`src/renderer/snowfall.ts`): one instanced draw in the main view
 depth, no ink lines round it), and two functions in the post pass (`snowVeil` for the whiteout, `snowDrifting` for the
 wisps). A flake belongs to a cell of the air (8 m) that the wind carries along, not to the spot it lands on as a raindrop
 does: a blizzard's flakes travel far further sideways than they fall. The cells over the view are drawn; panning or
-zooming moves no flake. The stops share the rain's tracing (`coverAlong`, `FALLING_GLSL` in rain.ts), up to 40 reads of
-each map down a blizzard's long slant. `falling=0` leaves it all out, the whiteout and wisps too; `fallingShare` thins it.
+zooming moves no flake. The stops share the rain's tracing (`coverAlong`, `FALLING_GLSL` in rain.ts), up to 24 reads of
+each map (and a few to refine the stop), only down the part of the path a flake has already fallen. `falling=0` leaves it all out, the whiteout and wisps too; `fallingShare` thins it.
 
 The demo: the `Snow` slider, the `blizzard` preset (with a gale), and the `snowfall` and `blizzard` spells on the
 timeline, which lay the snow as they go (`timelineLying`).

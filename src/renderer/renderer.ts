@@ -283,8 +283,9 @@ export class BrushRenderer {
         tDustA: { value: this.dust.a }, tDustB: { value: this.dust.b }, uDustBlend: { value: 0 },
         uDustGrid: { value: this.dust.grid }, uDustOn: { value: 0 }, uDustColor: { value: new THREE.Color() }, uDustReach: { value: 4.5 },
         ...this.rain.veil,
-        // The blizzard's whiteout, and the wisps over the lying snow (which read the ground's map and the land's height).
-        ...this.snowfall.veil, ...this.ground.uniforms, ...this.shelter.uniforms,
+        // The blizzard's whiteout, and the wisps over the lying snow (which read the ground's map, the land's height and
+        // its shelter, from the hollows map).
+        ...this.snowfall.veil, ...this.ground.uniforms, ...this.shelter.uniforms, ...this.hollows.uniforms,
         ...this.lightning.post, uShadowMap: this.shared.uShadowMap, uShadowMatrix: this.shared.uShadowMatrix,
       },
     });

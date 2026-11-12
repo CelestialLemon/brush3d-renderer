@@ -54,6 +54,11 @@ const MAX_SLANT = 4;
 const WIND_FALL = 0.06, WIND_THICK = 0.75;
 /** How much longer a blizzard's smear is: its flakes streak by. */
 const WIND_SMEAR = 1.2;
+/**
+ * The longest a flake's smear is drawn, in screen px: a short streak reads as snow driving past, a long dash (a blizzard's
+ * flakes close up) as rain.
+ */
+const SMEAR_MOST = 20;
 /** The share of the wind's speed soft snow drifts at, out of a blizzard: slow, as painted snow is. */
 const CARRY = 0.4;
 /** The wind (m/s) a heavy snow turns to a blizzard over: from the first number, fully at the second. */
@@ -96,6 +101,7 @@ uniform vec4 uSnowAir;    // x, y how far the air has carried the flakes (m, wra
 uniform vec4 uSnowFlake;  // its size (px), softness, opacity, smear (s)
 uniform vec4 uSnowMove;   // its sway (m), how often (a second), its tumble, its rim
 uniform vec2 uSnowWind;   // the wind as a whole (m/s): a gust surges a flake on by as much more as it blows there
+uniform float uSnowSmearMost; // the longest a smear is drawn (px)
 uniform float uSnowGround; // the land's height at the view's target (m): the land in view is within LAND_BELOW and LAND_ABOVE of it
 uniform vec3 uSnowGap[4];
 uniform vec3 uSnowCloud[4];
@@ -159,7 +165,8 @@ void main() {
   // Off the screen: nothing more to do.
   float z;
   vec2 head = screenOf(p, z);
-  vec3 vel = vec3(slant * uSnow.w + swaying, -uSnow.w);
+  vec2 sideways = slant * uSnow.w + swaying;
+  vec3 vel = vec3(sideways.x, -uSnow.w, sideways.y);
   float reach = uSnowFlake.x + length(vel) * uSnowFlake.w * pxPerMetre * 2.0 + 2.0;
   if (any(greaterThan(abs(head), 1.0 + reach / half_))) return;
   // Stopped on the way: by a roof, or (some of the time) by a crown, lost among its leaves. Only the path it has come down
@@ -184,6 +191,9 @@ void main() {
   vec2 dir = len > 1e-3 ? d / len : vec2(0.0, -1.0), across = vec2(-dir.y, dir.x);
   // Each a little bigger or smaller than the next; turning over, it narrows to its edge and back.
   float r = 0.5 * uSnowFlake.x * (0.7 + 0.6 * fract(rnd.w * 11.3));
+  // A fast flake (a blizzard's, close up) stretches only so far: a long dash reads as rain.
+  len = min(len, uSnowSmearMost);
+  sa = sb - dir * len;
   float turn = abs(sin(uTime * (1.5 + 2.0 * fract(rnd.z * 3.3)) + phase * 2.0));
   float ra = r * mix(1.0, 0.25 + 0.75 * turn, uSnowMove.z), rb = r;
   float pad = max(ra, rb) + 1.0;
@@ -273,6 +283,11 @@ float snowDrifting(vec3 p) {
   if (lying < 0.02) return 0.0;
   float low = 1.0 - smoothstep(0.3, 1.2, p.y - landTop(p));
   if (low <= 0.0) return 0.0;
+  // None under a roof (the porch's floor, under the panels), less under a crown, as the lying snow (snowAt): the ground's
+  // shelter from the hollows map (one read), or off it the shelter map's.
+  float cover = hollowAt(p.xz).z;
+  lying *= 1.0 - (cover < 0.0 ? shelter(p) : cover);
+  if (lying < 0.02) return 0.0;
   vec2 h = uSnowVeilFrame.xy, q = vec2(dot(p.xz, h), dot(p.xz, vec2(-h.y, h.x)));
   vec2 s = vec2(q.x / 6.0 - uSnowVeilFrame.w, q.y / 0.8);
   float n = fogNoise(s * 0.5 + 3.0) * 0.65 + fogNoise(s * vec2(1.3, 1.9) + 9.0) * 0.35;
@@ -307,6 +322,7 @@ export class Snowfall {
     uSnowFlake: { value: new THREE.Vector4() },
     uSnowMove: { value: new THREE.Vector4() },
     uSnowWind: { value: new THREE.Vector2() },
+    uSnowSmearMost: { value: SMEAR_MOST },
     uSnowGround: { value: 0 },
   };
   /** For the post pass. */
@@ -392,14 +408,16 @@ export class Snowfall {
     u.uSnowMove.value.set(L.sway[0], L.sway[1], L.tumble, L.rim);
     u.uSnowWind.value.copy(wind);
     u.uSnowGround.value = groundY;
+    u.uSnowSmearMost.value = SMEAR_MOST * px;
     const g = this.mesh.geometry as THREE.InstancedBufferGeometry;
     g.instanceCount = cells * slots;
     this.mesh.visible = slots > 0;
     // The whiteout: a heavy snow veils the distance a little in still air, a blizzard whites it out; its sheets blow
-    // downwind at the wind's speed, the wisps at about half again of it (in their noise's cells, which wrap unseen).
+    // downwind at the wind's speed, the wisps at about half again of it (in their noise's cells). Each wraps where every
+    // layer it moves wraps too (the sheets' layers move 1 and 2.4 times it, the wisps' 0.5 and 1.3 times), so none jumps.
     const step = dt >= 0 ? (dt <= 1 ? dt : 0.1) : 0;
-    this.sheets = (this.sheets + (windSpeed * step) / 30) % FOG_NOISE_CELLS;
-    this.wisps = (this.wisps + (windSpeed * 1.4 * step) / 6) % FOG_NOISE_CELLS;
+    this.sheets = (this.sheets + (windSpeed * step) / 30) % (5 * FOG_NOISE_CELLS);
+    this.wisps = (this.wisps + (windSpeed * 1.4 * step) / 6) % (20 * FOG_NOISE_CELLS);
     const v = this.veil;
     const thick = Math.max(blizzard, 0.25 * s ** 1.5);
     v.uSnowVeil.value.set(thick, this.sheets, WHITEOUT.middle, WHITEOUT.far);

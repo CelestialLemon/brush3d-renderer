@@ -1,7 +1,7 @@
 import { FOG_NOISE_CELLS } from './fog';
 import { NOISE, OKLAB } from './glsl';
 import { LIGHTNING_GLSL } from './lightning';
-import { GROUND_GLSL } from './ground';
+import { GROUND_GLSL, HOLLOW_GLSL } from './ground';
 import { RAIN_VEIL_GLSL } from './rain';
 import { SHELTER_GLSL } from './shelter';
 import { SNOW_VEIL_GLSL, WHITEOUT } from './snowfall';
@@ -91,6 +91,7 @@ const float FOG_MAX = 0.85;
 float fogNoise(vec2 p) { return texture2D(tFogNoise, p / FOG_NOISE_CELLS).r * 2.0 - 1.0; }
 ${RAIN_VEIL_GLSL}
 ${GROUND_GLSL}
+${HOLLOW_GLSL}
 ${SHELTER_GLSL}
 ${SNOW_VEIL_GLSL}
 
