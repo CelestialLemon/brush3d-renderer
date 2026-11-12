@@ -282,6 +282,11 @@ three: **the farm +0.33 ms, the meadow +0.31**, under the line's 0.4 (shared wit
 come together, and the snow on wet ground is drawn over it). `1080p storm, wet ground` in `node tools/profile.ts` and
 `?profile` is the dearest case, mud everywhere rather than only on the bare earth.
 
+Measured with the first of the candidate sheens ('streaks'). Not yet re-timed: the picked glaze (it reads the sky's
+clouds on what people build, a small share of the screen), the review's fixes since (the shelter in the water's
+reflection; the mud's earth test moved from every pixel to the ground's vertices, a saving), and the laptop (Arc 140T).
+The GPU was busy on 2026-11-12; a run of `node tools/profile.ts` settles it.
+
 What it cost at first, and what took it down (Sol measured most of it, #11):
 
 - **0.45 ms on the farm, 0.56 on the meadow**, first.
