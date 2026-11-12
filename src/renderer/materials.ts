@@ -55,6 +55,12 @@ export function createSharedUniforms() {
     uWaterBlend: { value: 1 },
     uWaterGrid: { value: new THREE.Vector4(0, 0, 1, 0) },
     uWaterHigh: { value: -1e6 },
+    // The water's ice (#14, WaterField.iceA/iceB): per cell how frozen and whether thawing, as it was and as last sent;
+    // whether any is frozen; how it's painted (the candidates: 0 black, 1 milky, 2 both).
+    tIceA: { value: null as THREE.Texture | null },
+    tIceB: { value: null as THREE.Texture | null },
+    uIceOn: { value: 0 },
+    uIceLook: { value: 0 },
     // The land's square (the ground's, see MeshOptions.fields): its centre's x and z, half its side, its turn. The water
     // stops at its edge (half 0: no edge).
     uLandSquare: { value: new THREE.Vector4(0, 0, 0, 0) },
@@ -207,8 +213,18 @@ ${HEAD}
 varying vec2 vFlow;
 varying float vMud;
 varying vec2 vMirrorShift;
+uniform sampler2D tIceA;
+uniform sampler2D tIceB;
+uniform float uIceOn;
+varying vec3 vIce;
 void main() {
   vec4 w = waterCell(ivec2(uv + 0.5));
+  // The ice (#14): how frozen, and whether it's thawing (1) or freezing.
+  vIce = vec3(0.0);
+  if (uIceOn > 0.5) {
+    ivec2 c = clamp(ivec2(uv + 0.5), ivec2(0), textureSize(tIceA, 0) - 1);
+    vIce = mix(texelFetch(tIceA, c, 0).xyz, texelFetch(tIceB, c, 0).xyz, uWaterBlend);
+  }
   vec4 wp = modelMatrix * vec4(position.x, w.x, position.z, 1.0);
   vRestPos = wp.xyz;
   vWorldPos = wp.xyz;
@@ -851,6 +867,24 @@ varying float vMud;
 varying vec2 vMirrorShift;
 ${WATER_SHEET_GLSL}
 ${RAIN_RINGS_GLSL}
+// The ice (#14): how frozen the water is here and whether it's thawing (the game's map, per cell, see WaterField), and
+// how it's painted (the candidates: 0 black, 1 milky, 2 both: dark in the channel, milky at the banks).
+varying vec3 vIce;
+uniform float uIceOn;
+uniform float uIceLook;
+// A cracked sheet's cells (and the floes it breaks into): how far inside its cell a point is (the gap to the next
+// cell's centre, 0 on an edge), and the cell's id.
+vec3 iceCells(vec2 q) {
+  vec2 i = floor(q), f = fract(q), id = vec2(0.0);
+  float d1 = 8.0, d2 = 8.0;
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 g = vec2(float(x), float(y));
+    vec2 o = g + hash22(i + g) * 0.8 + 0.1 - f;
+    float d = dot(o, o);
+    if (d < d1) { d2 = d1; d1 = d; id = i + g; } else if (d < d2) d2 = d;
+  }
+  return vec3(sqrt(d2) - sqrt(d1), id);
+}
 // The flow carries the ripples and the glints along (a flow map: two copies, each carried for a while and then put back,
 // crossfaded so neither's jump shows, each place on its own beat so no pulse runs over the whole river). However the flow
 // turns and changes speed across the water, the pattern is never dragged out of shape.
@@ -1002,6 +1036,98 @@ void main() {
   if (uRings.x > 0.0) {
     float rings = rainRings(p.xz) * (1.0 - shelter(p));
     col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.45) * skyTint()), rings);
+  }
+  // Ice (#14). In a cell partly frozen, the water by the banks and the slow water freeze first and the fast middle last
+  // (how far from the shore: the map's, per cell, smoothed between them). New ice is a clear dark skin; it pales
+  // (in the milky looks) as it ages. Thawing, it darkens wet, dark leads open along the flow, and the middle breaks into
+  // floes that drift down with the flow and shrink, the ice along the banks going last.
+  // (Its rank and its derivatives taken wherever there's ice anywhere: the same for every pixel, so they're defined at
+  // the edge of the frozen cells too.)
+  if (uIceOn > 0.5) {
+    float iceAmt = vIce.x;
+    bool thawing = vIce.y > 0.5;
+    float shore = vIce.z;
+    float breakup = snoise(p.xz * 0.5 + 41.0) * 0.6 + snoise(p.xz * 1.6 + 3.0) * 0.4;
+    // (Never below a little over nothing: no ice at all where the map has none, and no seam where a frozen cell meets an
+    // open one.)
+    float order = max(0.55 * smoothstep(0.0, 3.5, shore) + 0.3 * smoothstep(0.1, 0.7, speed) + 0.12 * breakup + 0.02, 0.04);
+    float reach = iceAmt * 1.1;
+    float fixedIce = smoothstep(order - 0.03, order + 0.03, reach);
+    // How long it's been frozen here, 0 a new skin .. 1 old ice.
+    float age = smoothstep(0.0, 0.3, reach - order);
+    // Along the flow and across it (still water: the map's x).
+    vec2 cr = vec2(dot(p.xz, dir), dot(p.xz, vec2(-dir.y, dir.x)));
+    // The ice's edge against open water: a pale line, a pixel or two wide, as its rim catches the light.
+    float edgeAt = reach - order - 0.012;
+    // (No wider than a band of the rank, however steeply the ice changes between cells, and fading out as the ice does,
+    // so nothing's left to cut off where there's next to none.)
+    float rim = (1.0 - smoothstep(0.0, clamp(fwidth(edgeAt) * 1.5, 0.006, 0.04), abs(edgeAt))) * smoothstep(0.002, 0.03, iceAmt);
+    // How fine a detail can be before it's under a pixel (taken here, before the branches).
+    float fine = 1.0 - smoothstep(0.1, 0.3, length(fwidth(cr * 9.0)));
+    float cw = length(fwidth(p.xz * 0.6));
+    if (iceAmt > 0.002) {
+      float iceCover = fixedIce, floes = 0.0;
+      if (thawing) {
+        // Leads: dark lanes along the flow, opening as the ice goes.
+        float lane = abs(snoise(cr * vec2(0.12, 0.9) + 13.0));
+        float lead = smoothstep(0.0, 0.03, lane - (1.0 - iceAmt) * 0.22);
+        iceCover *= lead; rim *= lead;
+        // Floes, carried by the flow as the ripples are (two copies, each carried a while and put back): each copy's floes
+        // shrink away as it fades and grow as it comes back, fewer as the ice goes. (Only in the open water.)
+        if (fixedIce < 0.999) {
+          float fb = uTime / 14.0 + snoise(p.xz * 0.07 + 5.0) * 0.5;
+          float g1 = fract(fb), g2 = fract(fb + 0.5), v1 = 1.0 - abs(2.0 * g1 - 1.0), v2 = 1.0 - v1;
+          vec3 c1 = iceCells((p.xz - flow * g1 * 14.0) * 0.8), c2 = iceCells((p.xz - flow * g2 * 14.0) * 0.8 + vec2(31.0, 17.0));
+          float left = smoothstep(0.02, 0.5, iceAmt);
+          // (Each floe shrinks away by its own share of what's left, so they go one by one, none at once.)
+          float s1 = 0.06 + (1.0 - left) * 0.3 + (1.0 - smoothstep(0.0, 0.3, v1)) * 0.6 + clamp((hash12(c1.yz) - left) * 3.0, 0.0, 1.0) * 0.5;
+          float s2 = 0.06 + (1.0 - left) * 0.3 + (1.0 - smoothstep(0.0, 0.3, v2)) * 0.6 + clamp((hash12(c2.yz + 9.0) - left) * 3.0, 0.0, 1.0) * 0.5;
+          float f1 = smoothstep(0.0, 0.04, c1.x - s1), f2 = smoothstep(0.0, 0.04, c2.x - s2);
+          floes = max(f1, f2) * (1.0 - fixedIce);
+          iceCover = max(iceCover, floes);
+        }
+      }
+      if (iceCover + rim > 0.001) {
+        float lightI = sunLight(n, 0.3) * mix(0.3, 1.0, vis);
+        // Black ice: dark, the bed faint through it, and glossy: the sky and the banks mirrored whole, not broken by ripples.
+        vec2 ruv0 = uv - vMirrorShift;
+        // (Blurred a little wider than the open water's: with no ripples to break it up, its half-size texels would shimmer.)
+        vec2 rt0 = rt * 1.6;
+        vec4 r0 = (texture(uReflect, ruv0) * 2.0 + texture(uReflect, ruv0 + vec2(rt0.x, 0.0)) + texture(uReflect, ruv0 - vec2(rt0.x, 0.0))
+          + texture(uReflect, ruv0 + vec2(0.0, rt0.y)) + texture(uReflect, ruv0 - vec2(0.0, rt0.y))) / 6.0;
+        vec3 mirror0 = sky * (1.0 - r0.a) + r0.rgb;
+        vec3 black = bed * through * 0.35 + scatter * (1.0 - through) * 0.5;
+        black = mix(black, mirror0, 0.32) + (clouded - sky) * (1.0 - solid) * 0.25;
+        // Milky ice: pale blue-white, lit as the snow is, streaked along the flow by how it froze.
+        float m = uIceLook < 0.5 ? 0.0 : uIceLook < 1.5 ? 1.0 : 1.0 - smoothstep(0.8, 2.2, shore + breakup * 0.5);
+        // A floe's broken ice is paler, in any look.
+        m = max(m * age, floes * 0.55);
+        vec3 iceCol = black;
+        if (m > 0.0) {
+          float streak = snoise(cr * vec2(0.35, 4.0) + 7.0) * 0.65 + snoise(cr * vec2(0.9, 9.0)) * 0.35 * fine;
+          vec3 milky = snowPaint(lightI, 0.08, streak * 0.5) * vec3(0.74, 0.84, 0.96);
+          iceCol = mix(black, mix(milky, black, 0.28 + 0.1 * streak), m);
+        }
+        // Cracks: fine pale lines keyed to the world, fading as the cells shrink towards a pixel.
+        if (age > 0.0 && cw < 0.1) {
+          vec3 ck = iceCells(p.xz * 0.6 + 9.0);
+          float crack = (1.0 - smoothstep(0.0, 0.03 + cw, ck.x)) * (1.0 - smoothstep(0.03, 0.1, cw)) * age
+            * smoothstep(-0.2, 0.3, snoise(p.xz * 0.25 + 77.0));
+          iceCol = mix(iceCol, snowPaint(lightI, 0.05, 0.0), crack * mix(0.3, 0.45, m));
+        }
+        // Thawing: wet, darker and glossier as it goes.
+        if (thawing) iceCol = mix(iceCol * 0.82, mirror0, 0.12 * (1.0 - iceAmt));
+        // Lying snow (the ground's map) on it: a thin dusting streaked by the wind, at most, so the river still reads.
+        float lying = groundState(p.xz).x;
+        if (lying > 0.004) {
+          vec2 wr = vec2(dot(p.xz, uWindDir), dot(p.xz, vec2(-uWindDir.y, uWindDir.x)));
+          float drift = snoise(wr * vec2(0.25, 0.6) + 2.0) * 0.7 + snoise(wr * vec2(0.7, 1.6)) * 0.3 * fine;
+          iceCol = mix(iceCol, snowPaint(lightI, 0.06, drift * 0.3), smoothstep(-0.1, 0.6, drift + lying - 0.5) * min(lying * 1.4, 0.5) * age);
+        }
+        col = mix(col, iceCol, iceCover);
+        col = mix(col, snowPaint(lightI, 0.05, 0.0), rim * 0.5);
+      }
+    }
   }
   writeGBuffer(col, n, vViewDepth, 0.0, 1.0);
 }

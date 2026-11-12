@@ -23,6 +23,12 @@ export interface WaterMap {
   flowX?: Float32Array; flowZ?: Float32Array;
   /** How muddy it is per cell, 0 clear to 1 brown with silt (clear if left out). */
   mud?: Float32Array;
+  /**
+   * How frozen it is per cell (#14), 0 open, about 0.3 a skin and shore ice, 1 frozen over (open if left out). Inside a
+   * cell the renderer freezes the banks and the slow water first; whether a cell is freezing or thawing it tells by
+   * whether this rose or fell when last it changed.
+   */
+  ice?: Float32Array;
 }
 
 /** How far the sheet dives under the land past the flat cell beyond the last wet one, metres a cell, and at most. */
@@ -85,6 +91,10 @@ float waterNear(vec2 xz) { return waterSheet(xz).y; }
 interface Laid {
   /** RGBA per cell: level, flow x, flow z, mud. */
   data: Float32Array;
+  /** Per cell: how frozen (#14); a dry cell takes the water's it continues. */
+  ice: Float32Array;
+  /** Per cell: how far into the water it is from the nearest dry cell, metres (0 dry), for where ice forms first (#14). */
+  shore: Float32Array;
   /** Cells (Chebyshev) to the nearest wet cell, capped at 255. */
   dist: Uint8Array;
   /** The lowest and highest wet surface, and the middle one (the median), or null with no water. */
@@ -95,7 +105,7 @@ interface Laid {
 export function layWater(map: WaterMap): Laid {
   const { nx, nz, level } = map, n = nx * nz;
   if (level.length !== n) throw new Error(`water map: ${level.length} levels for ${nx} x ${nz} cells`);
-  const data = new Float32Array(n * 4), dist = new Uint8Array(n).fill(255);
+  const data = new Float32Array(n * 4), dist = new Uint8Array(n).fill(255), ice = new Float32Array(n);
   /** The surface each cell continues, before its dive. */
   const source = new Float32Array(n).fill(-Infinity);
   // Breadth first from the wet cells (to all eight neighbours, so diagonal shores are as near as straight ones): each dry
@@ -107,6 +117,7 @@ export function layWater(map: WaterMap): Laid {
     if (Number.isNaN(level[i])) continue;
     data[i * 4] = level[i];
     data[i * 4 + 1] = map.flowX?.[i] ?? 0; data[i * 4 + 2] = map.flowZ?.[i] ?? 0; data[i * 4 + 3] = THREE.MathUtils.clamp(map.mud?.[i] ?? 0, 0, 1);
+    ice[i] = THREE.MathUtils.clamp(map.ice?.[i] ?? 0, 0, 1);
     dist[i] = 0; source[i] = level[i]; queue[count++] = i;
   }
   const wet = new Float32Array(count);
@@ -123,6 +134,7 @@ export function layWater(map: WaterMap): Laid {
         if (si > source[j]) {
           source[j] = si;
           data[j * 4 + 1] = data[i * 4 + 1]; data[j * 4 + 2] = data[i * 4 + 2]; data[j * 4 + 3] = data[i * 4 + 3];
+          ice[j] = ice[i];
         }
       }
     }
@@ -138,7 +150,7 @@ export function layWater(map: WaterMap): Laid {
     if (dive > 0) data[i * 4 + 3] = -dive;
   }
   wet.sort((a, b) => a - b);
-  return { data, dist, low: wet[0] ?? 0, high: wet[wet.length - 1] ?? 0, mid: wet.length ? wet[wet.length >> 1] : null };
+  return { data, ice, shore: shoreDistance(map), dist, low: wet[0] ?? 0, high: wet[wet.length - 1] ?? 0, mid: wet.length ? wet[wet.length >> 1] : null };
 }
 
 /**
@@ -154,6 +166,13 @@ export class WaterField {
   /** The water as it was, and as last sent (RGBA float per cell), for the shaders. */
   a = cellTexture(1, 1);
   b = cellTexture(1, 1);
+  /** The ice (#14), as it was and as last sent: per cell how frozen, and whether it's thawing (1) or freezing (0). */
+  iceA = cellTexture(1, 1);
+  iceB = cellTexture(1, 1);
+  /** Whether any of the water is frozen, as it was or as last sent. */
+  iced = false;
+  /** Per cell, whether the ice was falling (1: thawing) or rising (0) when last it changed. */
+  private thaw = new Float32Array(1);
   /** x0, z0, 1 / cell, 1 with a map (0 without). */
   readonly grid = new THREE.Vector4(0, 0, 1, 0);
   /** The surface the reflection is drawn about: the middle of the water as last sent. */
@@ -194,12 +213,14 @@ export class WaterField {
    */
   set(map: WaterMap | null, time: number, ease = WATER_EASE) {
     if (!map) {
-      this.any = false; this.from = this.to = null; this.grid.w = 0; this.floor = null;
+      this.any = false; this.iced = false; this.from = this.to = null; this.grid.w = 0; this.floor = null;
       return;
     }
     const laid = layWater(map);
     const same = this.geometry && this.to && map.nx === this.nx && map.nz === this.nz && map.cell === this.cell
       && map.x0 === this.x0 && map.z0 === this.z0;
+    /** The ice as last sent (what the game said, not what's drawn mid-ease), to tell which way it's going now. */
+    const sentIce = same ? this.to!.ice : null;
     if (!same) {
       this.nx = map.nx; this.nz = map.nz; this.cell = map.cell; this.x0 = map.x0; this.z0 = map.z0;
       this.build();
@@ -210,15 +231,18 @@ export class WaterField {
       for (let i = 0; i < data.length; i++) data[i] = from.data[i] + (to.data[i] - from.data[i]) * b;
       const dist = new Uint8Array(from.dist.length);
       for (let i = 0; i < dist.length; i++) dist[i] = b < 1 ? Math.min(from.dist[i], to.dist[i]) : to.dist[i];
+      const ice = new Float32Array(from.ice.length), shore = new Float32Array(from.shore.length);
+      for (let i = 0; i < ice.length; i++) ice[i] = from.ice[i] + (to.ice[i] - from.ice[i]) * b;
+      for (let i = 0; i < shore.length; i++) shore[i] = from.shore[i] + (to.shore[i] - from.shore[i]) * b;
       const wet = (b < 1 ? [from, to] : [to]).filter((l) => l.mid !== null);
       this.from = {
-        data, dist, low: Math.min(...wet.map((l) => l.low)), high: Math.max(...wet.map((l) => l.high)),
+        data, ice, shore, dist, low: Math.min(...wet.map((l) => l.low)), high: Math.max(...wet.map((l) => l.high)),
         mid: wet.length ? (to.mid ?? from.mid) : null,
       };
     }
     // Water drained away, or coming where there was none, eases to (or from) itself sunk under the land, as a drying
     // shore does: never to the depths a map with no water at all lies at.
-    if (ease > 0 && laid.mid === null && this.from.mid !== null) this.to = { ...laid, data: sunk(this.from.data) };
+    if (ease > 0 && laid.mid === null && this.from.mid !== null) this.to = { ...laid, data: sunk(this.from.data), shore: this.from.shore };
     else {
       if (ease > 0 && laid.mid !== null && this.from.mid === null) this.from = { ...this.from, data: sunk(laid.data) };
       this.to = laid;
@@ -226,6 +250,17 @@ export class WaterField {
     this.start = time; this.ease = ease;
     this.upload(this.a, this.from.data);
     this.upload(this.b, this.to.data);
+    // The ice, and which way it's going in each cell: which way the game's value moved from the last it sent (not from
+    // what's drawn, which may still be easing the other way); as before, if it hasn't moved. A new grid starts freezing.
+    const thaw = this.thaw, fromIce = this.from.ice, toIce = this.to.ice;
+    let iced = false;
+    for (let i = 0; i < thaw.length; i++) {
+      if (sentIce) { if (toIce[i] < sentIce[i] - 1e-4) thaw[i] = 1; else if (toIce[i] > sentIce[i] + 1e-4) thaw[i] = 0; }
+      if (toIce[i] > 0 || (ease > 0 && fromIce[i] > 0)) iced = true;
+    }
+    this.iced = iced;
+    this.upload(this.iceA, iceData(fromIce, thaw, this.from.shore));
+    this.upload(this.iceB, iceData(toIce, thaw, this.to.shore));
     this.grid.set(this.x0, this.z0, 1 / this.cell, 1);
     this.mirror = laid.mid ?? this.from.mid ?? 0;
     this.floor = laid.mid === null ? null : laid.low;
@@ -245,9 +280,11 @@ export class WaterField {
    */
   private build() {
     this.geometry?.dispose();
-    this.a.dispose(); this.b.dispose();
+    this.a.dispose(); this.b.dispose(); this.iceA.dispose(); this.iceB.dispose();
     const { nx, nz, cell, x0, z0 } = this, vx = nx + 2, vz = nz + 2;
     this.a = cellTexture(nx, nz); this.b = cellTexture(nx, nz);
+    this.iceA = cellTexture(nx, nz); this.iceB = cellTexture(nx, nz);
+    this.thaw = new Float32Array(nx * nz);
     // Vertex i: the edge at 0 and nx + 1, else the centre of cell i - 1.
     const at = (i: number, n: number) => (i === 0 ? 0 : i === n + 1 ? n : i - 0.5);
     const pos = new Float32Array(vx * vz * 3), uv = new Float32Array(vx * vz * 2);
@@ -312,6 +349,34 @@ export class WaterField {
 function cellTexture(nx: number, nz: number) {
   return new THREE.DataTexture(new Float32Array(nx * nz * 4), nx, nz, THREE.RGBAFormat, THREE.FloatType);
 }
+
+/** The ice's texels (RGBA per cell, for one format with the water's): how frozen, and whether it's thawing. */
+/** The ice's texture (#14): per cell how frozen, whether it's thawing, and how far from the shore. */
+function iceData(ice: Float32Array, thaw: Float32Array, shore: Float32Array) {
+  const out = new Float32Array(ice.length * 4);
+  for (let i = 0; i < ice.length; i++) { out[i * 4] = ice[i]; out[i * 4 + 1] = thaw[i]; out[i * 4 + 2] = shore[i]; }
+  return out;
+}
+
+/** How far each wet cell is from the nearest dry one, metres, up to SHORE_MAX (a chamfer distance in two sweeps). */
+export function shoreDistance(map: WaterMap) {
+  const { nx, nz, level, cell } = map, d = new Float32Array(nx * nz), D = Math.SQRT2, FAR = 1e9;
+  for (let i = 0; i < d.length; i++) d[i] = Number.isNaN(level[i]) ? 0 : FAR;
+  const at = (x: number, z: number) => (x < 0 || z < 0 || x >= nx || z >= nz ? FAR : d[z * nx + x]);
+  for (let z = 0; z < nz; z++) for (let x = 0; x < nx; x++) {
+    const i = z * nx + x;
+    if (d[i] > 0) d[i] = Math.min(d[i], at(x - 1, z) + cell, at(x, z - 1) + cell, at(x - 1, z - 1) + D * cell, at(x + 1, z - 1) + D * cell);
+  }
+  for (let z = nz - 1; z >= 0; z--) for (let x = nx - 1; x >= 0; x--) {
+    const i = z * nx + x;
+    if (d[i] > 0) d[i] = Math.min(d[i], at(x + 1, z) + cell, at(x, z + 1) + cell, at(x + 1, z + 1) + D * cell, at(x - 1, z + 1) + D * cell);
+  }
+  // The shore itself lies about half a cell from the last wet cell's centre (where the land meets the sheet); capped after.
+  for (let i = 0; i < d.length; i++) if (d[i] > 0) d[i] = Math.min(d[i] - cell / 2, SHORE_MAX);
+  return d;
+}
+/** As far from the shore as the ice cares about, metres: past it, all water is the middle. */
+export const SHORE_MAX = 8;
 
 /** The water laid out, sunk as far as the sheet ever dives, where it isn't drawn. */
 function sunk(data: Float32Array) {

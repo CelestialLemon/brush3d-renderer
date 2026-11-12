@@ -38,7 +38,8 @@ import { WindView } from './windView';
 //     fog lifting, a dust storm blowing through, a storm flooding the stream over the land, a thunderstorm, a gale or a
 //     hurricane, #12; a snowfall settling, or a blizzard rolling in on a gale, #14: best in winter)
 //   water=usual|spate|flood (the water, #18), then each value over it: rise (m over the usual), flow (times the usual
-//     speed), mud (0..1)
+//     speed), mud (0..1), ice (how frozen, 0..1, the game's: 0.3 ice along the banks, 1 frozen over; #14)
+//   iceLook=a|b|c (the ice's look, candidates for #14: a black, b milky, c both: milky at the banks, dark in the channel)
 //   lying (how deep the snow lies over the land, 0..1, the game's: 0.2 a dusting, 0.5 the grass covered, 1 deep; #14;
 //     0.4 by default where it snows)
 //   frost (how much frost, 0..1, the game's: 1 a hard frost everywhere in the open; where it lies and how the morning's
@@ -94,19 +95,24 @@ loaded.then(() => { isLoaded = true; });
 const WATER_PRESETS: Record<string, WaterState> = {
   usual: USUAL_WATER,
   // In spate after a storm: up to its banks, fast and brown.
-  spate: { rise: 0.15, flow: 3.5, mud: 0.75 },
+  spate: { rise: 0.15, flow: 3.5, mud: 0.75, ice: 0 },
   // Over its banks and spreading over the floodplain.
-  flood: { rise: 0.4, flow: 2.5, mud: 0.9 },
+  flood: { rise: 0.4, flow: 2.5, mud: 0.9, ice: 0 },
 };
 const demoWater = new DemoWater(scene.stream, scene.height);
 const waterPreset = WATER_PRESETS[params.get('water') ?? 'usual'] ?? USUAL_WATER;
-const water: WaterState = { rise: num('rise', waterPreset.rise), flow: num('flow', waterPreset.flow), mud: num('mud', waterPreset.mud) };
+const water: WaterState = {
+  rise: num('rise', waterPreset.rise), flow: num('flow', waterPreset.flow), mud: num('mud', waterPreset.mud), ice: num('ice', waterPreset.ice),
+};
 let waterSent = '';
+/** The ice sent last, and before it (which way it's going: the renderer tells freezing from thawing by it). */
+let iceNow = water.ice, iceBefore = water.ice;
 /** Sends the water as the game does, when it has changed: eased in, or at once. */
 function sendWater(w: WaterState, immediate = false) {
   const key = JSON.stringify(w);
   if (key === waterSent) return;
   waterSent = key;
+  if (w.ice !== iceNow) { iceBefore = iceNow; iceNow = w.ice; }
   renderer.setWater(demoWater.map(w), immediate ? 0 : undefined);
 }
 sendWater(water, true);
@@ -173,6 +179,7 @@ function here() {
   next.set('wind', wind.speed.toFixed(2)); next.set('windDir', ((wind.direction * 180) / Math.PI).toFixed(1));
   next.set('gust', String(wind.gust ?? 0.5)); next.set('rhythm', String(rhythm));
   next.set('rise', String(water.rise)); next.set('flow', String(water.flow)); next.set('mud', String(water.mud));
+  next.set('ice', String(water.ice));
   next.set('lying', String(ground.snow)); next.set('frost', String(ground.frost)); next.set('wet', String(ground.wet));
   next.set('view', String(view.view)); next.set('zoom', view.zoom.toFixed(1));
   next.set('x', view.target.x.toFixed(2)); next.set('z', view.target.z.toFixed(2));
@@ -307,6 +314,10 @@ renderer.snowShade = SNOW_SHADES.indexOf(snowShade);
 const FROST_LOOKS = ['a', 'b', 'c'] as const;
 let frostLook = FROST_LOOKS.find((s) => s === params.get('frostLook')) ?? 'a';
 renderer.frostLook = FROST_LOOKS.indexOf(frostLook);
+// The ice's look (#14): the candidates.
+const ICE_LOOKS = ['a', 'b', 'c'] as const;
+let iceLook = ICE_LOOKS.find((s) => s === params.get('iceLook')) ?? 'a';
+renderer.iceLook = ICE_LOOKS.indexOf(iceLook);
 /** Sets a look option in the URL as it stands, so a reload or a shared link keeps it. */
 function urlOption(key: string, value: string) {
   params.set(key, value);
@@ -495,7 +506,7 @@ function hud() {
     'dust storm: the wind getting up and blowing a dust storm through · flood: a storm swelling the stream, which floods the land and drains · ' +
     'thunderstorm: a storm rolling in, lightning, and clearing · gale: squalls on a strong wind under a broken sky · hurricane: the strongest wind and driving rain · ' +
     'snowfall: snow coming in, settling and clearing · blizzard: a blizzard rolling in on a gale and blowing itself out (best in winter) · ' +
-    'late-frost: a spring night\'s frost forming and the morning sun taking it (best in spring) · cold-snap: a winter day of hard frost, the sun clearing only what it shines on (best in winter); both run the clock';
+    'late-frost: a spring night\'s frost forming and the morning sun taking it (best in spring) · cold-snap: a winter day of hard frost, the sun clearing only what it shines on (best in winter) · freeze-thaw: the stream freezing over from its banks, then thawing, its floes going downstream (best in winter); these run the clock';
   spells.onchange = () => { spell = spells.value as SpellName; timelineStart = null; timelineSent = ''; };
   spells.onkeydown = (e) => e.stopPropagation();
   play.onclick = () => {
@@ -520,6 +531,18 @@ function hud() {
     (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)} m`, true));
   hudEl.append(slider('flow', 0, 5, 0.05, () => water.flow, waterSet((v) => { water.flow = v; }), (v) => `${v.toFixed(2)}×`, true));
   hudEl.append(slider('mud', 0, 1, 0.01, () => water.mud, waterSet((v) => { water.mud = v; }), share, true));
+  // The ice (#14), what the game would send (the freeze-thaw spell moves it too), and its look's candidates.
+  hudEl.append(slider('ice', 0, 1, 0.01, () => water.ice, waterSet((v) => { water.ice = v; }), share, true));
+  const iceButton = Object.assign(document.createElement('button'), { textContent: `ice look ${iceLook.toUpperCase()}` });
+  iceButton.title = 'The ice\'s look, candidates for #14: A black (clear and dark, a calm mirror), B milky (pale and streaked), C both (milky at the banks, dark over the deep channel) (iceLook=a|b|c)';
+  iceButton.onclick = () => {
+    iceLook = ICE_LOOKS[(ICE_LOOKS.indexOf(iceLook) + 1) % ICE_LOOKS.length];
+    renderer.iceLook = ICE_LOOKS.indexOf(iceLook);
+    urlOption('iceLook', iceLook);
+    iceButton.textContent = `ice look ${iceLook.toUpperCase()}`;
+    hud();
+  };
+  hudEl.append(iceButton);
 
   // The ground (#14): the snow lying, what the game would send.
   hudEl.append(slider('Lying', 0, 1, 0.01, () => ground.snow, (v) => { ground.snow = v; sendGround({ ...ground }); }, share, true));
@@ -695,7 +718,16 @@ async function profile(cases = defaultCases(), progress?: (row: ProfileRow, i: n
   profiling = true;
   try {
     return await runProfile(renderer, (t) => { renderer.setHour(hour); renderer.render(t); },
-      () => { send(weather, true, 0); groundSent = ''; sendGround(ground, true); }, cases, progress);
+      (c) => {
+        send(weather, true, 0); groundSent = ''; sendGround(ground, true);
+        // A case's ice comes in thawing, as from frozen over (#14). Otherwise the demo's water, going the way it was
+        // (the ice before it, then it). Sent straight to the renderer, so the demo's own record of its ice stands.
+        waterSent = '';
+        // (Ice that has never moved came in freezing, as from none.)
+        const [was, now] = c?.ice !== undefined ? [1, c.ice] : [iceBefore === iceNow ? 0 : iceBefore, water.ice];
+        renderer.setWater(demoWater.map({ ...water, ice: was }), 0);
+        renderer.setWater(demoWater.map({ ...water, ice: now }), 0);
+      }, cases, progress);
   } finally { profiling = false; resize(); }
 }
 if (params.has('profile')) profilePanel();

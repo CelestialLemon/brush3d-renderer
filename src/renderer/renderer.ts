@@ -213,6 +213,8 @@ export class BrushRenderer {
   private readonly sunMemory: SunMemory;
   /** How the frost's rime is painted, the candidates for #14 (frost.ts, frostPaint): 0 matte, 1 crisp, 2 glittering. */
   set frostLook(look: number) { this.sunMemory.uniforms.uFrostLook.value = look; }
+  /** How the river's ice is painted, the candidates for #14 (materials.ts, WATER_FRAG): 0 black, 1 milky, 2 both. */
+  set iceLook(look: number) { this.shared.uIceLook.value = look; }
   /** The game's clock hour as setHour last set it (the frost's sun memory adds by it), or null before. */
   private clockHour: number | null = null;
   /** The sun's height as the light was last set (degrees, below the horizon too). */
@@ -557,6 +559,7 @@ export class BrushRenderer {
     this.water.set(map, this.shared.uTime.value, ease);
     const s = this.shared;
     s.tWaterA.value = this.water.a; s.tWaterB.value = this.water.b; s.uWaterGrid.value.copy(this.water.grid);
+    s.tIceA.value = this.water.iceA; s.tIceB.value = this.water.iceB; s.uIceOn.value = this.water.iced ? 1 : 0;
     if (this.water.geometry !== before || !this.waterMesh) {
       if (this.waterMesh) this.remove(this.waterMesh);
       this.waterMesh = this.water.geometry ? this.add(this.water.geometry, 'water') : null;
