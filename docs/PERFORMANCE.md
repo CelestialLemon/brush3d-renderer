@@ -321,7 +321,8 @@ more than snow alone plus the 0.3, since they share the read.
 Crawl (`AB=2 tools/motion.ts`, a 1 px pan, winter at 10:00, frost 0.75, `falling=0`): the ground's own steady (without
 the trees, 0.026 → 0.033); with the trees, 0.096 → 0.125 (the meadow 0.088 → 0.095), all at the bare branches' edges against the paler ground, as
 with lying snow (0.108 → 0.193): with the branches' own rime turned off it reads the same. Pops in a gale
-(`tools/pops.ts`, the glittering look): none at the short step, as without frost.
+(`tools/pops.ts`, with the glittering candidate, the most likely to pop; matte was picked): none at the short step, as
+without frost.
 Still to read on the laptop: the `1080p storm, frost` line against `1080p storm`.
 
 ### Wet ground (#11)

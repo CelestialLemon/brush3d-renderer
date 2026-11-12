@@ -25,7 +25,6 @@ export const SUN_CLEARS = 2.5;
 export const FROST_GLSL = /* glsl */ `
 uniform sampler2D tSunHad;   // the sun each spot of the ground has had since dawn (SunMemory), over the hollows map's square
 uniform float uSunHadOn;
-uniform float uFrostLook;    // the candidates for #14: 0 matte, 1 crisp (a deeper blue shade), 2 glittering
 // The sun had at xz, 0 (none since dawn) .. 1 (enough to clear any frost short of a hard one): (x) on the ground, (y) on
 // what's highest there (a roof's top, a crown's; the ground's where nothing stands over it).
 vec2 sunHadAt(vec2 xz) {
@@ -45,8 +44,9 @@ float frostCover(float early, float sun, float brush) {
 }
 // The rime over 'col': 'amount' how much (frostCover times how far the surface takes it), lit as the snow's paint is
 // ('light', 0 deep shade .. 1 full sun), its crystals the material's own brushwork ('brush', about -1..1), broken up
-// over metres by the land's pattern (the thin snow's, from the hollows map). The glitter is keyed to the world at p.
-vec3 frostPaint(vec3 col, float light, float amount, float brush, vec3 p) {
+// over metres by the land's pattern (the thin snow's, from the hollows map). Matte: the developer's pick of three
+// candidates on #14 (the others were crisp, whiter with a deeper blue shade, and glittering, with points of light).
+vec3 frostPaint(vec3 col, float light, float amount, float brush) {
   if (amount <= 0.0) return col;
   float grain = clamp(brush, -1.0, 1.0);
   // A rime, not a cover: the paint under it shows through, paled toward the snow's paint, and keeps its own hues (the
@@ -56,30 +56,9 @@ vec3 frostPaint(vec3 col, float light, float amount, float brush, vec3 p) {
   float lum = dot(col, vec3(0.299, 0.587, 0.114));
   vec3 hue = col - lum;
   float mottle = gHollow.z >= 0.0 ? clamp(gHollow.w, -1.0, 1.0) : 0.0;
-  vec3 c;
-  if (uFrostLook > 0.5 && uFrostLook < 1.5) {
-    // Crisp: whiter where it's whole, its crystals sharper, and a deeper blue in the shade.
-    rime = mix(rime, mix(uSnowGap[0], uSnowCloud[0], gCloud) * 0.92, inShade * 0.3);
-    float a = amount * mix(0.3, 0.78, smoothstep(-0.3, 0.1, grain + 0.3 * mottle + amount - 0.7));
-    c = mix(col, rime, a) + hue * a * 0.35;
-  } else {
-    rime = mix(rime, mix(rime, col * 1.25 + 0.08, 0.45), inShade);
-    float a = amount * (0.46 + 0.1 * mottle + 0.12 * grain);
-    c = mix(col, rime, a) + hue * a * mix(0.6, 0.2, inShade);
-  }
-  if (uFrostLook < 1.5) return c;
-  {
-    // Glittering: here and there a crystal catching the sun, a point of white, fixed to the world (no twinkling as the
-    // camera moves), only in the sun's light and only close enough to see.
-    vec2 cell = floor(p.xz * 7.0);
-    float spark = step(0.965, hash12(cell + 0.37)) * smoothstep(0.55, 0.75, light);
-    spark *= 1.0 - smoothstep(0.1, 0.3, length(fwidth(p.xz * 7.0)));
-    // A small four-pointed glint, at a spot in its cell.
-    vec2 at = abs(fract(p.xz * 7.0) - 0.3 - 0.4 * hash22(cell));
-    float glint = max(1.0 - smoothstep(0.06, 0.14, length(at)), (1.0 - smoothstep(0.0, 0.035, min(at.x, at.y))) * (1.0 - smoothstep(0.05, 0.3, max(at.x, at.y))));
-    c = mix(c, vec3(2.2, 2.25, 2.4), spark * glint * min(1.0, amount * 1.5));
-  }
-  return c;
+  rime = mix(rime, mix(rime, col * 1.25 + 0.08, 0.45), inShade);
+  float a = amount * (0.46 + 0.1 * mottle + 0.12 * grain);
+  return mix(col, rime, a) + hue * a * mix(0.6, 0.2, inShade);
 }
 `;
 
@@ -94,8 +73,6 @@ export class SunMemory {
   readonly uniforms = {
     tSunHad: { value: null as THREE.Texture | null },
     uSunHadOn: { value: 0 },
-    /** How the rime is painted (frostPaint): the candidates for #14, 0 matte, 1 crisp, 2 glittering. */
-    uFrostLook: { value: 0 },
   };
   private targets: [THREE.WebGLRenderTarget, THREE.WebGLRenderTarget];
   private camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);

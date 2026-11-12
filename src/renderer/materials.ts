@@ -566,7 +566,7 @@ void main() {
       float brush = dab + br * 0.5;
       if (takes > 0.0) {
         vec2 sun = sunHadAt(p.xz);
-        col = frostPaint(col, light, frostCover(early, high ? sun.y : sun.x, brush) * takes, brush, p);
+        col = frostPaint(col, light, frostCover(early, high ? sun.y : sun.x, brush) * takes, brush);
       }
     }
     if (gSnow > 0.0) {
@@ -668,7 +668,7 @@ void main() {
   // it: the dabs facing up take it, whole dabs at a time (each its own threshold), the crown's top most (under its own
   // leaves, less: the shelter map's crowns).
   if (uGroundOn > 0.5 && groundAt(p) > 0.0) {
-    if (gFrost > 0.0 && nCanopy.y > 0.2) col = frostPaint(col, light, frostCover(0.0, sunHadAt(p.xz).y, br) * smoothstep(0.2, 0.8, nCanopy.y) * 0.55, br, p);
+    if (gFrost > 0.0 && nCanopy.y > 0.2) col = frostPaint(col, light, frostCover(0.0, sunHadAt(p.xz).y, br) * smoothstep(0.2, 0.8, nCanopy.y) * 0.55, br);
     float cover = snowCover(gSnow, smoothstep(0.05, 0.7, nCanopy.y), hash12(vec2(vCard.w * 37.0, 3.1)) * 2.0 - 1.0, 0.04);
     if (gSnow > 0.0) col = mix(col, snowPaint(light, 0.07, 0.0), cover);
   }
@@ -713,7 +713,7 @@ void main() {
   if (uGroundOn > 0.5 && groundAt(p) > 0.0) {
     if (gFrost > 0.0 && vBlade.x > 0.2) {
       float early = 0.5 + (gHollow.z >= 0.0 ? -gHollow.w * 0.5 : 0.0);
-      col = frostPaint(col, light, frostCover(early, sunHadAt(p.xz).x, br) * smoothstep(0.2, 0.85, vBlade.x), br, p);
+      col = frostPaint(col, light, frostCover(early, sunHadAt(p.xz).x, br) * smoothstep(0.2, 0.85, vBlade.x), br);
     }
     float cover = gSnow > 0.0 ? snowBuries(p, gSnow) : 0.0;
     if (cover > 0.0) col = mix(col, snowPaint(light, 0.06, 0.0), cover);
@@ -791,7 +791,7 @@ void main() {
   // there has left it. Lying snow over it: on their tops and their roofs' slopes. A thin cover is a veil the roof shows
   // through, thickening to white (patches on a roof read as camouflage), a little uneven.
   if (uGroundOn > 0.5 && groundAt(p) > 0.0) {
-    if (gFrost > 0.0 && n.y > 0.35) col = frostPaint(col, light, frostCover(-0.2, sunHadAt(p.xz).y, 0.0) * smoothstep(0.35, 0.7, n.y) * 0.85, 0.0, p);
+    if (gFrost > 0.0 && n.y > 0.35) col = frostPaint(col, light, frostCover(-0.2, sunHadAt(p.xz).y, 0.0) * smoothstep(0.35, 0.7, n.y) * 0.85, 0.0);
     if (gSnow > 0.0) {
       float uneven = snoise(p.xz * 1.3) * 0.7 + snoise(p.xz * 5.0) * 0.3;
       float cover = snowCover(gSnow, smoothstep(0.4, 0.65, n.y), uneven * 0.25, 0.45);

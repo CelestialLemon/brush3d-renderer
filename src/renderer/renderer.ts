@@ -209,8 +209,6 @@ export class BrushRenderer {
   private readonly snow = new SnowPaint();
   /** The sun each spot of the ground has had since dawn, for the frost's melt (#14, frost.ts). */
   private readonly sunMemory: SunMemory;
-  /** How the frost's rime is painted, the candidates for #14 (frost.ts, frostPaint): 0 matte, 1 crisp, 2 glittering. */
-  set frostLook(look: number) { this.sunMemory.uniforms.uFrostLook.value = look; }
   /** The game's clock hour as setHour last set it (the frost's sun memory adds by it), or null before. */
   private clockHour: number | null = null;
   /** The sun's height as the light was last set (degrees, below the horizon too). */
