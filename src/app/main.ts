@@ -2,7 +2,6 @@ import { hoursOf, type HourName } from '../renderer/look';
 import { CHARACTERS, clockHour, SEASONS, type Character, type Season } from '../renderer/season';
 import { BrushRenderer, type DrawnKind } from '../renderer/renderer';
 import { lightningHud, setupLightning, stormLightning } from './lightning';
-import { SNOW_LOOKS, type SnowLookName } from '../renderer/snowfall';
 import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
@@ -45,8 +44,6 @@ import { WindView } from './windView';
 //   cloudSeed (which cloud field: a whole number)
 //   falling=0 (leave out the things in the air: the wind's leaves, the rain, the snow and its whiteout; dust is in the haze)
 //   fallingShare (the share of the rain's strokes and the snow's flakes drawn: 1 full quality, 0.33 reduced)
-//   snowLook=a|b|c (the falling snow's look, candidates for #14: a soft dabs, b crisp flecks, c tumbling flakes; a by default)
-//   snowShade=a|b|c (a roof's snow in shade, candidates for #14's "tarp": a as it was, b quieter, c brushed; a by default)
 //   The blizzard preset comes with a gale (a blizzard is heavy snow in a strong wind, #14), unless wind is given.
 //   samples (MSAA, 0 to turn it off)  shadowMap (texels: 4096 on the farm, 2048 on the meadow)
 //   prepass=0 (paint without drawing the silhouettes first)  scissor=0 (the water's passes over the whole screen)
@@ -292,13 +289,6 @@ let lastTime = 0;
 send(weather, true, 0);
 renderer.settings.falling = num('falling', 1) !== 0;
 renderer.settings.fallingShare = num('fallingShare', 1);
-// The falling snow's look (#14): the candidates, for the developer to pick between.
-let snowLook: SnowLookName = (params.get('snowLook') ?? '') in SNOW_LOOKS ? params.get('snowLook') as SnowLookName : 'a';
-renderer.snowfall.look = SNOW_LOOKS[snowLook];
-// A roof's snow in shade (#14, the "tarp" from #58): the candidates.
-const SNOW_SHADES = ['a', 'b', 'c'] as const;
-let snowShade = SNOW_SHADES.find((s) => s === params.get('snowShade')) ?? 'a';
-renderer.snowShade = SNOW_SHADES.indexOf(snowShade);
 /** Sets a look option in the URL as it stands, so a reload or a shared link keeps it. */
 function urlOption(key: string, value: string) {
   params.set(key, value);
@@ -444,25 +434,6 @@ function hud() {
   hudEl.append(slider('Storm', 0, 1, 0.01, () => weather.storm, weatherSet((v) => { weather.storm = v; }), share, true));
   hudEl.append(slider('Rain', 0, 1, 0.01, () => weather.rain, weatherSet((v) => { weather.rain = v; }), share, true));
   hudEl.append(slider('Snow', 0, 1, 0.01, () => weather.snow, weatherSet((v) => { weather.snow = v; }), share, true));
-  const snowButton = Object.assign(document.createElement('button'), { textContent: `snow look ${snowLook.toUpperCase()}` });
-  snowButton.title = 'The falling snow\'s look, candidates for #14: A soft painted dabs, B small crisp flecks, C tumbling flakes with a short smear (snowLook=a|b|c)';
-  snowButton.onclick = () => {
-    const looks = Object.keys(SNOW_LOOKS) as SnowLookName[];
-    snowLook = looks[(looks.indexOf(snowLook) + 1) % looks.length];
-    renderer.snowfall.look = SNOW_LOOKS[snowLook];
-    urlOption('snowLook', snowLook);
-    hud();
-  };
-  hudEl.append(snowButton);
-  const shadeButton = Object.assign(document.createElement('button'), { textContent: `snow shade ${snowShade.toUpperCase()}` });
-  shadeButton.title = 'A roof\'s snow in shade (a big flat face read as a blue tarp), candidates for #14: A as it was, B quieter (lighter, softer blue), C brushed (broken by strokes) (snowShade=a|b|c)';
-  shadeButton.onclick = () => {
-    snowShade = SNOW_SHADES[(SNOW_SHADES.indexOf(snowShade) + 1) % SNOW_SHADES.length];
-    renderer.snowShade = SNOW_SHADES.indexOf(snowShade);
-    urlOption('snowShade', snowShade);
-    hud();
-  };
-  hudEl.append(shadeButton);
   hudEl.append(slider('Heat', 0, 1, 0.01, () => weather.heat, weatherSet((v) => { weather.heat = v; }), share, true));
   hudEl.append(slider('Haze', 0, 1, 0.01, () => weather.haze.amount, weatherSet((v) => { weather.haze.amount = v; }), share, true));
   hudEl.append(slider('from', -2, 20, 0.25, () => Math.max(-2, weather.haze.base ?? -2), weatherSet((v) => { weather.haze.base = v <= -2 ? undefined : v; }),

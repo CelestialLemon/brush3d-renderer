@@ -206,8 +206,6 @@ export class BrushRenderer {
   readonly hollows = new HollowMap();
   /** The lying snow's paint in the hour's light (#14), worked out once a frame. */
   private readonly snow = new SnowPaint();
-  /** How a roof's snow in shade is painted, the candidates for #14 (snow.ts, snowPaintTop): 0 as it was, 1 quieter, 2 brushed. */
-  set snowShade(look: number) { this.snow.uniforms.uSnowTarp.value = look; }
 
   /** The falling rain (#11): its strokes, and the uniforms for its veil and the water's rings. */
   readonly rain: Rain;
