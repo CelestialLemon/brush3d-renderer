@@ -292,13 +292,6 @@ let lastTime = 0;
 send(weather, true, 0);
 renderer.settings.falling = num('falling', 1) !== 0;
 renderer.settings.fallingShare = num('fallingShare', 1);
-/** Sets a look option in the URL as it stands, so a reload or a shared link keeps it. */
-function urlOption(key: string, value: string) {
-  params.set(key, value);
-  const url = new URL(location.href);
-  url.searchParams.set(key, value);
-  history.replaceState(null, '', url);
-}
 // The scripted timeline, at a game speed: it sends the weather as the game would, a few times a second.
 let playing = params.has('timeline'), speed = Number(params.get('timeline')) || 1;
 let spell: SpellName = (params.get('spell') ?? '') in SPELLS ? params.get('spell') as SpellName : 'shower';
