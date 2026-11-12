@@ -28,6 +28,20 @@ The game paints a number on each tile of the land: how deep the snow lies there.
   (the sun's shadows, the clouds', the hour's colour). Under an overcast sky it stays the brightest thing on the land,
   with a pale cool tint, not grey.
 
+And a number for how much frost there is (#14, part 3):
+
+- **A pale rime, not a cover**: the land whitens and its own colours read through, the greens and browns paled, its
+  shade a softer blue than the snow's. Grass and crop tips whiten, built things' tops take a rime, bare branches and the
+  crowns' tops a pale edge. None under a roof, less under a tree; lying snow covers it.
+- **It keeps to the land.** As the game's frost rises, the hollows and the grass tips whiten first and the open rises
+  last; as it falls, the same in reverse. Frost at 1 is a hard frost, everywhere in the open.
+- **The sun takes it first where it has shone.** The renderer remembers how much sun each spot of the ground has had
+  since dawn, so as the game lowers the frost through the morning, the ground the sun has reached clears first and
+  the long shade of a building or a tree holds it, the shape of where the shadows have lain (soft-edged: shadows move).
+  A cloud passing over doesn't bring frost back. At nightfall it's forgotten.
+- **The game sets the pace**, by lowering the number: the renderer has no weather clock of its own. A cold snap is the
+  game holding it high all day.
+
 And a number for how wet each tile is, and one for how muddy:
 
 - **Wet things go darker and richer**, as a stone darkens when it's splashed: the ground, grass, crops, leaves, stones
@@ -56,9 +70,10 @@ renderer.setGround(null, ease);  // bare everywhere, eased out as any map is (at
 - **Snow** is how deep it lies: about 0.2 a dusting, with the grass poking through; 0.3 covers flat open ground whole;
   0.5 covers the grass; 1 is deep, burying everything short. Every surface in a cell takes that cell's snow: the
   ground, a roof, a solar panel, a tree. The renderer takes away what shelters it, so the game needn't.
-- **Frost** is how much rime there is, 0 to 1. The game says how much the night has brought; the renderer lets the
-  shade keep it longer and the hollows hold more, so it melts as the sun reaches it. (Drawn from #14's frost pull
-  request; until then it's carried but not drawn.)
+- **Frost** is how hard the frost is, 0 to 1: about 0.2 only the hollows and the grass tips, 0.5 most of the open
+  ground where the sun hasn't been, 1 everywhere in the open whatever the sun. The game says how much the night has
+  brought and lowers it through the morning; the renderer clears first where the sun has shone since dawn, so it melts
+  as the sun reaches it. It needs the game's clock (`setHour`), which the renderer counts the sun's hours by.
 - **Wet** is how wet the land is: it shows from the first drops, darkest by about 0.6. The game lowers it as the land
   dries, cell by cell: hollows and shade dry last, rises and open ground first.
 - **Mud** is how muddy the bare earth in a cell is. The game marks it on the tiles with bare earth (a track, the yard, a
@@ -91,11 +106,25 @@ renderer.setGround(null, ease);  // bare everywhere, eased out as any map is (at
 `src/renderer/snow.ts`:
 
 - **`SNOW_GLSL`** runs in every material but the water. Each material works out its own colour as before, then how
-  much of it the snow covers (`snowAt`, `snowCover`, `snowBuries`), and lays the snow's paint (`snowPaint`) over that
+  much of it the snow covers (`groundAt`, `snowCover`, `snowBuries`), and lays the snow's paint (`snowPaint`) over that
   much. What stands on the ground (the ground, grass, crops, stones, wood, trunks) reads its shelter from the hollows
   map, at its foot; roofs and crowns read the shelter map where they are. The bed under the water takes no snow.
 - **`SnowPaint`** works out the snow's colours (its shade, half-tone and lit band, in the gaps between the clouds and
   under them) once a frame on the CPU, from the hour's light.
+
+`src/renderer/frost.ts` (#14):
+
+- **`FROST_GLSL`** (part of `SNOW_GLSL`): `groundAt` reads the frost with the snow, less what shelters it. A material
+  then works out how much of its surface the frost whitens (`frostCover`: how early that spot frosts, the hollows and
+  tips first; the sun it's had; an edge that wanders a little) and lays the rime over it (`frostPaint`), before the snow.
+- **`SunMemory`** keeps how much sun each spot has had since dawn: a 512² map over the hollows map's square (about
+  34 cm a texel on the farm), for the ground and for what's highest there (a roof's top, a crown's). A few times a
+  second while there's frost, after the shadow pass, it adds the sun now at each texel: the sun's height, the shadow
+  map (six taps over 0.6 m), and the clouds' shade. It reads the game's clock: when the hour jumps (a still at 10, the
+  hour dragged), the hours skipped are taken as if this sun had shone through them, what's in shade now counted at a
+  third of the open's, since the shadows swung through them. Ground beyond the shadow map's window (it follows the
+  view) is counted the same way, a third, since its shade there is unknown. Going back, or nightfall, starts afresh;
+  night is told by the hour and the day's sunset, not the light's height, which at night is the moon's.
 
 `src/renderer/wet.ts` (#11):
 
@@ -110,7 +139,8 @@ renderer.setGround(null, ease);  // bare everywhere, eased out as any map is (at
 `src/app/ground.ts` is the demo's stand-in for the game: the snow a little deeper in some places than others, from the
 demo's `Lying` slider or `?lying=0..1`; the land wetting in rain and drying after, hollows last and rises first, from the
 `Wet` slider, `?wet=0..1` or the timeline's showers and storms; and the tracks and the yard (the scene's bare ground)
-muddy as they wet.
+muddy as they wet; the frost from the `Frost` slider, `?frost=0..1` or the timeline's `late-frost` (spring) and
+`cold-snap` (winter) spells, which run the clock too.
 
 ## Falling snow and the blizzard (#14, part 2)
 

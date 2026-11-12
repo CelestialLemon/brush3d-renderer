@@ -22,6 +22,8 @@ export interface ProfileCase {
   lightning?: boolean;
   /** Snow lying this deep (0..1) everywhere (#14): the cost of painting it in the materials. */
   lying?: number;
+  /** Frost this hard (0..1) everywhere (#14): the cost of painting it, and of the sun's memory that melts it. */
+  frost?: number;
   /** The land this wet and this muddy (0..1) everywhere (#11): the cost of painting it in the materials. */
   wet?: { wet: number; mud: number };
 }
@@ -58,6 +60,8 @@ export function defaultCases(): ProfileCase[] {
   // The falling snow at its dearest (#14): a blizzard (heavy snow in a storm wind: its flakes, streaks and whiteout) over
   // lying snow, and a heavy snowfall in still air (the most flakes that fall straight, without the whiteout's sheets).
   cases.push({ label: '1080p blizzard', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS.blizzard, lying: 0.6 });
+  // Frost (#14) over all the land, part melted (so each spot weighs the sun it's had), at the demo's hour.
+  cases.push({ label: '1080p storm, frost', width: 1920, height: 1080, wind: STORM, frost: 0.6 });
   cases.push({ label: '1080p heavy snow, calm', width: 1920, height: 1080, wind: 0, weather: { cloud: 1, snow: 1 }, lying: 0.6 });
   return cases;
 }
@@ -91,6 +95,7 @@ export async function runProfile(
       // The same depth over all the land: a map of one cell, larger than any scene.
       const one = { nx: 1, nz: 1, cell: 2000, x0: -1000, z0: -1000 };
       if (c.lying !== undefined) renderer.setGround({ ...one, snow: new Float32Array([c.lying]) }, 0);
+      if (c.frost !== undefined) renderer.setGround({ ...one, frost: new Float32Array([c.frost]) }, 0);
       // Mud everywhere too, though the game's lies only on the bare earth: the dearest case.
       if (c.wet) renderer.setGround({ ...one, wet: new Float32Array([c.wet.wet]), mud: new Float32Array([c.wet.mud]) }, 0);
       // A steady wind: the gust map's cost is in sampling it, the same for any wind (its upload is a tick's, not a frame's).

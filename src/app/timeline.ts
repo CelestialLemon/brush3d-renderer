@@ -17,6 +17,9 @@ import { soakStep } from './ground';
 // Two snowy spells (#14): a snowfall coming in, falling and clearing, and a blizzard rolling in on a gale and blowing
 // itself out. They send how hard it snows, the wind, and how deep the snow lies (the game's ground map: it builds up
 // while it snows, as the game's rule would; the demo scripts it).
+// Two frosty spells (#14), which keep the game's clock too (a frost's melt is the morning's sun): a late frost on a spring
+// night that the sun takes off in the morning, and a cold snap in winter, a hard frost the game holds all day, easing
+// only in the afternoon (what the sun had stays clear; the long shade keeps it) and hardening again at dusk.
 // Every spell wets the land as it rains and dries it after, faster in sun (#11): the game's rule, which the demo's
 // timelineWet stands in for. A thunderstorm and a hurricane leave the stream muddy, clearing slowly after (#11, the
 // water's mud, #18).
@@ -41,9 +44,11 @@ interface Key {
   storm?: number; sun?: number; bolts?: number; far?: number;
   /** How hard it snows (0..1), and how deep the snow lies on the land (0..1, the game's ground map, #14). */
   snow?: number; lying?: number;
+  /** How hard the frost is (0..1, the game's ground map, #14). */
+  frost?: number;
 }
 /** A spell's keys, its haze's colour and kind, and what it's doing at an hour. */
-interface Spell { keys: Key[]; haze?: { color: number; kind: HazeKind }; phase: (hour: number) => string }
+interface Spell { keys: Key[]; haze?: { color: number; kind: HazeKind }; phase: (hour: number) => string; clock?: number }
 
 /** The spells, in game hours: the weather at each key, glided between. Each repeats. */
 export const SPELLS = {
@@ -203,6 +208,36 @@ export const SPELLS = {
     ],
     phase: (h) => (h < 1.5 ? 'the wind getting up' : h < 4 ? 'the blizzard coming in' : h < 8 ? 'a blizzard' : h < 9.5 ? 'blowing itself out' : 'drifting'),
   },
+  'late-frost': {
+    // The game's clock at the spell's start: it runs on with the spell.
+    clock: 2,
+    keys: [
+      // A clear, still spring night, the frost forming in the small hours, hollows and grass tips first...
+      { hour: 0, cloud: 0, rain: 0, wind: 1, frost: 0.1 },
+      { hour: 2, cloud: 0, rain: 0, wind: 1, frost: 0.55 },
+      // ...whitest at dawn...
+      { hour: 4, cloud: 0, rain: 0, wind: 1, frost: 0.8 },
+      // ...and the morning's sun taking it, the sunned ground first, the long shade and the hollows last.
+      { hour: 6.5, cloud: 0.1, rain: 0, wind: 2, frost: 0.6 },
+      { hour: 8.5, cloud: 0.15, rain: 0, wind: 2, frost: 0.25 },
+      { hour: 10, cloud: 0.15, rain: 0, wind: 2, frost: 0 },
+    ],
+    phase: (h) => (h < 4 ? 'frost forming' : h < 5 ? 'dawn' : h < 10 ? 'the sun taking it' : 'gone'),
+  },
+  'cold-snap': {
+    clock: 7,
+    keys: [
+      // A clear winter day in a cold snap: a hard frost all morning, the sun clearing only what it shines on longest...
+      { hour: 0, cloud: 0, rain: 0, wind: 2, frost: 1 },
+      { hour: 3, cloud: 0, rain: 0, wind: 2, frost: 1 },
+      { hour: 5, cloud: 0.1, rain: 0, wind: 3, frost: 0.62 },
+      { hour: 8, cloud: 0.1, rain: 0, wind: 3, frost: 0.55 },
+      // ...hardening again as the sun goes, white everywhere by nightfall.
+      { hour: 10, cloud: 0, rain: 0, wind: 2, frost: 0.8 },
+      { hour: 12, cloud: 0, rain: 0, wind: 2, frost: 1 },
+    ],
+    phase: (h) => (h < 3 ? 'a hard frost' : h < 8 ? 'the sun on it' : h < 10 ? 'hardening' : 'night'),
+  },
 } satisfies Record<string, Spell>;
 export type SpellName = keyof typeof SPELLS;
 
@@ -280,6 +315,18 @@ function soak(spell: SpellName, wet: number, end: number) {
 export function timelineLying(seconds: number, speed = 1, spell: SpellName = 'shower'): number | null {
   if ((SPELLS[spell].keys as Key[])[0].lying === undefined) return null;
   return valueAt(spell, seconds, speed, (k) => k.lying ?? 0);
+}
+
+/** How hard the frost is at a time (#14, the game's ground map, 0..1), or null if the spell leaves the frost alone. */
+export function timelineFrost(seconds: number, speed = 1, spell: SpellName = 'shower'): number | null {
+  if ((SPELLS[spell].keys as Key[])[0].frost === undefined) return null;
+  return valueAt(spell, seconds, speed, (k) => k.frost ?? 0);
+}
+
+/** The game's clock at a time (hour of the day), or null if the spell leaves it alone. It runs on, held between ticks. */
+export function timelineClock(seconds: number, speed = 1, spell: SpellName = 'shower'): number | null {
+  const start = (SPELLS[spell] as Spell).clock;
+  return start === undefined ? null : (start + hourAt(spell, Math.floor(seconds * TICK) / TICK, speed)) % 24;
 }
 
 /** How often lightning strikes and flickers in the distance at a time (a minute, of real time), or null if never. */

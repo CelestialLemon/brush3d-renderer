@@ -546,8 +546,30 @@ void main() {
   vec3 col = paintBands(base, light, 0.05, n.y * 0.5 + 0.5);
   col = wetFinish(col);
   col += rimColorHere() * rimLight(n, vPaint.w);
-  // Lying snow (#14, snow.ts).
-  if (uGroundOn > 0.5 && snowAt(p) > 0.0) {
+  // Frost (#14, frost.ts), and lying snow over it (snow.ts).
+  if (uGroundOn > 0.5 && groundAt(p) > 0.0) {
+    if (gFrost > 0.0) {
+#ifdef GROUND
+      // The ground, where it faces up: the hollows first in and last out (the thin snow's pattern: the land's hollows, its
+      // unevenness and a finer drift), the sun it's had since dawn clearing it.
+      float early = gHollow.z >= 0.0 ? -gHollow.w : 0.0, takes = smoothstep(0.3, 0.8, n.y);
+      const bool high = false;
+#elif defined(CROP)
+      // A crop's tips: early, as the grass's.
+      float early = 0.4 + (gHollow.z >= 0.0 ? -gHollow.w * 0.5 : 0.0), takes = smoothstep(0.1, 0.7, n.y);
+      const bool high = false;
+#else
+      // Stones and wood, trunks and bare branches: their tops, a pale edge along a branch, in the sun it's had up there.
+      float early = 0.0, takes = smoothstep(0.35, 0.85, n.y) * 0.8;
+      const bool high = true;
+#endif
+      float brush = dab + br * 0.5;
+      if (takes > 0.0) {
+        vec2 sun = sunHadAt(p.xz);
+        col = frostPaint(col, light, frostCover(early, high ? sun.y : sun.x, brush) * takes, brush);
+      }
+    }
+    if (gSnow > 0.0) {
 #ifdef GROUND
     // The ground: whole from SNOW_WHOLE up on the flat, less on steep banks; thinner, in patches along the land's own
     // hollows, a patch's edge broken by the brush.
@@ -560,6 +582,7 @@ void main() {
     float cover = max(snowCover(gSnow, smoothstep(0.5, 0.85, n.y), snowPattern(p.xz) * 0.6 + br * 0.4, 0.05), snowBuries(p, gSnow));
 #endif
     col = mix(col, snowPaint(light, 0.05, fields.x * 1.2 + fine * 0.8), cover);
+    }
   }
   writeGBuffer(exposeHere(col), n, vViewDepth, 0.0, 1.0);
 }
@@ -641,11 +664,13 @@ void main() {
   float side = pow(1.0 - abs(dot(nCanopy, toCamera())), 3.0);
   col += rimColorHere() * tintOf(base, 0.75) * behind * side * vPaint.w * 0.7 * mix(0.4, 1.0, vis);
 #ifndef NO_SNOW
-  // Lying snow (#14): the dabs facing up take it, whole dabs at a time (each its own threshold), the crown's top most
-  // (under its own leaves, less: the shelter map's crowns).
-  if (uGroundOn > 0.5 && snowAt(p) > 0.0) {
+  // Frost (#14): a pale rime on the dabs facing up, the crown's top most, as the sun up there has left it. Lying snow over
+  // it: the dabs facing up take it, whole dabs at a time (each its own threshold), the crown's top most (under its own
+  // leaves, less: the shelter map's crowns).
+  if (uGroundOn > 0.5 && groundAt(p) > 0.0) {
+    if (gFrost > 0.0 && nCanopy.y > 0.2) col = frostPaint(col, light, frostCover(0.0, sunHadAt(p.xz).y, br) * smoothstep(0.2, 0.8, nCanopy.y) * 0.55, br);
     float cover = snowCover(gSnow, smoothstep(0.05, 0.7, nCanopy.y), hash12(vec2(vCard.w * 37.0, 3.1)) * 2.0 - 1.0, 0.04);
-    col = mix(col, snowPaint(light, 0.07, 0.0), cover);
+    if (gSnow > 0.0) col = mix(col, snowPaint(light, 0.07, 0.0), cover);
   }
 #endif
   writeGBuffer(exposeHere(col), n, vViewDepth, 0.0, alpha);
@@ -682,10 +707,15 @@ void main() {
   vec3 col = paintBands(base, light, 0.06, 0.8);
   col = wetFinish(col);
   col += rimColorHere() * vPaint.w * vBlade.x * vBlade.x * vis * 0.25;
-  // Lying snow (#14): where the ground under it is white, a blade is buried as deep as the snow lies, its tip poking
-  // through; painted as the ground's snow is, so the buried part is lost in it.
-  if (uGroundOn > 0.5 && snowAt(p) > 0.0) {
-    float cover = snowBuries(p, gSnow);
+  // Frost (#14): the blades' tips first, before the ground round them (winter's straw whitening most), the sun the ground
+  // has had clearing it. Lying snow over it: where the ground under it is white, a blade is buried as deep as the snow
+  // lies, its tip poking through; painted as the ground's snow is, so the buried part is lost in it.
+  if (uGroundOn > 0.5 && groundAt(p) > 0.0) {
+    if (gFrost > 0.0 && vBlade.x > 0.2) {
+      float early = 0.5 + (gHollow.z >= 0.0 ? -gHollow.w * 0.5 : 0.0);
+      col = frostPaint(col, light, frostCover(early, sunHadAt(p.xz).x, br) * smoothstep(0.2, 0.85, vBlade.x), br);
+    }
+    float cover = gSnow > 0.0 ? snowBuries(p, gSnow) : 0.0;
     if (cover > 0.0) col = mix(col, snowPaint(light, 0.06, 0.0), cover);
   }
   writeGBuffer(exposeHere(col), n, vViewDepth, 0.0, 1.0);
@@ -757,12 +787,16 @@ void main() {
   }
   // Wet (#11, wet.ts): darker, with the sky glazed over it (not the solar glass, which is glass wet or dry).
   if (uGroundOn > 0.5 && (finish < 0.5 || finish > 1.5) && wetAt(p) > 0.0) col = wetInked(col, n, p);
-  // Lying snow (#14): on the tops of built things and their roofs' slopes (a solar panel's too). A thin cover is a veil
-  // the roof shows through, thickening to white (patches on a roof read as camouflage), a little uneven.
-  if (uGroundOn > 0.5 && snowAt(p) > 0.0) {
-    float uneven = snoise(p.xz * 1.3) * 0.7 + snoise(p.xz * 5.0) * 0.3;
-    float cover = snowCover(gSnow, smoothstep(0.4, 0.65, n.y), uneven * 0.25, 0.45);
-    col = mix(col, snowPaint(light, 0.02, uneven * 0.3), cover);
+  // Frost (#14): a pale rime on the tops of built things (roofs, fences, crates, a solar panel's glass), as the sun up
+  // there has left it. Lying snow over it: on their tops and their roofs' slopes. A thin cover is a veil the roof shows
+  // through, thickening to white (patches on a roof read as camouflage), a little uneven.
+  if (uGroundOn > 0.5 && groundAt(p) > 0.0) {
+    if (gFrost > 0.0 && n.y > 0.35) col = frostPaint(col, light, frostCover(-0.2, sunHadAt(p.xz).y, 0.0) * smoothstep(0.35, 0.7, n.y) * 0.85, 0.0);
+    if (gSnow > 0.0) {
+      float uneven = snoise(p.xz * 1.3) * 0.7 + snoise(p.xz * 5.0) * 0.3;
+      float cover = snowCover(gSnow, smoothstep(0.4, 0.65, n.y), uneven * 0.25, 0.45);
+      col = mix(col, snowPaint(light, 0.02, uneven * 0.3), cover);
+    }
   }
   writeGBuffer(exposeHere(col), n, vViewDepth, 1.0, 1.0);
 }

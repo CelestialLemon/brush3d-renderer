@@ -276,7 +276,7 @@ float snowDrifting(vec3 p) {
   if (lying < 0.02) return 0.0;
   float low = 1.0 - smoothstep(0.3, 1.2, p.y - landTop(p));
   if (low <= 0.0) return 0.0;
-  // None under a roof (the porch's floor, under the panels), less under a crown, as the lying snow (snowAt): the ground's
+  // None under a roof (the porch's floor, under the panels), less under a crown, as the lying snow (groundAt): the ground's
   // shelter from the hollows map (one read), or off it the shelter map's.
   float cover = hollowAt(p.xz).z;
   lying *= 1.0 - (cover < 0.0 ? shelter(p) : cover);
