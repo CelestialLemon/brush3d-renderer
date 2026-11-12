@@ -101,7 +101,8 @@ export class SunMemory {
   private camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private quadScene = new THREE.Scene();
   private material: THREE.ShaderMaterial;
-  /** The clock hour last added to, and the hours since that wait to be added (in steps, so a half float keeps them). */
+  /** The hour last added to, counted from sunrise (so a day running past midnight counts on), and the hours since that
+   * wait to be added (in steps, so a half float keeps them). */
   private hour: number | null = null;
   private pending = 0;
   private fresh = true;
@@ -143,31 +144,33 @@ export class SunMemory {
     const u = this.uniforms;
     if (!frost || !hollowsOn) { this.on = false; u.uSunHadOn.value = 0; this.fresh = true; this.blank = false; this.hour = null; return; }
     if (!this.on) { this.on = true; this.fresh = true; this.blank = false; this.hour = null; }
-    // Day: from sunrise to sunset (a day can run past midnight's either side, so the hour is taken from sunrise round).
-    const day = hour !== null && ((hour - sunrise) % 24 + 24) % 24 < sunset - sunrise;
+    // The hours since sunrise (a day can run past midnight either side, so they're counted from sunrise round); day is
+    // up to sunset.
+    const since = hour === null ? null : ((hour - sunrise) % 24 + 24) % 24;
+    const day = since !== null && since < sunset - sunrise;
     // The sun's strength now, over the land in the open: none below the horizon, weak while low, less under a grey sky.
     const sun = day ? THREE.MathUtils.smoothstep(sunEl, 0, 25) * (1 - 0.85 * sky) : 0;
     let add = 0, guess = 0;
-    if (hour === null) {
+    if (since === null) {
       if (!this.fresh) return;
     } else if (!day) {
       // Night: forgotten (cleared once, then nothing to do till dawn), to start afresh at dawn.
-      this.hour = hour; this.pending = 0;
+      this.hour = since; this.pending = 0;
       if (this.blank) return;
       this.fresh = true; this.blank = true;
-    } else if (this.hour === null || hour < this.hour - 1e-6 || hour - this.hour > 0.5) {
+    } else if (this.hour === null || since < this.hour - 1e-6 || since - this.hour > 0.5) {
       // A jump (or the first frame): as if this sun had shone since sunrise (afresh), or, jumping on, since the hour it
       // jumped from (added to what it had).
-      const back = this.hour === null || hour < this.hour;
-      const from = back ? sunrise : Math.max(this.hour!, sunrise);
+      const back = this.hour === null || since < this.hour;
+      const from = back ? 0 : this.hour!;
       if (back) this.fresh = true;
       this.pending = 0;
-      add = Math.max(0, hour - from) * sun;
+      add = (since - from) * sun;
       guess = 1;
-      this.hour = hour;
+      this.hour = since;
     } else {
-      this.pending += hour - this.hour;
-      this.hour = hour;
+      this.pending += since - this.hour;
+      this.hour = since;
       // A few times a game hour's hundredth: the steps a half float holds.
       if (this.pending < 0.02 && !this.fresh) return;
       add = this.pending * sun;
