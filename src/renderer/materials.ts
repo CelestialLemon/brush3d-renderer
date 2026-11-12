@@ -158,6 +158,11 @@ void place(vec3 world) {
 const STATIC_VERT = /* glsl */ `
 ${HEAD}
 varying vec2 vUv;
+#ifdef GROUND
+// How much of the ground is earth, from its own colours (wet.ts's earthShares): where mud can lie (#11).
+attribute float aEarth;
+varying float vEarth;
+#endif
 #ifdef TREES
 attribute vec4 aTree;
 attribute float aTreeId;
@@ -184,6 +189,9 @@ void main() {
   vColor = color;
   vPaint = aPaint;
   vUv = uv;
+#ifdef GROUND
+  vEarth = aEarth;
+#endif
   place(wp.xyz);
 }
 `;

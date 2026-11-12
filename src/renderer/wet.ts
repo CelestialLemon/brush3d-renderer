@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-import type { SeasonSettings } from './season';
-import { seasonTurn } from './seasonLook';
 import { PARTIAL_COVER } from './shelter';
 
 // Wet ground and things (#11): the game says how wet the land is and how muddy (the ground's map, ground.ts); the renderer
@@ -41,11 +39,33 @@ export const DEFAULT_WET_LOOKS: WetLooks = { damp: 'a', sheen: 'a', mudLook: 'a'
 
 /** The earth's hue (OKLab degrees): the tracks' dirt 76°, their ruts 73°. */
 const EARTH_HUE = 76;
+/** The grass's (OKLab degrees): a meadow's 130° or so, the lime 123°. */
+const GRASS_HUE = 130;
+
 /**
- * The grass's hue as the season has turned it (OKLab degrees): a summer meadow's 130° or so, a winter's straw-olive
- * 30° nearer the earth's (seasonLook.ts), for the mud to tell the earth from the grass by (mudHere).
+ * How much of the ground is earth at each vertex, 0..1, from its own colours (linear rgb triples, as the game sent them):
+ * where mud can lie (mudHere). The farm's tracks and yard are earth blended with grass (the porch's 64 parts in 100, its
+ * edges less), and that share is read from the hue, the earth's (EARTH_HUE) to the grass's (GRASS_HUE); a grey is none.
+ * From the colours before a season turns them (seasonLook.ts): a dry winter turns a yellow-green to a straw the dirt's
+ * own colour, so the colour drawn can't tell them apart. Once, as the ground is added.
  */
-export function grassHue(season: SeasonSettings | null) { return 130 + seasonTurn(season).shift; }
+export function earthShares(rgb: ArrayLike<number>): Float32Array {
+  const out = new Float32Array(rgb.length / 3);
+  const smooth = THREE.MathUtils.smoothstep;
+  for (let i = 0; i < out.length; i++) {
+    const r = rgb[3 * i], g = rgb[3 * i + 1], b = rgb[3 * i + 2];
+    // Linear sRGB to OKLab (Björn Ottosson): only a and b, for the hue and chroma.
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    const A = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+    const B = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+    const hue = (Math.atan2(B, A) * 180) / Math.PI;
+    const share = THREE.MathUtils.clamp((GRASS_HUE - hue) / (GRASS_HUE - EARTH_HUE), 0, 1);
+    out[i] = share * smooth(Math.hypot(A, B), 0.015, 0.03);
+  }
+  return out;
+}
 
 /** The looks as the shaders take them: each letter as 0, 1, 2. */
 export function wetLookVector(looks: WetLooks, out: THREE.Vector4) {
@@ -60,7 +80,6 @@ export function wetLookVector(looks: WetLooks, out: THREE.Vector4) {
  */
 export const WET_GLSL = /* glsl */ `
 uniform vec4 uWetLook;   // the looks being picked (#11): painted, inked, mud; 0 for A, 1 B, 2 C
-uniform float uGrassHue; // the grass's hue as the season has turned it (OKLab degrees)
 // How wet and how muddy it is here (0..1, the game's, less under shelter), set by wetAt.
 float gWet = 0.0, gMud = 0.0;
 // The wet and the mud at p, less what shelters it: none under a roof, to its edge; under a crown, less. What stands low on
@@ -112,16 +131,14 @@ vec3 wetFinish(vec3 c) {
   return max(mix(vec3(y), c, s), 0.0) * (1.0 - k.x * w);
 }
 #ifdef GROUND
+// How much of the ground here is earth (earthShares, by vertex).
+varying float vEarth;
 // Mud: only on the earth itself. The game's cells are coarser than a track: mud on the grass beside it would read as a
-// brown halo. So mud takes the earth's share of the ground's own colour: the farm's tracks and yard are earth blended
-// with grass (the porch's 64 parts in 100, its edges less), by vertex, a metre or so apart. That share is read from the
-// hue, the earth's (EARTH_HUE) to the grass's as the season has turned it (uGrassHue): no hard line, which would follow
-// the vertices' triangles, so the mud blends out as the earth does.
+// brown halo. So mud takes the earth's share of the ground (vEarth, a metre or so between vertices): no hard line, which
+// would follow the vertices' triangles, so the mud blends out as the earth does.
 float mudHere() {
   if (gMud <= 0.0) return 0.0;
-  vec3 lab = linToOklab(vColor);
-  float share = clamp((uGrassHue - degrees(atan(lab.z, lab.y))) / (uGrassHue - ${EARTH_HUE.toFixed(1)}), 0.0, 1.0);
-  float earth = smoothstep(0.15, 0.85, share) * smoothstep(0.015, 0.03, length(lab.yz));
+  float earth = smoothstep(0.15, 0.85, vEarth);
   // A muddy cell's earth is all mud (the map's mud is spread a cell, ground.ts): a steep rise, so it doesn't fade between
   // one cell's middle and the next's; where the game's mud ends, a ragged edge, keyed to the world.
   return smoothstep(0.15, 0.45, gMud + snoise(vRestPos.xz * 0.9 + 3.0) * 0.12) * earth;

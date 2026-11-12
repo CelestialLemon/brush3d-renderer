@@ -26,7 +26,7 @@ import { TreeSprings, type TreeSpec } from './trees';
 import { WATER_EASE, WaterField, type WaterMap } from './water';
 import { GROUND_EASE, GroundField, HollowMap, type GroundMap } from './ground';
 import { SnowPaint } from './snow';
-import { DEFAULT_WET_LOOKS, grassHue, wetLookVector, type WetLooks } from './wet';
+import { DEFAULT_WET_LOOKS, earthShares, wetLookVector, type WetLooks } from './wet';
 import type { WindSnapshot } from '../wind/sim';
 
 // The renderer: the clouds' shade over the land (#8); a sun shadow map; for the water, the bed drawn without it and the
@@ -207,8 +207,6 @@ export class BrushRenderer {
   /** The looks for wet things, while the developer picks (#11, WET_LOOKS). */
   private readonly wetLook = {
     uWetLook: { value: wetLookVector(DEFAULT_WET_LOOKS, new THREE.Vector4()) },
-    // The grass's hue as the season has turned it (OKLab degrees), for the mud to tell the earth from it (wet.ts).
-    uGrassHue: { value: grassHue(null) },
   };
   /** The falling rain (#11): its strokes, and the uniforms for its veil and the water's rings. */
   readonly rain: Rain;
@@ -371,6 +369,11 @@ export class BrushRenderer {
       geometry.userData.trees = undefined;
     }
     const seasonal = options.seasonal ?? (kind === 'ground' || kind === 'grass');
+    // Where the ground is earth (#11, wet.ts), from the game's colours, before the season turns them.
+    const colour = geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
+    if (kind === 'ground' && colour && !geometry.getAttribute('aEarth')) {
+      geometry.setAttribute('aEarth', new THREE.BufferAttribute(earthShares(this.ownColours.get(colour) ?? colour.array), 1));
+    }
     if (seasonal) this.seasonal.set(geometry, (this.seasonal.get(geometry) ?? 0) + 1);
     this.turn(geometry);
     const mesh = new THREE.Mesh(geometry, this.material(kind));
@@ -599,7 +602,6 @@ export class BrushRenderer {
     // Its colours, turned once here (the season holds all level): from each mesh's own, as the game sent them.
     for (const g of this.seasonal.keys()) this.turn(g);
     colourLeafStorm(this.debris.geometry, season ? LEAF_STORM[season.season] : null);
-    this.wetLook.uGrassHue.value = grassHue(season);
   }
   /** A seasonal geometry's mesh is taken out: with its last, its colours go back to the game's. */
   private unseason(geometry: THREE.BufferGeometry) {

@@ -103,8 +103,9 @@ renderer.setGround(null, ease);  // bare everywhere, eased out as any map is (at
   material reads how wet and muddy it is there, less what shelters it (`wetAt`). A painted thing is lit as it is dry,
   then darkened and made richer (`wetFinish`); only the ground's mud changes its own colour before it's lit (`wetBase`).
   An inked thing adds its sheen to its lit colour (`wetInked`).
-  The mud tells the earth from the grass by the ground's colour: its hue, from the earth's to the grass's as the season
-  has turned it (winter's straw is nearer the earth's).
+  The mud tells the earth from the grass by the ground's own colour, as the game sent it (`earthShares`, once per vertex
+  as the ground is added): its hue, from the earth's to the grass's. Not the colour the season has turned it to: a dry
+  winter turns a yellow-green to a straw the dirt's own colour.
 
 `src/app/ground.ts` is the demo's stand-in for the game: the snow a little deeper in some places than others, from the
 demo's `Lying` slider or `?lying=0..1`; the land wetting in rain and drying after, hollows last and rises first, from the
