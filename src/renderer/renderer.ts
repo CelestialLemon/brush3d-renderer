@@ -26,6 +26,7 @@ import { TreeSprings, type TreeSpec } from './trees';
 import { WATER_EASE, WaterField, type WaterMap } from './water';
 import { GROUND_EASE, GroundField, HollowMap, type GroundMap } from './ground';
 import { SnowPaint } from './snow';
+import { earthShares } from './wet';
 import type { WindSnapshot } from '../wind/sim';
 
 // The renderer: the clouds' shade over the land (#8); a sun shadow map; for the water, the bed drawn without it and the
@@ -203,6 +204,7 @@ export class BrushRenderer {
   readonly hollows = new HollowMap();
   /** The lying snow's paint in the hour's light (#14), worked out once a frame. */
   private readonly snow = new SnowPaint();
+
   /** The falling rain (#11): its strokes, and the uniforms for its veil and the water's rings. */
   readonly rain: Rain;
   /** Lightning (#12): the game says where and when (strike, flicker); the player's flash setting is lightning.setting. */
@@ -239,7 +241,8 @@ export class BrushRenderer {
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
     });
     this.shelter = new ShelterMap(options.shelterSize ?? 1024);
-    // Every material reads the shelter map, the ground's map and the land's hollows, for lying snow (#14).
+    // Every material reads the shelter map, the ground's map and the land's hollows, for lying snow (#14) and wet ground
+    // (#11).
     Object.assign(this.shared, this.shelter.uniforms, this.ground.uniforms, this.hollows.uniforms, this.snow.uniforms);
     this.rain = new Rain(this.shared, this.shelter.uniforms);
     this.scene.add(this.rain.mesh);
@@ -363,6 +366,11 @@ export class BrushRenderer {
       geometry.userData.trees = undefined;
     }
     const seasonal = options.seasonal ?? (kind === 'ground' || kind === 'grass');
+    // Where the ground is earth (#11, wet.ts), from the game's colours, before the season turns them.
+    const colour = geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
+    if (kind === 'ground' && colour && !geometry.getAttribute('aEarth')) {
+      geometry.setAttribute('aEarth', new THREE.BufferAttribute(earthShares(this.ownColours.get(colour) ?? colour.array), 1));
+    }
     if (seasonal) this.seasonal.set(geometry, (this.seasonal.get(geometry) ?? 0) + 1);
     this.turn(geometry);
     const mesh = new THREE.Mesh(geometry, this.material(kind));
@@ -535,12 +543,14 @@ export class BrushRenderer {
   private waterShown = true;
 
   /**
-   * The game's ground (#14, see GroundMap and docs/GROUND.md): how deep the snow lies and where the frost is, over a grid
-   * as the water's is, sent again whenever it changes. A changed map eases in over `ease` seconds (0 at once). None
-   * settles under a roof, and less under a crown: that, and how a thin cover breaks along the land, are the renderer's.
+   * The game's ground (#14, #11, see GroundMap and docs/GROUND.md): how deep the snow lies, where the frost is, how wet
+   * the land is and how muddy, over a grid as the water's is, sent again whenever it changes. A changed map eases in over
+   * `ease` seconds (0 at once). None settles or wets under a roof, and less under a crown: that, and how a thin cover
+   * breaks along the land, are the renderer's.
    * Null: bare everywhere.
    */
   setGround(map: GroundMap | null, ease = GROUND_EASE) { this.ground.set(map, this.shared.uTime.value, ease); }
+
 
 
   /**

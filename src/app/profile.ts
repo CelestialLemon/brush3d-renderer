@@ -22,6 +22,8 @@ export interface ProfileCase {
   lightning?: boolean;
   /** Snow lying this deep (0..1) everywhere (#14): the cost of painting it in the materials. */
   lying?: number;
+  /** The land this wet and this muddy (0..1) everywhere (#11): the cost of painting it in the materials. */
+  wet?: { wet: number; mud: number };
 }
 export interface ProfileRow {
   label: string; width: number; height: number;
@@ -52,6 +54,7 @@ export function defaultCases(): ProfileCase[] {
   cases.push({ label: '1080p storm, dust', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS.dust });
   cases.push({ label: '1080p storm, heat wave', width: 1920, height: 1080, wind: STORM, weather: WEATHER_PRESETS['heat-wave'] });
   cases.push({ label: '1080p storm, snow lying', width: 1920, height: 1080, wind: STORM, lying: 0.6 });
+  cases.push({ label: '1080p storm, wet ground', width: 1920, height: 1080, wind: STORM, wet: { wet: 1, mud: 1 } });
   return cases;
 }
 
@@ -82,7 +85,10 @@ export async function runProfile(
       restore();
       if (c.weather) renderer.setWeather(c.weather, true);
       // The same depth over all the land: a map of one cell, larger than any scene.
-      if (c.lying !== undefined) renderer.setGround({ nx: 1, nz: 1, cell: 2000, x0: -1000, z0: -1000, snow: new Float32Array([c.lying]) }, 0);
+      const one = { nx: 1, nz: 1, cell: 2000, x0: -1000, z0: -1000 };
+      if (c.lying !== undefined) renderer.setGround({ ...one, snow: new Float32Array([c.lying]) }, 0);
+      // Mud everywhere too, though the game's lies only on the bare earth: the dearest case.
+      if (c.wet) renderer.setGround({ ...one, wet: new Float32Array([c.wet.wet]), mud: new Float32Array([c.wet.mud]) }, 0);
       // A steady wind: the gust map's cost is in sampling it, the same for any wind (its upload is a tick's, not a frame's).
       const wind = steadyWind(c.wind, (31 * Math.PI) / 180);
       renderer.setWind(wind, wind, 0);

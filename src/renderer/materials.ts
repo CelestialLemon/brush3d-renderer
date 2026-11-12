@@ -5,6 +5,7 @@ import { HIDDEN_DIVE, WATER_MAP_GLSL } from './water';
 import { RAIN_RINGS_GLSL } from './rain';
 import { SHELTER_GLSL } from './shelter';
 import { SNOW_GLSL } from './snow';
+import { WET_GLSL, WET_INK_GLSL } from './wet';
 
 // The scene's materials. Each has a main variant (writes colour and the G-buffer) and a depth variant for the sun's
 // shadow map, built from the same vertex code so wind and billboarding cast the shadows they should.
@@ -157,6 +158,11 @@ void place(vec3 world) {
 const STATIC_VERT = /* glsl */ `
 ${HEAD}
 varying vec2 vUv;
+#ifdef GROUND
+// How much of the ground is earth, from its own colours (wet.ts's earthShares): where mud can lie (#11).
+attribute float aEarth;
+varying float vEarth;
+#endif
 #ifdef TREES
 attribute vec4 aTree;
 attribute float aTreeId;
@@ -183,6 +189,9 @@ void main() {
   vColor = color;
   vPaint = aPaint;
   vUv = uv;
+#ifdef GROUND
+  vEarth = aEarth;
+#endif
   place(wp.xyz);
 }
 `;
@@ -404,6 +413,7 @@ ${GBUFFER_OUT}
 vec3 toCamera() { return normalize(vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2])); }
 ${SHELTER_GLSL}
 ${SNOW_GLSL}
+${WET_GLSL}
 
 #ifdef BASIS
 // The brush by place, baked at load (basisBakeMaterial): for each of the BASIS brush scales, seven layers over the ground's
@@ -531,7 +541,10 @@ void main() {
   light += sheen * force * 0.16;
   base = mix(base, oklabToLin(lchShift(linToOklab(base), 0.05, 0.8, 0.0)), max(sheen, 0.0) * force * 0.6);
 #endif
+  // Wet (#11, wet.ts): the earth muddy, then the paint darker and richer once lit (wetFinish).
+  if (uGroundOn > 0.5 && wetAt(p) > 0.0) base = wetBase(base);
   vec3 col = paintBands(base, light, 0.05, n.y * 0.5 + 0.5);
+  col = wetFinish(col);
   col += rimColorHere() * rimLight(n, vPaint.w);
   // Lying snow (#14, snow.ts).
   if (uGroundOn > 0.5 && snowAt(p) > 0.0) {
@@ -612,7 +625,10 @@ void main() {
   float light = lit * mix(0.32, 1.0, vis) + br * 0.08 + nCanopy.y * 0.12 * (1.0 - vis * lit);
   // A dab is a touch darker at its lower edge, where it tucks under the next.
   light -= (1.0 - smoothstep(-1.0, 0.6, c.y)) * 0.06;
+  // Wet (#11, wet.ts): darker and richer once lit (wetFinish).
+  if (uGroundOn > 0.5 && wetAt(p) > 0.0) base = wetBase(base);
   vec3 col = paintBands(base, light, 0.07, nCanopy.y * 0.5 + 0.5);
+  col = wetFinish(col);
   // A crown's shade goes deeper than the ground's, and cooler: the dark under a tree is what makes it a mass.
   vec3 lab = linToOklab(col);
   float shade = 1.0 - smoothstep(0.25, 0.6, light);
@@ -661,7 +677,10 @@ void main() {
   float light = sunLight(n, 0.3) * mix(0.18, 1.0, vis) + dab * 0.07 + br * 0.04;
   // Tips catch a little more light than roots.
   light += (vBlade.x - 0.5) * 0.1;
+  // Wet (#11, wet.ts): darker and richer once lit (wetFinish).
+  if (uGroundOn > 0.5 && wetAt(p) > 0.0) base = wetBase(base);
   vec3 col = paintBands(base, light, 0.06, 0.8);
+  col = wetFinish(col);
   col += rimColorHere() * vPaint.w * vBlade.x * vBlade.x * vis * 0.25;
   // Lying snow (#14): where the ground under it is white, a blade is buried as deep as the snow lies, its tip poking
   // through; painted as the ground's snow is, so the buried part is lost in it.
@@ -681,6 +700,7 @@ void main() {
 const INK_FRAG = /* glsl */ `
 ${FRAG_HEAD}
 ${MIRROR_SKY}
+${WET_INK_GLSL}
 uniform vec3 uSkyTop;
 uniform vec3 uSkyBottom;
 varying vec2 vUv;
@@ -735,6 +755,8 @@ void main() {
     glass = mix(glass, vec3(1.0) * sunTint(), sun * 0.6 * vis * (1.0 - gCloud));
     col = mix(glass, glass * 1.3 + 0.04, grid * 0.35);
   }
+  // Wet (#11, wet.ts): darker, with the sky glazed over it (not the solar glass, which is glass wet or dry).
+  if (uGroundOn > 0.5 && (finish < 0.5 || finish > 1.5) && wetAt(p) > 0.0) col = wetInked(col, n, p);
   // Lying snow (#14): on the tops of built things and their roofs' slopes (a solar panel's too). A thin cover is a veil
   // the roof shows through, thickening to white (patches on a roof read as camouflage), a little uneven.
   if (uGroundOn > 0.5 && snowAt(p) > 0.0) {

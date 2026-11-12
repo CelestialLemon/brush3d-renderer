@@ -21,7 +21,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
      depth, a rolling head), and for the game to query. It grew out of #9: dust's gusts didn't read (done 2026-11-03,
      #41 to #44: see Wind);
   7. #18 dynamic water: a state the game drives (done 2026-11-03, #45 and #48: see Water);
-  8. #11 rain and wet ground (the falling rain done 2026-11-09, #53: see Weather; wet ground is open);
+  8. #11 rain and wet ground (done 2026-11-12: the falling rain #53, wet ground #60: see Weather);
   9. #12 storms and lightning (done 2026-11-11, #55 and #57: see Weather);
   10. #13 seasons (parts 1 and 2, the hour following the game's sun and the season's look for the rest, merged 2026-11-07 as #51 and #52; part 3, the trees' look, in #54);
   11. #14 snow, frost and ice (the lying snow done 2026-11-11, #58: see Weather; falling snow, frost and river ice are open);
@@ -169,7 +169,7 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   wind's gusts are to be rebuilt as fronts sweeping the land (#36). The demo's timeline has a dust storm blowing through.
   The haze's patches no longer swing when the wind turns (#36): a new set is laid along the new wind and fades in.
 
-- **Falling rain (#11, part 1, #53; wet ground is open).** Painted strokes, not a field of particles (`src/renderer/rain.ts`):
+- **Falling rain (#11, part 1, #53).** Painted strokes, not a field of particles (`src/renderer/rain.ts`):
   long, fine, crisp strokes, a fine streaked veil over the distance (in the post pass), crowns of ticks where drops land
   and thin crisp rings on the water, flood water too ('B', the developer's pick of three). How hard it rains sets how
   many strokes, how fast they fall and the veil; the wind and its gusts slant them. Each drop belongs to an 8 m patch of
@@ -177,6 +177,17 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   (some of the time) crowns, traced along their slanted path through the shelter map, which gained a third map, the land
   itself. `settings.fallingShare` is the quality knob (fewer strokes, the same look); `falling=0` leaves it all out.
   Snow (#14) can reuse the patches, the stops and the count. Costs in `docs/PERFORMANCE.md`.
+
+- **Wet ground (#11, part 2, #60; #50, the first try with puddles, was turned down).** The game says how wet and how
+  muddy each 1 m cell is, in the two free slots of the ground's map (`setGround`, #14's), and dries the land by lowering
+  them. Painted things (the ground, grass, crops, leaves, stones) are lit as if dry, then darkened and made richer
+  ('richer', the developer's pick of two), so a wet field's shade is still the hour's teal or violet. What people build
+  darkens a little and takes a glaze, the sky mirrored faintly with its clouds drifting over ('glaze', of three). Bare
+  earth turns to a dark, rich brown mud ('dark', of two); only the earth, told from the grass by the game's own colours
+  before the season turns them. None under a roof, to its edge, and less under a crown. The demo wets the land in rain
+  and dries it after, rises first; the stream runs brown after a storm (#18's mud). No puddles (the developer, for now).
+  Open: the dry patch under the solar panels reads as a gold zigzag of dry wheat (physically right; the developer may
+  soften it). The contract in `docs/GROUND.md`, costs in `docs/PERFORMANCE.md`.
 
 - **Lying snow (#14, part 1, #58; falling snow, frost and river ice are open).** The game owns the ground's state and
   sends it as a map in the water's format, `renderer.setGround(...)` (#50's plumbing, without its wet look; wet ground

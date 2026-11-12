@@ -1,5 +1,6 @@
 import { WEATHER_PRESETS, type HazeKind, type Weather } from '../renderer/weather';
 import type { WaterState } from './water';
+import { soakStep } from './ground';
 
 // A stand-in for the game's weather (#7): scripted spells, at the game's speeds, sent the way the game sends it. The game's
 // day is 240 s at normal speed (Soil-n-Silo's DAY_SECONDS), up to 3x faster, so a game hour is 10 s; its conditions glide
@@ -13,6 +14,9 @@ import type { WaterState } from './water';
 // hurricane. They send how stormy the sky looks (storm), the gold breaking under the deck as the storm comes and goes
 // (sunUnder), and how often lightning strikes and flickers in the distance, which the demo calls as the game would
 // (renderer.strike and renderer.flicker, #12).
+// Every spell wets the land as it rains and dries it after, faster in sun (#11): the game's rule, which the demo's
+// timelineWet stands in for. A thunderstorm and a hurricane leave the stream muddy, clearing slowly after (#11, the
+// water's mud, #18).
 
 /** Seconds of a game hour at normal speed. */
 export const GAME_HOUR = 10;
@@ -54,7 +58,7 @@ export const SPELLS = {
       { hour: 11.5, cloud: 0, rain: 0 },
       { hour: 12, cloud: 0, rain: 0 },
     ],
-    phase: (h) => (h < 1.5 ? 'clear' : h < 4.5 ? 'cloud building' : h < 8 ? 'a shower' : 'clearing'),
+    phase: (h) => (h < 1.5 ? 'clear' : h < 4.5 ? 'cloud building' : h < 8 ? 'a shower' : h < 10 ? 'clearing' : 'the ground drying'),
   },
   fog: {
     keys: [
@@ -113,20 +117,20 @@ export const SPELLS = {
   thunderstorm: {
     keys: [
       // A close afternoon, cloud gathering...
-      { hour: 0, cloud: 0.25, rain: 0, wind: 4, storm: 0, sun: 0, bolts: 0, far: 0 },
-      { hour: 1.5, cloud: 0.5, rain: 0, wind: 5, storm: 0.1, sun: 0, bolts: 0, far: 0 },
+      { hour: 0, cloud: 0.25, rain: 0, wind: 4, storm: 0, sun: 0, bolts: 0, far: 0, rise: 0, flow: 1, mud: 0 },
+      { hour: 1.5, cloud: 0.5, rain: 0, wind: 5, storm: 0.1, sun: 0, bolts: 0, far: 0, rise: 0, flow: 1, mud: 0 },
       // ...the storm's deck coming over, darkening before the rain, the sun breaking in under its edge, thunder far off...
-      { hour: 3, cloud: 0.9, rain: 0, wind: 9, storm: 0.55, sun: 0.9, bolts: 0, far: 5 },
-      { hour: 4, cloud: 1, rain: 0.3, wind: 14, storm: 0.9, sun: 0.2, bolts: 4, far: 6 },
-      // ...the storm: heavy rain, strikes close by...
-      { hour: 5, cloud: 1, rain: 0.9, wind: 16, storm: 1, sun: 0, bolts: 9, far: 5 },
-      { hour: 7, cloud: 1, rain: 1, wind: 15, storm: 1, sun: 0, bolts: 9, far: 5 },
+      { hour: 3, cloud: 0.9, rain: 0, wind: 9, storm: 0.55, sun: 0.9, bolts: 0, far: 5, rise: 0, flow: 1, mud: 0 },
+      { hour: 4, cloud: 1, rain: 0.3, wind: 14, storm: 0.9, sun: 0.2, bolts: 4, far: 6, rise: 0, flow: 1.1, mud: 0.05 },
+      // ...the storm: heavy rain, strikes close by, the stream rising a little, faster and browner...
+      { hour: 5, cloud: 1, rain: 0.9, wind: 16, storm: 1, sun: 0, bolts: 9, far: 5, rise: 0.02, flow: 1.4, mud: 0.25 },
+      { hour: 7, cloud: 1, rain: 1, wind: 15, storm: 1, sun: 0, bolts: 9, far: 5, rise: 0.06, flow: 2, mud: 0.6 },
       // ...passing: the rain easing, the strikes moving off, the sun breaking in under the back of the deck...
-      { hour: 8.5, cloud: 1, rain: 0.45, wind: 11, storm: 0.7, sun: 0.3, bolts: 3, far: 6 },
-      { hour: 9.5, cloud: 0.9, rain: 0.1, wind: 8, storm: 0.4, sun: 1, bolts: 0, far: 5 },
-      // ...and clearing, the thunder going away.
-      { hour: 11, cloud: 0.45, rain: 0, wind: 5, storm: 0.05, sun: 0.3, bolts: 0, far: 2 },
-      { hour: 12, cloud: 0.25, rain: 0, wind: 4, storm: 0, sun: 0, bolts: 0, far: 0 },
+      { hour: 8.5, cloud: 1, rain: 0.45, wind: 11, storm: 0.7, sun: 0.3, bolts: 3, far: 6, rise: 0.07, flow: 2, mud: 0.7 },
+      { hour: 9.5, cloud: 0.9, rain: 0.1, wind: 8, storm: 0.4, sun: 1, bolts: 0, far: 5, rise: 0.05, flow: 1.7, mud: 0.65 },
+      // ...and clearing, the thunder going away, the stream still muddy.
+      { hour: 11, cloud: 0.45, rain: 0, wind: 5, storm: 0.05, sun: 0.3, bolts: 0, far: 2, rise: 0.03, flow: 1.4, mud: 0.5 },
+      { hour: 12, cloud: 0.25, rain: 0, wind: 4, storm: 0, sun: 0, bolts: 0, far: 0, rise: 0.02, flow: 1.2, mud: 0.4 },
     ],
     phase: (h) => (h < 1.5 ? 'close' : h < 4 ? 'the storm coming in' : h < 8.5 ? 'a thunderstorm' : h < 11 ? 'passing' : 'clearing'),
   },
@@ -148,17 +152,17 @@ export const SPELLS = {
   hurricane: {
     keys: [
       // The swell before it, the wind getting up...
-      { hour: 0, cloud: 0.4, rain: 0, wind: 10, storm: 0, sun: 0, bolts: 0, far: 0 },
-      { hour: 2, cloud: 0.9, rain: 0.3, wind: 22, storm: 0.6, sun: 0, bolts: 0, far: 3 },
-      // ...the hurricane: the strongest wind, driving rain, a dark sky, lightning now and then...
-      { hour: 3.5, cloud: 1, rain: 0.9, wind: 32, storm: 1, sun: 0, bolts: 2, far: 5 },
-      { hour: 6, cloud: 1, rain: 1, wind: 38, storm: 1, sun: 0, bolts: 3, far: 5 },
-      { hour: 9, cloud: 1, rain: 0.8, wind: 30, storm: 0.9, sun: 0, bolts: 2, far: 4 },
+      { hour: 0, cloud: 0.4, rain: 0, wind: 10, storm: 0, sun: 0, bolts: 0, far: 0, rise: 0, flow: 1, mud: 0 },
+      { hour: 2, cloud: 0.9, rain: 0.3, wind: 22, storm: 0.6, sun: 0, bolts: 0, far: 3, rise: 0, flow: 1.1, mud: 0.05 },
+      // ...the hurricane: the strongest wind, driving rain, a dark sky, lightning now and then, the stream in spate...
+      { hour: 3.5, cloud: 1, rain: 0.9, wind: 32, storm: 1, sun: 0, bolts: 2, far: 5, rise: 0.04, flow: 1.8, mud: 0.4 },
+      { hour: 6, cloud: 1, rain: 1, wind: 38, storm: 1, sun: 0, bolts: 3, far: 5, rise: 0.12, flow: 3, mud: 0.75 },
+      { hour: 9, cloud: 1, rain: 0.8, wind: 30, storm: 0.9, sun: 0, bolts: 2, far: 4, rise: 0.15, flow: 3.2, mud: 0.85 },
       // ...passing, the sun breaking under its back edge...
-      { hour: 11, cloud: 0.85, rain: 0.15, wind: 20, storm: 0.5, sun: 0.8, bolts: 0, far: 2 },
-      // ...and gone.
-      { hour: 13, cloud: 0.5, rain: 0, wind: 12, storm: 0.1, sun: 0.2, bolts: 0, far: 0 },
-      { hour: 14, cloud: 0.4, rain: 0, wind: 10, storm: 0, sun: 0, bolts: 0, far: 0 },
+      { hour: 11, cloud: 0.85, rain: 0.15, wind: 20, storm: 0.5, sun: 0.8, bolts: 0, far: 2, rise: 0.12, flow: 2.6, mud: 0.8 },
+      // ...and gone, the stream still high and brown.
+      { hour: 13, cloud: 0.5, rain: 0, wind: 12, storm: 0.1, sun: 0.2, bolts: 0, far: 0, rise: 0.07, flow: 2, mud: 0.65 },
+      { hour: 14, cloud: 0.4, rain: 0, wind: 10, storm: 0, sun: 0, bolts: 0, far: 0, rise: 0.05, flow: 1.7, mud: 0.55 },
     ],
     phase: (h) => (h < 2 ? 'the wind getting up' : h < 3.5 ? 'the hurricane coming in' : h < 11 ? 'a hurricane' : 'passing'),
   },
@@ -175,8 +179,12 @@ const smooth = (t: number) => t * t * (3 - 2 * t);
 
 /** A value of the spell at a time (seconds of real time, at a game speed), glided between its keys, held between ticks. */
 function valueAt(spell: SpellName, seconds: number, speed: number, value: (key: Key) => number) {
+  return valueAtHour(spell, hourAt(spell, Math.floor(seconds * TICK) / TICK, speed), value);
+}
+
+/** A value of the spell at an hour into it, glided between its keys. */
+function valueAtHour(spell: SpellName, hour: number, value: (key: Key) => number) {
   const keys: Key[] = SPELLS[spell].keys;
-  const hour = hourAt(spell, Math.floor(seconds * TICK) / TICK, speed);
   let i = 0;
   while (i < keys.length - 2 && hour >= keys[i + 1].hour) i++;
   const a = keys[i], b = keys[i + 1], t = smooth((hour - a.hour) / (b.hour - a.hour));
@@ -207,6 +215,27 @@ export function timelineWater(seconds: number, speed = 1, spell: SpellName = 'sh
   if ((SPELLS[spell].keys as Key[])[0].rise === undefined) return null;
   const at = (k: (key: Key) => number) => valueAt(spell, seconds, speed, k);
   return { rise: at((k) => k.rise ?? 0), flow: at((k) => k.flow ?? 1), mud: at((k) => k.mud ?? 0) };
+}
+
+/**
+ * How wet the land is at a time (#11, 0 dry .. 1 soaked; see DemoGround): the game's rain and sun over the spell so far,
+ * from how wet it left the land last time round, as the spell repeats (none the first: then at its end), so it doesn't
+ * jump dry as it starts again. Held between ticks, as the weather is.
+ */
+export function timelineWet(seconds: number, speed = 1, spell: SpellName = 'shower') {
+  const start = (WET_LEFT[spell] ??= soak(spell, 0, span(spell)));
+  return soak(spell, start, hourAt(spell, Math.floor(seconds * TICK) / TICK, speed));
+}
+/** How wet each spell leaves the land, from dry (a spell whose rain soaks it leaves it the same from any start). */
+const WET_LEFT: Partial<Record<SpellName, number>> = {};
+/** How wet the land is `end` hours into a spell, from `wet` at its start. */
+function soak(spell: SpellName, wet: number, end: number) {
+  const STEP = 0.05;
+  for (let h = 0; h < end; h += STEP) {
+    const mid = Math.min(h + STEP / 2, end), rain = valueAtHour(spell, mid, (k) => k.rain);
+    wet = soakStep(wet, rain >= RAIN_FROM ? rain : 0, valueAtHour(spell, mid, (k) => k.cloud), Math.min(STEP, end - h));
+  }
+  return wet;
 }
 
 /** How often lightning strikes and flickers in the distance at a time (a minute, of real time), or null if never. */

@@ -271,6 +271,35 @@ before it, fog, dust and the heat wave (0.2, 0.3 and 0.05 ms here), read 3.0 to 
 `no rain` read slower than the storm with the rain. So most of the 4.7 is the machine slowing, not the snow; its own
 share there is still to read. Still to read on the laptop: the `snow lying` line against `1080p storm`.
 
+### Wet ground (#11)
+
+In the materials, from the ground's map, as the snow: each reads how wet and muddy it is where it is, less what shelters
+it; a painted one is darkened and made richer once it's lit, an inked one takes its glaze. While the land is dry the
+materials skip it all.
+
+RX 570, 1080p in a storm, the land soaked (the demo's own map: its tracks and yard muddy), wet against dry, medians of
+three: **the farm +0.33 ms, the meadow +0.31**, under the line's 0.4 (shared with the snow: rain and lying snow seldom
+come together, and the snow on wet ground is drawn over it). `1080p storm, wet ground` in `node tools/profile.ts` and
+`?profile` is the dearest case, mud everywhere rather than only on the bare earth.
+
+Measured with the first of the candidate sheens ('streaks'). Not yet re-timed: the picked glaze (it reads the sky's
+clouds on what people build, a small share of the screen), the review's fixes since (the shelter in the water's
+reflection; the mud's earth test moved from every pixel to the ground's vertices, a saving), and the laptop (Arc 140T).
+The GPU was busy on 2026-11-12; a run of `node tools/profile.ts` settles it.
+
+What it cost at first, and what took it down (Sol measured most of it, #11):
+
+- **0.45 ms on the farm, 0.56 on the meadow**, first.
+- **The dry edge's wobble** under a roof, worked out by noise in every pixel of the ground: 0.3 of it. A few sine waves
+  draw the same edge for almost nothing.
+- **The colours a screen can't show.** Darkened and made richer before it's lit, a wet colour's shade (darker, with
+  the hour's teal mixed in) fell past the colours a screen can show, on nearly half the screen (44% on the meadow,
+  against 1.4% dry), and the paint pulled each back by a six-step search. Darkened and made richer once lit, the same
+  look in the stills, the paint sees the dry colours: 0.15 ms.
+- **The map read once** for the wet and the snow at a point, not twice: 0.03 or so.
+- Not worth it: working the wet out at the vertices (it moves the dry edges and saved little), a flag for each value the
+  map holds (0.02).
+
 ## The farm valley
 
 The farm grew from a 68 m square to a 176 m valley (2026-11-03). Measured on the RX 570 at 1080p:

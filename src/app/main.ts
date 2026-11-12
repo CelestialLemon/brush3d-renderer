@@ -9,7 +9,7 @@ import { cloudDriftSpeed } from '../renderer/clouds';
 import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weather, type WeatherName } from '../renderer/weather';
 import { steadyWind, WIND_SCALE, windName, type WindStrength } from '../renderer/wind';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
-import { SPEEDS, SPELLS, TICK, timelineAt, timelineLightning, timelinePhase, timelineWater, timelineWind, type SpellName } from './timeline';
+import { SPEEDS, SPELLS, TICK, timelineAt, timelineLightning, timelinePhase, timelineWater, timelineWet, timelineWind, type SpellName } from './timeline';
 import { DemoWater, USUAL_WATER, type WaterState } from './water';
 import { DemoGround, type GroundState } from './ground';
 import { WindWorker } from '../wind/client';
@@ -37,6 +37,7 @@ import { WindView } from './windView';
 //   water=usual|spate|flood (the water, #18), then each value over it: rise (m over the usual), flow (times the usual
 //     speed), mud (0..1)
 //   lying (how deep the snow lies over the land, 0..1, the game's: 0.2 a dusting, 0.5 the grass covered, 1 deep; #14)
+//   wet (how wet the land is, 0 dry .. 1 soaked, #11; soaked where it rains, by default)
 //   cloudSeed (which cloud field: a whole number)
 //   falling=0 (leave out the things in the air: the wind's leaves, the rain, and snow to come; dust is in the haze)
 //   fallingShare (the share of the rain's strokes drawn: 1 full quality, 0.33 reduced)
@@ -99,18 +100,18 @@ function sendWater(w: WaterState, immediate = false) {
   renderer.setWater(demoWater.map(w), immediate ? 0 : undefined);
 }
 sendWater(water, true);
-// The ground (#14), standing in for the game's: how deep the snow lies and how much frost, sent as a map whenever it
-// changes.
-const demoGround = new DemoGround(scene.stream);
-const ground: GroundState = { snow: num('lying', 0), frost: 0 };
+// The ground (#14, #11), standing in for the game's: how deep the snow lies, how much frost, and how wet the land is,
+// sent as a map whenever it changes. (Its wet is set below, with the weather: soaked where it rains.)
+const demoGround = new DemoGround(scene.stream, scene.height, scene.bare);
+const ground: GroundState = { snow: num('lying', 0), frost: 0, wet: 0 };
 let groundSent = '';
 function sendGround(g: GroundState, immediate = false) {
-  const key = JSON.stringify(g);
+  // The wet in steps of 1/400: the timeline dries it a little every frame, the game a few times a second.
+  const key = JSON.stringify({ ...g, wet: Math.round(g.wet * 400) / 400 });
   if (key === groundSent) return;
   groundSent = key;
   renderer.setGround(demoGround.map(g), immediate ? 0 : undefined);
 }
-sendGround(ground, true);
 const view = renderer.view;
 view.view = num('view', 0); view.zoom = num('zoom', 40);
 view.target.set(num('x', farm ? 0 : -1), 0, num('z', 0));
@@ -154,7 +155,7 @@ function here() {
   next.set('wind', wind.speed.toFixed(2)); next.set('windDir', ((wind.direction * 180) / Math.PI).toFixed(1));
   next.set('gust', String(wind.gust ?? 0.5)); next.set('rhythm', String(rhythm));
   next.set('rise', String(water.rise)); next.set('flow', String(water.flow)); next.set('mud', String(water.mud));
-  next.set('lying', String(ground.snow));
+  next.set('lying', String(ground.snow)); next.set('wet', String(ground.wet));
   next.set('view', String(view.view)); next.set('zoom', view.zoom.toFixed(1));
   next.set('x', view.target.x.toFixed(2)); next.set('z', view.target.z.toFixed(2));
   next.set('hour', was ? Object.keys(HOUR_NAMES).find((k) => HOUR_NAMES[k] === was)! : hour.toFixed(2));
@@ -210,6 +211,9 @@ const weather: Sky & { haze: Haze } = {
   },
 };
 if (['cloud', 'storm', 'rain', 'snow', 'heat', 'haze', 'hazeColor', 'hazeTop', 'hazeBase', 'hazeKind'].some((k) => params.has(k))) presetName = null;
+// The land soaked where it's raining, unless asked (#11).
+ground.wet = num('wet', weather.rain > 0 ? 1 : 0);
+sendGround(ground, true);
 // The clouds' field (#8).
 const cloudSeed = num('cloudSeed', 1);
 // How much of a low sun gets in under the cloud at dawn and dusk (#8): the game's, sent with the weather, and only now and
@@ -265,7 +269,7 @@ let sent: Weather = weather;
 /** Sends the weather as the game does, the clouds' drift and seed with it. */
 function send(w: Weather, immediate = false, time = lastTime) {
   sent = { ...w };
-  dustSource(Math.max(w.rain ?? 0, w.snow ?? 0));
+  dustSource(Math.max(w.rain ?? 0, w.snow ?? 0, ground.wet));
   renderer.setWeather({ sunUnder: spellSun ?? sunUnder, ...w, drift: driftAt(time), cloudSeed }, immediate);
 }
 let lastTime = 0;
@@ -378,6 +382,8 @@ function hud() {
     Object.assign(weather, { cloud: p.cloud, storm: p.storm ?? 0, rain: p.rain ?? 0, snow: p.snow ?? 0, heat: p.heat ?? 0 });
     weather.haze = p.haze ? { ...p.haze } : { ...weather.haze, amount: 0 };
     presetName = pick.value as WeatherName; playing = false; timelineEl.textContent = ''; endSpellStorm();
+    // A rainy weather picked: the land as it would be after a while of it, soaked.
+    if (weather.rain > 0) { ground.wet = 1; sendGround({ ...ground }); }
     send(weather);
     hud();
   };
@@ -443,6 +449,9 @@ function hud() {
 
   // The ground (#14): the snow lying, what the game would send.
   hudEl.append(slider('Lying', 0, 1, 0.01, () => ground.snow, (v) => { ground.snow = v; sendGround({ ...ground }); }, share, true));
+  // How wet the land is (#11), what the game would send (the timeline wets and dries it too).
+  hudEl.append(slider('Wet', 0, 1, 0.01, () => ground.wet, (v) => { ground.wet = v; sendGround({ ...ground }); send(sent); },
+    (v) => (v <= 0 ? 'dry' : v < 0.4 ? `drying ${v.toFixed(2)}` : v < 0.85 ? `wet ${v.toFixed(2)}` : `soaked ${v.toFixed(2)}`)));
 }
 const timelineEl = document.createElement('span');
 /** A clock hour as 14:45. */
@@ -482,6 +491,9 @@ function playTimeline(time: number) {
   // The water, when the spell moves it (the game's setWater), a few times a second as the weather is.
   const ws = timelineWater(time - timelineStart, speed, spell);
   if (ws) { Object.assign(water, ws); sendWater({ ...water }); for (const r of refreshers) r(); }
+  // The ground, as the game's rain and sun have wetted and dried it (#11).
+  const wet = timelineWet(time - timelineStart, speed, spell);
+  if (Math.abs(wet - ground.wet) > 1e-4) { ground.wet = wet; sendGround({ ...ground }); for (const r of refreshers) r(); }
   // A storm's lightning, which the demo calls at the spell's rates, as the game would (#12).
   stormLightning(timelineLightning(time - timelineStart, speed, spell));
   if (key === timelineSent) return;
@@ -547,6 +559,7 @@ if (params.has('shot')) {
       send(whole(w), !options.ease, time);
       const ws = timelineWater(t.time, t.speed ?? speed, t.spell ?? spell);
       if (ws) Object.assign(water, ws);
+      ground.wet = timelineWet(t.time, t.speed ?? speed, t.spell ?? spell);
     }
     if (options.water) Object.assign(water, options.water);
     // The water's clock is the renderer's: put it at the frame's time first, so an ease starts from there.
