@@ -105,6 +105,8 @@ export class SunMemory {
   private hour: number | null = null;
   private pending = 0;
   private fresh = true;
+  /** Whether the map was cleared for the night and nothing has been added since. */
+  private blank = false;
 
   constructor(shared: Record<string, THREE.IUniform>, readonly size = 512) {
     const target = () => new THREE.WebGLRenderTarget(size, size, {
@@ -138,20 +140,25 @@ export class SunMemory {
   update(gl: THREE.WebGLRenderer, hour: number | null, sunrise: number, sunEl: number, sky: number, frost: boolean,
     hollowsMap: THREE.Matrix3, hollowsOn: boolean) {
     const u = this.uniforms;
-    if (!frost || !hollowsOn) { this.on = false; u.uSunHadOn.value = 0; this.fresh = true; this.hour = null; return; }
-    if (!this.on) { this.on = true; this.fresh = true; this.hour = null; }
+    if (!frost || !hollowsOn) { this.on = false; u.uSunHadOn.value = 0; this.fresh = true; this.blank = false; this.hour = null; return; }
+    if (!this.on) { this.on = true; this.fresh = true; this.blank = false; this.hour = null; }
     // The sun's strength now, over the land in the open: none below the horizon, weak while low, less under a grey sky.
     const sun = THREE.MathUtils.smoothstep(sunEl, 0, 25) * (1 - 0.85 * sky);
     let add = 0, guess = 0;
     if (hour === null) {
       if (!this.fresh) return;
     } else if (sunEl <= 0) {
-      // Night: forgotten, to start afresh at dawn.
-      this.fresh = true; this.hour = hour; this.pending = 0;
+      // Night: forgotten (cleared once, then nothing to do till dawn), to start afresh at dawn.
+      this.hour = hour; this.pending = 0;
+      if (this.blank) return;
+      this.fresh = true; this.blank = true;
     } else if (this.hour === null || hour < this.hour - 1e-6 || hour - this.hour > 0.5) {
-      // A jump (or the first frame): as if this sun had shone since sunrise, or since the hour it jumped from.
-      const from = this.hour === null || hour < this.hour ? sunrise : Math.max(this.hour, sunrise);
-      this.fresh = true; this.pending = 0;
+      // A jump (or the first frame): as if this sun had shone since sunrise (afresh), or, jumping on, since the hour it
+      // jumped from (added to what it had).
+      const back = this.hour === null || hour < this.hour;
+      const from = back ? sunrise : Math.max(this.hour!, sunrise);
+      if (back) this.fresh = true;
+      this.pending = 0;
       add = Math.max(0, hour - from) * sun;
       guess = 1;
       this.hour = hour;
@@ -163,6 +170,7 @@ export class SunMemory {
       add = this.pending * sun;
       this.pending = 0;
     }
+    if (sunEl > 0) this.blank = false;
     const mu = this.material.uniforms;
     mu.uUnmap.value.copy(hollowsMap).invert();
     mu.tPrev.value = this.targets[0].texture;
