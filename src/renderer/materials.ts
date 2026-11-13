@@ -1055,7 +1055,7 @@ void main() {
   // Evening b and c (#19): the whole surface mirrors the glow low in the sky, evenly, so the evening water reads warm
   // rather than slate. (Not in streaks on the swells: the developer found those smears, round one, ugly.)
   int evening = int(uEvening + 0.5);
-  float evenCrest = evening >= 1 ? warmth * 0.45 : 0.0;
+  float evenCrest = evening >= 1 ? warmth * 0.3 : 0.0;
   float low = 0.25 + 0.6 * evenCrest;
   vec3 glowLow = oklabToLin(lchShift(linToOklab(mix(uGapSkyBottom, sunColorHere() / max(max(sunColorHere().r, sunColorHere().g), 1e-3), 0.45)), 0.04, 1.3, 0.0));
   vec3 sky = exposeHere(mix(mix(uGapSkyTop, uGapSkyBottom, 0.25), glowLow, evenCrest));
@@ -1065,7 +1065,7 @@ void main() {
   // (Muddy water is opaque, but its silt is what shows, not a deep pool's mirror.)
   float fres = clamp(0.08 + depthy * 0.22 * (1.0 - 0.6 * mud) + ripple * 0.1, 0.0, 0.5);
   if (look == 1) fres = clamp(0.04 + depthy * 0.18 * (1.0 - 0.6 * mud) + ripple * 0.06, 0.0, 0.4);
-  fres = mix(fres, 0.5, evenCrest * 0.5 * (1.0 - 0.6 * mud));
+  fres = mix(fres, 0.4, evenCrest * 0.4 * (1.0 - 0.6 * mud));
   vec3 col = mix(under, mirrored, fres);
   // The clouds in it (#8), along the mirrored ray and shaken by the ripples: their light over the sky's, alike over the
   // shallows and the deep (the depth is read at half size, and its grain would show against a bright cloud and shimmer as
