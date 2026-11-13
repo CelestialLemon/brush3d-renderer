@@ -947,6 +947,13 @@ float caustic(vec2 q) {
 // The low sun's glitter: how much the views face the sun. A mirror's sun path would need the sun within a few degrees of
 // straight ahead, and with four views 90° apart it's often 45° off the nearest; painted, the views facing towards the sun
 // get it, the more the closer it is to ahead.
+// The low sun's fine glints: one bright point in some cells, winking; r its radius in cells.
+float sunTwinkle(vec2 q, float facets, float r) {
+  vec2 sq = q * 9.0;
+  vec2 sc = floor(sq), sf = fract(sq) - 0.5 - (hash22(sc) - 0.5) * 0.6;
+  float sh = hash12(sc + 1.7);
+  return (1.0 - smoothstep(r * 0.4, r, length(sf))) * step(1.0 - facets * 0.7, sh) * max(0.0, sin(uTime * (4.0 + sh * 5.0) + sh * 60.0));
+}
 float sunFacets() {
   vec2 ahead = normalize(-toCamera().xz), sun = normalize(uSunDir.xz + vec2(1e-4, 0.0));
   return smoothstep(0.1, 0.9, dot(ahead, sun));
@@ -1112,10 +1119,11 @@ void main() {
     vec3 sunGlow = exposeHere(oklabToLin(lchShift(linToOklab(sunColorHere()), 0.0, 1.5, 0.0)));
     // A broad sheen on the crests, and fine winking glints over it.
     col = mix(col, sunGlow, facets * 0.4 * smoothstep(0.1, 0.6, ripple));
-    vec2 sq = (p.xz - flow * f1 * FLOW_CYCLE) * 9.0;
-    vec2 sc = floor(sq), sf = fract(sq) - 0.5 - (hash22(sc) - 0.5) * 0.6;
-    float sh = hash12(sc + 1.7);
-    float twinkle = (1.0 - smoothstep(0.08, 0.2, length(sf))) * step(1.0 - facets * 0.7, sh) * max(0.0, sin(uTime * (4.0 + sh * 5.0) + sh * 60.0));
+    // Two copies carried with the ripples' (q1, q2), crossfaded so none jumps back when its cycle restarts; each glint at
+    // least a pixel wide and dimmer for it, so none winks out between pixels as the camera moves.
+    float px = length(fwidth(p.xz)) * 9.0;
+    float r = clamp(px * 0.8, 0.2, 0.45), dim = min(1.0, 0.2 / r) * min(1.0, 0.2 / r);
+    float twinkle = (sunTwinkle(q1, facets, r) * w1 + sunTwinkle(q2, facets, r) * w2) * dim;
     col = mix(col, sunGlow * 1.4, twinkle * facets);
   }
   if (look == 2) {
