@@ -111,9 +111,9 @@ cover only the cells within one of water (into one buffer per grid, with room fo
   shallow, clear bed, a web of light (`caustic`, one pattern shimmering in place). Patterns that lie along the current
   (the ripples, the glints, fast water's streaks, the ice's leads and milky streaks) are laid at fixed 30° turns and the
   two nearest blended (`flowTurns`, `paintStrokes`): turning a pattern by the flow's own angle, which changes round a
-  bend, sheared it more the further from the world's origin, into swirls across the current. The evening (`warmth`) is
-  read from the sun's colour, not its height (a winter's sun is low all day but only gold at the day's ends; an overcast
-  sky greys the sun, a storm's golden break golds it): the glints take the sun's gold and the mirrored sky the low
+  bend, sheared it more the further from the world's origin, into swirls across the current. The evening (`warmth`) takes
+  both a gold sun and a low one: the colour alone would light it all afternoon (the sun warms steadily after noon), the
+  height alone a winter's noon (its sun low but white); an overcast sky greys the sun, a storm's golden break golds it: the glints take the sun's gold and the mirrored sky the low
   glow's warmth, evenly. The foam line at the shore is held to a few pixels (on a flood's flat meadow its height band
   alone covered whole patches). Tried and not picked (#64): today's look as it was, painted bands, a watercolour wash;
   painted current lines and drifting flecks for the flow; the warm sky in streaks on the swells, and the low sun's

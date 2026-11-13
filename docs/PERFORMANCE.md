@@ -372,8 +372,8 @@ RX 570, 1080p, the farm with its stream across the screen (`x=-14&z=20&zoom=40`)
 
 | | main pass | frame |
 |---|---:|---:|
-| Calm | +0.17 ms | +0.16 to +0.22 |
-| Storm | +0.17 ms | +0.19 to +0.24 |
+| Calm | +0.15 to +0.17 ms | +0.14 to +0.22 |
+| Storm | +0.14 to +0.17 ms | +0.16 to +0.24 |
 
 (At `zoom=64`, the stream filling more of the screen, +0.21.) A first version cost +0.19 at this camera (+0.26 at
 `zoom=64`): the light on the bed read the shadow map eight more times a pixel than it needed, and the warm sky and the
@@ -383,7 +383,7 @@ this GPU (neighbouring pixels run together, and take both whenever any of them d
 It comes out of the spare: about 0.20 → 0.03 with the stream across the screen, the worst framing; less of the screen
 is water in most views. Full-size reflections, for sharper mirrors, would cost about 2.4 ms more and don't fit.
 
-Crawl (`AB=2 tools/motion.ts`, a 1 px pan over the farm's stream, `falling=0`): the water's share 0.133 → 0.123 at 11:00,
+Crawl (`AB=2 tools/motion.ts`, a 1 px pan over the farm's stream, `falling=0`): the water's share 0.133 → 0.096 at 11:00,
 0.135 → 0.145 at the golden hour facing the sun (the gold glints). Pops in a gale at the golden hour (`tools/pops.ts`):
 none, before or after.
 Still to read: the laptop and the MacBook (`?profile`, the meadow's line, where the stream crosses the screen), when

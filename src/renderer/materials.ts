@@ -981,11 +981,13 @@ void main() {
   float path = bedDepth > 0.0 ? max(bedDepth - vViewDepth, 0.0) : 3.0;
   vec3 turns = flowTurns(flowA);
   // How warm the low sun's light is: 1 at the golden hour and sunset, none at noon or night (#19: the evening water was
-  // slate-blue, mirroring the upper sky, when it should glow warm). Read from the sun's colour, not its height: a winter's
-  // sun is low all day, but only gold at the day's ends; and an overcast sky greys it (overcast.ts), a storm's golden
-  // break golds it (storm.ts).
+  // slate-blue, mirroring the upper sky, when it should glow warm). It takes both a gold sun and a low one. The colour
+  // alone (linear, red over blue: ~0.3 at noon, ~0.45-0.6 mid-morning and early afternoon, 0.73 at sunset, 0.86 at the
+  // golden hour) would light it all day, since the sun warms through the afternoon. The height alone would light a
+  // winter's noon, its sun low but white. An overcast sky greys the sun (overcast.ts), a storm's golden break golds it.
   vec3 sunHue = uSunColor / max(max(uSunColor.r, uSunColor.g), 1e-3);
-  float warmth = smoothstep(0.2, 0.42, sunHue.r - sunHue.b) * smoothstep(-0.03, 0.06, uSunDir.y);
+  float warmth = smoothstep(0.55, 0.75, sunHue.r - sunHue.b) * smoothstep(-0.03, 0.06, uSunDir.y)
+    * (1.0 - smoothstep(0.3, 0.5, uSunDir.y));
   vec3 waterLab = linToOklab(vColor);
   // Clear (#19, the developer's pick): little tint in the shallows, where the bed shows, a deep, saturated teal in the deep.
   vec3 scatter = oklabToLin(lchShift(waterLab, -0.02, 1.7, -0.1));
