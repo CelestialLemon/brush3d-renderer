@@ -944,11 +944,12 @@ float caustic(vec2 q) {
   float c2 = 1.0 - abs(snoise(a * 1.37 + 5.0 - vec2(0.0, uTime * 0.18)));
   return pow(c1 * c2, 5.0);
 }
-// The low sun's glitter: how likely a ripple's facet turns the sun to the eye. The camera's ray is the same everywhere
-// (it's orthographic), so it lies over all the water in the views facing the sun, and over none in the others.
-float sunFacets(float rough) {
-  vec3 h = normalize(toCamera() + uSunDir);
-  return exp(-dot(h.xz, h.xz) / max(h.y * h.y, 1e-3) / (rough * rough));
+// The low sun's glitter: how much the views face the sun. A mirror's sun path would need the sun within a few degrees of
+// straight ahead, and with four views 90° apart it's often 45° off the nearest; painted, the views facing towards the sun
+// get it, the more the closer it is to ahead.
+float sunFacets() {
+  vec2 ahead = normalize(-toCamera().xz), sun = normalize(uSunDir.xz + vec2(1e-4, 0.0));
+  return smoothstep(0.1, 0.9, dot(ahead, sun));
 }
 void main() {
   if (sheetHidden(vWorldPos, vMud)) discard;
@@ -1107,7 +1108,7 @@ void main() {
   // The low sun's glitter, in the views facing it: today's evening b, and the clear stream's own.
   float sunPath = look == 0 ? uEvening : look == 1 ? 0.7 : 0.0;
   if (sunPath > 0.0 && warmth > 0.0) {
-    float facets = sunFacets(0.16 + 0.12 * chopAmt + 0.06 * smoothstep(0.0, 0.5, speed)) * warmth * sunPath * vis * (1.0 - gCloud) * (1.0 - mud * 0.5);
+    float facets = sunFacets() * warmth * sunPath * vis * (1.0 - gCloud) * (1.0 - mud * 0.5);
     vec3 sunGlow = exposeHere(oklabToLin(lchShift(linToOklab(sunColorHere()), 0.0, 1.5, 0.0)));
     // A broad sheen on the crests, and fine winking glints over it.
     col = mix(col, sunGlow, facets * 0.4 * smoothstep(0.1, 0.6, ripple));
