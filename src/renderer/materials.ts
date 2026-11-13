@@ -60,6 +60,11 @@ export function createSharedUniforms() {
     tIceA: { value: null as THREE.Texture | null },
     tIceB: { value: null as THREE.Texture | null },
     uIceOn: { value: 0 },
+    // #19's first round of water looks (WATER_FRAG): the look, today's flow and today's evening. Rough candidates; the
+    // ones not picked come out.
+    uWaterLook: { value: 0 },
+    uFlowLook: { value: 0 },
+    uEvening: { value: 1 },
     // The land's square (the ground's, see MeshOptions.fields): its centre's x and z, half its side, its turn. The water
     // stops at its edge (half 0: no edge).
     uLandSquare: { value: new THREE.Vector4(0, 0, 0, 0) },
@@ -889,19 +894,61 @@ vec3 iceCells(vec2 q) {
 // turns and changes speed across the water, the pattern is never dragged out of shape.
 const float FLOW_CYCLE = 4.0;
 float crest(float ripple) { return smoothstep(-0.15, 0.35, ripple); }
-// Glints of sun on the ripples' crests: little dashes lying across the flow, carried along by it, each winking in and
-// out on its own beat. Sparse and soft, so they sit on the clear water rather than whiting it out.
+// Glints of sun on the ripples' crests: soft points drawn out a little along the current (the developer, #19: dashes
+// across it read as horizontal ticks), carried along by it, each winking in and out on its own beat. Sparse and soft, so
+// they sit on the clear water rather than whiting it out.
 float sparkle(vec2 q, vec2 dir) {
-  vec2 fq = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x))) * vec2(3.5, 1.6);
+  vec2 fq = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x))) * vec2(2.2, 3.0);
   vec2 cell = floor(fq), f = fract(fq) - 0.5 - (hash22(cell) - 0.5) * 0.5;
   float h = hash12(cell + 7.3);
   float wink = max(0.0, sin(uTime * (2.0 + h * 3.0) + h * 40.0));
-  return (1.0 - smoothstep(0.5, 1.0, length(f / vec2(0.15, 0.3)))) * step(0.5, h) * wink;
+  return (1.0 - smoothstep(0.5, 1.0, length(f / vec2(0.3, 0.17)))) * step(0.5, h) * wink;
 }
 // Fast water's streaks (#18): long bands of light along the flow, in the flow's own frame, carried as the ripples are.
 float streaks(vec2 q, vec2 dir) {
   vec2 r = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x)));
   return snoise(r * vec2(0.2, 3.0)) * 0.65 + snoise(r * vec2(0.45, 6.5) + 5.0) * 0.35;
+}
+// Patterns laid along the flow are laid at fixed 30° turns and the two nearest blended, as the ground's brush is
+// (paintStrokes): turning a pattern by the flow's own angle, which changes round a bend, shears it the more the further it
+// is from the world's origin, into the marbled swirls across the current the developer found (#19).
+vec3 flowTurns(float a) {
+  const float STEP = 0.5235988;
+  float k = a / STEP, k0 = floor(k);
+  return vec3(k0 * STEP, (k0 + 1.0) * STEP, smoothstep(0.3, 0.7, k - k0));
+}
+vec2 turnDir(float a) { return vec2(cos(a), sin(a)); }
+float sparkleT(vec2 q, vec3 t) { return mix(sparkle(q, turnDir(t.x)), sparkle(q, turnDir(t.y)), t.z); }
+float streaksT(vec2 q, vec3 t) { return mix(streaks(q, turnDir(t.x)), streaks(q, turnDir(t.y)), t.z); }
+
+// ---- #19's first round of looks (rough; the ones not picked come out) ----
+uniform float uWaterLook;  // 0 today's, 1 clear stream, 2 painted bands, 3 watercolour wash
+uniform float uFlowLook;   // today's flow: 0 its ripples, 1 painted current lines, 2 drifting flecks
+uniform float uEvening;    // today's evening: 0 the warm sky mirrored, 1 that and the low sun's path
+// Painted current lines (flow b): thin lines along the current, where a long noise crosses zero.
+float currentLines(vec2 q, float a) {
+  vec2 d = turnDir(a), r = vec2(dot(q, d), dot(q, vec2(-d.y, d.x)));
+  float n = snoise(r * vec2(0.16, 1.5)) + 0.3 * snoise(r * vec2(0.45, 3.2) + 3.0);
+  return 1.0 - smoothstep(0.0, 0.14, abs(n));
+}
+// Drifting flecks (flow c): small pale bits of foam, a little long along the current.
+float flecks(vec2 q, float a) {
+  vec2 d = turnDir(a), r = vec2(dot(q, d), dot(q, vec2(-d.y, d.x))) * vec2(1.3, 2.0);
+  vec2 c = floor(r), f = fract(r) - 0.5 - (hash22(c) - 0.5) * 0.55;
+  return (1.0 - smoothstep(0.55, 1.0, length(f / vec2(0.26, 0.13)))) * step(0.78, hash12(c + 2.7));
+}
+// Light through the ripples, gathered into a moving web on the bed (the clear stream).
+float caustic(vec2 q) {
+  vec2 a = q * 1.5;
+  float c1 = 1.0 - abs(snoise(a + vec2(uTime * 0.22, 0.0)));
+  float c2 = 1.0 - abs(snoise(a * 1.37 + 5.0 - vec2(0.0, uTime * 0.18)));
+  return pow(c1 * c2, 5.0);
+}
+// The low sun's glitter: how likely a ripple's facet turns the sun to the eye. The camera's ray is the same everywhere
+// (it's orthographic), so it lies over all the water in the views facing the sun, and over none in the others.
+float sunFacets(float rough) {
+  vec3 h = normalize(toCamera() + uSunDir);
+  return exp(-dot(h.xz, h.xz) / max(h.y * h.y, 1e-3) / (rough * rough));
 }
 void main() {
   if (sheetHidden(vWorldPos, vMud)) discard;
@@ -923,8 +970,8 @@ void main() {
   float norm = inversesqrt(w1 * w1 + w2 * w2);
   vec2 q1 = p.xz - flow * f1 * FLOW_CYCLE, q2 = p.xz - flow * f2 * FLOW_CYCLE + vec2(17.3, 9.1);
   // Ripples: long, soft swells along the flow, and their screen-space nudge.
-  float ripple1 = strokes(q1 * 1.3, flowA) * 0.65 + strokes(q1 * 2.9 + 7.0, flowA + 0.3) * 0.35;
-  float ripple2 = strokes(q2 * 1.3, flowA) * 0.65 + strokes(q2 * 2.9 + 7.0, flowA + 0.3) * 0.35;
+  float ripple1 = paintStrokes(q1 * 1.3, flowA) * 0.65 + paintStrokes(q1 * 2.9 + 7.0, flowA + 0.3) * 0.35;
+  float ripple2 = paintStrokes(q2 * 1.3, flowA) * 0.65 + paintStrokes(q2 * 2.9 + 7.0, flowA + 0.3) * 0.35;
   float ripple = (ripple1 * w1 + ripple2 * w2) * norm;
   vec2 nudge = (vec2(snoise(q1 * 1.7), snoise(q1 * 1.7 + 19.0)) * w1 + vec2(snoise(q2 * 1.7), snoise(q2 * 1.7 + 19.0)) * w2) * norm
     * ${f(WATER_REACH.ripple)};
@@ -960,9 +1007,23 @@ void main() {
   vec3 bed = texture(uUnder, uvBed).rgb;
   float bedDepth = texture(uUnderAux, uvBed).z;
   float path = bedDepth > 0.0 ? max(bedDepth - vViewDepth, 0.0) : 3.0;
+  int look = int(uWaterLook + 0.5);
+  vec3 turns = flowTurns(flowA);
+  // How low and warm the sun is: 1 from a little above the horizon to the golden hour, none at noon or night (#19: the
+  // evening water was slate-blue, mirroring the upper sky, when it should glow warm).
+  float warmth = smoothstep(-0.03, 0.06, uSunDir.y) * (1.0 - smoothstep(0.3, 0.55, uSunDir.y));
   vec3 waterLab = linToOklab(vColor);
   vec3 scatter = oklabToLin(lchShift(waterLab, 0.06, 1.35, 0.0));
   vec3 absorb = vec3(1.9, 0.75, 0.6);
+  if (look == 1) {
+    // Clear: less tint in the shallows, a deep, saturated teal in the deep.
+    scatter = oklabToLin(lchShift(waterLab, -0.02, 1.7, -0.1));
+    absorb = vec3(1.3, 0.45, 0.36);
+    // The bed honey-coloured in the evening light, and the light through the ripples on it.
+    bed *= mix(vec3(1.0), vec3(1.3, 1.08, 0.72), warmth * 0.6);
+    float c = (caustic(q1) * w1 + caustic(q2) * w2) * norm;
+    bed += bed * c * sunTint() * 1.8 * sunVisibility(p, n, 0.0) * (1.0 - gCloud) * exp(-path * 1.1);
+  }
   // Muddy water (#18, the developer's pick "brown"): silt makes it ochre brown and opaque, the bed lost a hand's depth down.
   scatter = mix(scatter, vec3(0.28, 0.15, 0.045), mud);
   absorb = mix(absorb, vec3(4.0, 4.4, 5.0), mud);
@@ -983,19 +1044,28 @@ void main() {
     + texture(uReflect, ruv + vec2(0.0, rt.y)) + texture(uReflect, ruv - vec2(0.0, rt.y))) / 6.0;
   // The upper sky, and on the ripples' crests, which tilt towards the horizon, the glow low in it: a mean of the two would be grey.
   // The clouds in it (#8) along the mirrored ray, shaken by the ripples.
-  vec3 sky = exposeHere(mix(uGapSkyTop, uGapSkyBottom, 0.25));
+  // In the evening the ripples' faces tilted towards the horizon mirror its glow, warm and rich, between troughs that
+  // mirror the blue overhead: broken bands of gold over the cool water, not the two mixed into slate (#19).
+  // (Long, slow swells carry it, so the gold lies in streaks along the current rather than in blotches.)
+  float swell = warmth > 0.0 ? (paintStrokes(q1 * 0.28, flowA) * w1 + paintStrokes(q2 * 0.28, flowA) * w2) * norm : 0.0;
+  float evenCrest = warmth * smoothstep(-0.3, 0.55, swell + ripple * 0.3) * 0.65;
+  float low = 0.25 + 0.6 * evenCrest;
+  vec3 glowLow = oklabToLin(lchShift(linToOklab(mix(uGapSkyBottom, sunColorHere() / max(max(sunColorHere().r, sunColorHere().g), 1e-3), 0.45)), 0.04, 1.6, 0.0));
+  vec3 sky = exposeHere(mix(mix(uGapSkyTop, uGapSkyBottom, 0.25), glowLow, evenCrest));
   vec3 mirrored = sky * (1.0 - refl.a) + refl.rgb;
   // Mostly see-through: the bed shows in the shallows, and the reflection grows only where the water is deep and dark.
   float depthy = 1.0 - (through.g * 0.5 + through.b * 0.5);
   // (Muddy water is opaque, but its silt is what shows, not a deep pool's mirror.)
   float fres = clamp(0.08 + depthy * 0.22 * (1.0 - 0.6 * mud) + ripple * 0.1, 0.0, 0.5);
+  if (look == 1) fres = clamp(0.04 + depthy * 0.18 * (1.0 - 0.6 * mud) + ripple * 0.06, 0.0, 0.4);
+  fres = mix(fres, 0.7, evenCrest * (1.0 - 0.6 * mud));
   vec3 col = mix(under, mirrored, fres);
   // The clouds in it (#8), along the mirrored ray and shaken by the ripples: their light over the sky's, alike over the
   // shallows and the deep (the depth is read at half size, and its grain would show against a bright cloud and shimmer as
   // the camera moves), and over the faint things mirrored in front of them (thin blades), not the solid ones. How strongly
   // they show: the developer's pick, "clear" (#8).
   float cloud;
-  vec3 clouded = exposeHere(mirrorSky(skyPoint(p, reflect(-toCamera(), n)) + nudge * ${f(MIRROR_WOBBLE)}, 0.25, cloud));
+  vec3 clouded = exposeHere(mirrorSky(skyPoint(p, reflect(-toCamera(), n)) + nudge * ${f(MIRROR_WOBBLE)}, low, cloud));
   vec2 wide = rt * 2.5;
   float cover = (refl.a * 2.0 + texture(uReflect, ruv + wide).a + texture(uReflect, ruv - wide).a
     + texture(uReflect, ruv + vec2(wide.x, -wide.y)).a + texture(uReflect, ruv - vec2(wide.x, -wide.y)).a) / 6.0;
@@ -1005,7 +1075,7 @@ void main() {
   col += (clouded - sky) * (1.0 - solid) * film * 0.365 * (0.85 + 0.3 * ripple);
   col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.25)), smoothstep(0.5, 0.9, ripple) * 0.25 * depthy * (1.0 - 0.6 * mud));
   // Sparkle: glints of sun on the ripples' crests (sparkle), carried by the flow as the ripples are.
-  float spark = (sparkle(q1, dir) * w1 + sparkle(q2, dir) * w2) * crest(ripple);
+  float spark = (sparkleT(q1, turns) * w1 + sparkleT(q2, turns) * w2) * crest(ripple);
   // No glints under a cloud.
   // (The river's own glints dim a little in a paw, as it darkens.)
   col = mix(col, exposeHere(mix(vec3(1.0), sunTint(), 0.5)),
@@ -1020,11 +1090,91 @@ void main() {
   float gh = hash12(gc + 3.1);
   float glit = (1.0 - smoothstep(0.1, 0.2, length(gf))) * step(0.4, gh) * max(0.0, sin(uTime * (5.0 + gh * 6.0) + gh * 50.0));
   col = mix(col, exposeHere(mix(vec3(1.0), sunTint(), 0.5)), glit * paw * vis * max(uCloudStrength - gCloud, 0.0));
+  vec3 glow = exposeHere(mix(uSkyBottom, vec3(1.0), 0.35) * skyTint());
+  if (look == 0 && uFlowLook > 0.5) {
+    // How much the current shows: from a crawl to the stream's usual pace, fading into the fast water's streaks.
+    float moving = smoothstep(0.03, 0.3, speed) * (1.0 - smoothstep(0.6, 1.1, speed) * 0.6);
+    if (uFlowLook < 1.5) {
+      float l1 = mix(currentLines(q1, turns.x), currentLines(q1, turns.y), turns.z);
+      float l2 = mix(currentLines(q2, turns.x), currentLines(q2, turns.y), turns.z);
+      col = mix(col, glow, (l1 * w1 + l2 * w2) * moving * 0.3 * (1.0 - mud * 0.5));
+    } else {
+      float k1 = mix(flecks(q1, turns.x), flecks(q1, turns.y), turns.z);
+      float k2 = mix(flecks(q2, turns.x), flecks(q2, turns.y), turns.z);
+      col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.6) * mix(skyTint(), sunTint(), 0.4)), (k1 * w1 + k2 * w2) * moving * 0.6);
+    }
+  }
+  // The low sun's glitter, in the views facing it: today's evening b, and the clear stream's own.
+  float sunPath = look == 0 ? uEvening : look == 1 ? 0.7 : 0.0;
+  if (sunPath > 0.0 && warmth > 0.0) {
+    float facets = sunFacets(0.16 + 0.12 * chopAmt + 0.06 * smoothstep(0.0, 0.5, speed)) * warmth * sunPath * vis * (1.0 - gCloud) * (1.0 - mud * 0.5);
+    vec3 sunGlow = exposeHere(oklabToLin(lchShift(linToOklab(sunColorHere()), 0.0, 1.5, 0.0)));
+    // A broad sheen on the crests, and fine winking glints over it.
+    col = mix(col, sunGlow, facets * 0.4 * smoothstep(0.1, 0.6, ripple));
+    vec2 sq = (p.xz - flow * f1 * FLOW_CYCLE) * 9.0;
+    vec2 sc = floor(sq), sf = fract(sq) - 0.5 - (hash22(sc) - 0.5) * 0.6;
+    float sh = hash12(sc + 1.7);
+    float twinkle = (1.0 - smoothstep(0.08, 0.2, length(sf))) * step(1.0 - facets * 0.7, sh) * max(0.0, sin(uTime * (4.0 + sh * 5.0) + sh * 60.0));
+    col = mix(col, sunGlow * 1.4, twinkle * facets);
+  }
+  if (look == 2) {
+    // Painted bands: flat gouache in three crisp bands that darken with depth, broken along the current by long
+    // brushstrokes, a pale band along the banks, and next to no mirror.
+    float stroke = (paintStrokes(q1 * 0.9, flowA) * w1 + paintStrokes(q2 * 0.9, flowA) * w2) * norm;
+    float d = depthy + stroke * 0.07;
+    vec3 shallowC = oklabToLin(lchShift(waterLab, 0.16, 0.85, 0.05));
+    vec3 midC = oklabToLin(lchShift(waterLab, 0.03, 1.25, 0.0));
+    vec3 deepC = oklabToLin(lchShift(waterLab, -0.1, 1.35, -0.3));
+    // Evening: peach over violet.
+    shallowC = mix(shallowC, vec3(0.95, 0.55, 0.36), warmth * 0.55);
+    midC = mix(midC, vec3(0.78, 0.5, 0.38), warmth * 0.5);
+    deepC = mix(deepC, vec3(0.2, 0.26, 0.42), warmth * 0.4);
+    vec3 band = mix(mix(shallowC, midC, smoothstep(0.2, 0.24, d)), deepC, smoothstep(0.55, 0.59, d));
+    float bank = 1.0 - smoothstep(0.08, 0.14, path + stroke * 0.03);
+    band = mix(band, oklabToLin(lchShift(waterLab, 0.3, 0.45, 0.1)) * mix(vec3(1.0), vec3(1.2, 1.0, 0.8), warmth), bank * 0.8);
+    // The evening's light laid on in crisp peach strokes along the current, where today's water mirrors the glow.
+    band = mix(band, vec3(1.0, 0.64, 0.42), step(0.4, evenCrest) * 0.7);
+    band = mix(band, vec3(0.3, 0.17, 0.06), mud);
+    vec3 painted = exposeHere(band * mix(skyTint(), sunTint(), 0.5) * mix(0.7, 1.0, vis));
+    painted *= 1.0 + stroke * 0.07 * (0.4 + smoothstep(0.02, 0.3, speed));
+    painted = mix(painted, mirrored, 0.06) + (clouded - sky) * (1.0 - solid) * film * 0.12;
+    painted = mix(painted, exposeHere(mix(vec3(1.0), sunTint(), 0.5)), spark * vis * (1.0 - gCloud) * 0.35);
+    // (The bed only at the very edge, so the shore meets the bank.)
+    col = mix(bed, painted, film);
+  } else if (look == 3) {
+    // Watercolour wash: soft pools of colour that bleed into each other, pigment gathered at their wet edges, the banks
+    // left as pale as the paper, faint smudged reflections, glints as dots of bare paper.
+    vec3 paper = exposeHere(vec3(0.93, 0.9, 0.83) * mix(mix(skyTint(), sunTint(), 0.5), sunTint() * vec3(1.05, 0.95, 0.85), warmth) * mix(0.8, 1.0, vis));
+    float conc = 0.0, rim = 0.0;
+    vec3 pigment = vec3(0.0);
+    for (int i = 0; i < 2; i++) {
+      vec2 qq = i == 0 ? q1 : q2;
+      float wq = i == 0 ? w1 : w2;
+      float pool = snoise(qq * 0.16) * 0.6 + snoise(qq * 0.41 + 3.0) * 0.3 + snoise(qq * 1.1 + 9.0) * 0.1;
+      float hue = snoise(qq * 0.09 + 21.0);
+      vec3 pc = mix(oklabToLin(lchShift(waterLab, 0.02, 1.25, -0.25)), oklabToLin(lchShift(waterLab, 0.04, 1.2, 0.35)), smoothstep(-0.4, 0.4, hue));
+      // Evening: rose pools and violet-blue ones.
+      pc = mix(pc, mix(vec3(0.9, 0.55, 0.5), vec3(0.45, 0.45, 0.85), smoothstep(-0.4, 0.4, hue)), warmth * 0.6);
+      pigment += pc * wq;
+      conc += (0.5 + 0.25 * smoothstep(-0.2, 0.3, pool)) * wq;
+      rim += (1.0 - smoothstep(0.0, 0.035, abs(pool - 0.12))) * wq;
+    }
+    pigment = mix(pigment, vec3(0.42, 0.26, 0.1), mud);
+    conc = min(conc * mix(0.85, 1.35, depthy), 0.95) * smoothstep(0.03, 0.3, path);
+    // Laid over the paper as a glaze: the pigment filters it, and gathers darker at the wet edges.
+    vec3 glaze = mix(vec3(1.0), pow(pigment / max(max(pigment.r, pigment.g), max(pigment.b, 1e-3)), vec3(1.6)), conc);
+    vec3 wash = mix(paper, bed, 0.25 * smoothstep(0.0, 0.3, path)) * glaze * (1.0 - rim * 0.18 * conc);
+    // Granulation: the pigment settling in the paper's grain.
+    wash *= 1.0 - 0.06 * snoise(p.xz * 13.0) * conc;
+    wash = mix(wash, mirrored, 0.08) + (clouded - sky) * (1.0 - solid) * film * 0.2;
+    wash = mix(wash, paper * 1.08, spark * (1.0 - gCloud) * 0.8);
+    col = mix(bed, wash, film);
+  }
   // Fast water (#18, the developer's pick "streaks"), from about a metre a second: the stream in spate.
   float fast = smoothstep(0.45, 1.1, speed);
   if (fast > 0.0) {
     // Streaks: the surface torn into long bands along the flow, their faces catching the sky's glow, darker between.
-    float st = (streaks(q1, dir) * w1 + streaks(q2, dir) * w2) * norm;
+    float st = (streaksT(q1, turns) * w1 + streaksT(q2, turns) * w2) * norm;
     col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.35) * skyTint()), smoothstep(0.2, 0.7, st) * fast * 0.32);
     col *= 1.0 - (1.0 - smoothstep(-0.7, -0.2, st)) * fast * 0.14;
   }
