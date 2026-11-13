@@ -318,7 +318,11 @@ vec3 waterline(vec3 color, vec3 p, float dy) {
   color = mix(color, wetColor, wet * 0.55);
 #ifndef THIN
   float w = max(dy, 0.004);
-  float line = (1.0 - smoothstep(0.025, 0.025 + w, abs(h - 0.01))) * shown;
+  // (And no more than a few pixels from where the water meets it: on ground nearly as flat as the water, a flooded meadow's,
+  // the height's band alone would lie over a wide patch, #19. dy, the caller's, is taken before any fragment leaves; the
+  // water's level barely changes over a pixel, so it measures the height above it as well.)
+  float off = abs(h - 0.01);
+  float line = (1.0 - smoothstep(0.025, 0.025 + w, off)) * (1.0 - smoothstep(1.5, 3.0, off / max(dy, 1e-5))) * shown;
   // Fainter along the ground's shore than round things standing in the water.
 #ifdef FIELDS
   line *= 0.45;

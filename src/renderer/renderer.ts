@@ -207,6 +207,15 @@ export class BrushRenderer {
   readonly hollows = new HollowMap();
   /** The lying snow's paint in the hour's light (#14), worked out once a frame. */
   private readonly snow = new SnowPaint();
+  /**
+   * #19's first round of water looks (materials.ts, WATER_FRAG): the look (0 today's, 1 clear stream, 2 painted bands,
+   * 3 watercolour wash), today's flow (0 ripples, 1 current lines, 2 flecks) and today's evening (0 warm sky, 1 and the
+   * sun's path). Candidates; the ones not picked come out.
+   */
+  setWaterLooks(look: number, flow: number, evening: number) {
+    const s = this.shared;
+    s.uWaterLook.value = look; s.uFlowLook.value = flow; s.uEvening.value = evening;
+  }
   /** The sun each spot of the ground has had since dawn, for the frost's melt (#14, frost.ts). */
   private readonly sunMemory: SunMemory;
   /** The game's clock hour as setHour last set it (the frost's sun memory adds by it), or null before. */

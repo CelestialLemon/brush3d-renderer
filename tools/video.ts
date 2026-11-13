@@ -21,7 +21,9 @@
 //   snow-pan (the camera panning over lying snow; QUERY="season=winter"), snowfall and blizzard (the demo's scripted
 //   snowfall and blizzard at 3x; QUERY="season=winter"), snow-close (snow falling, still and close on the shed) and
 //   snow-fall-pan (panning through falling snow; QUERY="season=winter&weather=snow"), frost-dawn and cold-snap (the
-//   frosty spells at 3x; #14), river-freeze (the stream freezing over and thawing at 3x; QUERY="season=winter", #14)
+//   frosty spells at 3x; #14), river-freeze (the stream freezing over and thawing at 3x; QUERY="season=winter", #14),
+//   patch and patch-glide (the water's test patch: each of its waters held still in turn, then gliding from the pond down
+//   to the run; QUERY="scene=water", #19)
 // Each move is drawn frame by frame at 30 fps with the clock running (so the wind moves too) and encoded with ffmpeg to
 // <out-dir>/<move>.mp4. QUERY adds demo URL parameters (e.g. QUERY="hour=17.5", or "weather=storm&falling=0"). See
 // tools/browser.ts for the rest.
@@ -160,6 +162,13 @@ const MOVES: Record<string, Move> = {
   // The camera panning through falling snow: the flakes stay in the world, none jumps.
   'snow-fall-pan': { seconds: 6, at: (t) => pan({ x: 4, z: 6, zoom: 44, view: 0 }, -t * 50, 0), extra: true },
   'stream-usual': { seconds: 8, at: () => ({ x: -14, z: 20, zoom: 64, view: 0 }), water: () => ({ rise: 0, flow: 1, mud: 0 }), extra: true },
+  // The water's test patch (#19, QUERY="scene=water"): held still on each of its waters in turn (the pond, the slow bend,
+  // the flooded meadow, the fast run, 4 s each), then gliding from the pond down to the run.
+  patch: {
+    seconds: 16, extra: true,
+    at: (t) => [{ x: -15, z: -13 }, { x: 2, z: -1 }, { x: -4, z: 4 }, { x: 6, z: 17 }].map((c) => ({ ...c, zoom: 56, view: 0 }))[Math.min(3, Math.floor(t / 4))],
+  },
+  'patch-glide': { seconds: 12, extra: true, at: (t) => { const k = t / 12; return { x: -15 + 21 * k, z: -13 + 30 * k, zoom: 48, view: 0 }; } },
 };
 
 /** The camera moved by screen pixels (right, up), as dragging does. */

@@ -4,6 +4,7 @@ import { BrushRenderer, type DrawnKind } from '../renderer/renderer';
 import { lightningHud, setupLightning, stormLightning } from './lightning';
 import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
+import { buildWaterPatch } from '../scenes/waterPatch';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
 import { cloudDriftSpeed } from '../renderer/clouds';
 import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weather, type WeatherName } from '../renderer/weather';
@@ -23,7 +24,7 @@ import { WindView } from './windView';
 //   season=spring|summer|autumn|winter (#13; none by default: the looks' own day, sun up 6 to 20)  character (the
 //     game's: mild|wet|dry|hot|gales|stormy|hard|highRiver)  sunrise, sunset (the game's clock hours; the season's by default)
 //   The scene is built in the season (summer's with none): its crops, flowers and hay stand in for the game's.
-//   scene=farm|meadow  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
+//   scene=farm|meadow|water (water: the water's test patch, #19: a pond, a slow bend, a fast run, a flooded meadow)  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   rhythm (how the gusts come: 0 rare and strong, 1 frequent and mild)  windMap (the living wind from above, #36)
 //   windSeed (which gusts: a whole number)
@@ -38,6 +39,10 @@ import { WindView } from './windView';
 //     hurricane, #12; a snowfall settling, or a blizzard rolling in on a gale, #14: best in winter)
 //   water=usual|spate|flood (the water, #18), then each value over it: rise (m over the usual), flow (times the usual
 //     speed), mud (0..1), ice (how frozen, 0..1, the game's: 0.3 ice along the banks, 1 frozen over; #14)
+//   waterlook=today|clear|painted|wash (the water's look, #19's first round of candidates: today's, a clear stream,
+//     painted bands, a watercolour wash); for today's: flowlook=a|b|c (how moving water shows its flow: a ripples, b painted
+//     current lines, c drifting flecks); evening=a|b|c (the water in the evening, #19's second round: a the glints turn
+//     gold, b and the warm sky mirrored evenly, c and the low sun's path in the view facing it)
 //   lying (how deep the snow lies over the land, 0..1, the game's: 0.2 a dusting, 0.5 the grass covered, 1 deep; #14;
 //     0.4 by default where it snows)
 //   frost (how much frost, 0..1, the game's: 1 a hard frost everywhere in the open; where it lies and how the morning's
@@ -80,7 +85,7 @@ if (season) {
   });
 }
 const farmScene = farm ? buildFarm(renderer, season ?? 'summer') : null;
-const scene = farmScene ?? buildMeadow(renderer, season ?? 'summer');
+const scene = farmScene ?? (sceneName === 'water' ? buildWaterPatch : buildMeadow)(renderer, season ?? 'summer');
 /** Settles once the scene's models are in. */
 const loaded = farmScene?.ready ?? Promise.resolve();
 let isLoaded = false;
@@ -132,8 +137,8 @@ const millView = { x: -80.5, z: -14.5, zoom: 38, view: 0.3 };
 const millZoom = () => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM,
   millView.zoom * renderer.screenRatio * Math.min(canvas.clientHeight / 720, canvas.clientWidth / 800)));
 const focusMill = farm && params.get('focus') === 'mill';
-view.view = num('view', focusMill ? millView.view : 0); view.zoom = num('zoom', focusMill ? millZoom() : 40);
-view.target.set(num('x', focusMill ? millView.x : farm ? 0 : -1), 0, num('z', focusMill ? millView.z : 0));
+view.view = num('view', focusMill ? millView.view : 0); view.zoom = num('zoom', focusMill ? millZoom() : sceneName === 'water' ? 30 : 40);
+view.target.set(num('x', focusMill ? millView.x : farm ? 0 : sceneName === 'water' ? -3 : -1), 0, num('z', focusMill ? millView.z : sceneName === 'water' ? 2 : 0));
 view.update(0, true);
 renderer.settings.lines = num('lines', 1) !== 0;
 renderer.settings.shadows = num('shadows', 1) !== 0;
@@ -298,6 +303,34 @@ let lastTime = 0;
 send(weather, true, 0);
 renderer.settings.falling = num('falling', 1) !== 0;
 renderer.settings.fallingShare = num('fallingShare', 1);
+// The water's looks (#19): the first round of candidates, kept in the URL so a reload or a shared link keeps them.
+const WATER_LOOKS = ['today', 'clear', 'painted', 'wash'] as const;
+const FLOW_LOOKS = ['a', 'b', 'c'] as const;
+const EVENINGS = ['a', 'b', 'c'] as const;
+const pick = <T extends string>(list: readonly T[], key: string, d: T) => list.find((v) => v === params.get(key)) ?? d;
+let waterLook = pick(WATER_LOOKS, 'waterlook', 'today');
+let flowLook = pick(FLOW_LOOKS, 'flowlook', 'a');
+let evening = pick(EVENINGS, 'evening', 'b');
+const applyWaterLooks = () =>
+  renderer.setWaterLooks(WATER_LOOKS.indexOf(waterLook), FLOW_LOOKS.indexOf(flowLook), EVENINGS.indexOf(evening));
+applyWaterLooks();
+/** Sets a look option in the URL as it stands, so a reload or a shared link keeps it. */
+function urlOption(key: string, value: string) {
+  params.set(key, value);
+  const url = new URL(location.href);
+  url.searchParams.set(key, value);
+  history.replaceState(null, '', url);
+}
+/** A button cycling a look's candidates. */
+function lookButton<T extends string>(label: string, title: string, list: readonly T[], get: () => T, set: (v: T) => void, key: string) {
+  const b = Object.assign(document.createElement('button'), { textContent: `${label} ${get()}`, title });
+  b.onclick = () => {
+    const next = list[(list.indexOf(get()) + 1) % list.length];
+    set(next); applyWaterLooks(); urlOption(key, next);
+    b.textContent = `${label} ${next}`;
+  };
+  return b;
+}
 // The scripted timeline, at a game speed: it sends the weather as the game would, a few times a second.
 let playing = params.has('timeline'), speed = Number(params.get('timeline')) || 1;
 let spell: SpellName = (params.get('spell') ?? '') in SPELLS ? params.get('spell') as SpellName : 'shower';
@@ -487,6 +520,14 @@ function hud() {
   hudEl.append(slider('mud', 0, 1, 0.01, () => water.mud, waterSet((v) => { water.mud = v; }), share, true));
   // The ice (#14), what the game would send (the freeze-thaw spell moves it too).
   hudEl.append(slider('ice', 0, 1, 0.01, () => water.ice, waterSet((v) => { water.ice = v; }), share, true));
+  // The water's looks (#19), the first round of candidates.
+  hudEl.append(
+    lookButton('Look', 'The water\'s look (#19): today\'s, a clear stream, painted bands, a watercolour wash (waterlook=)', WATER_LOOKS,
+      () => waterLook, (v) => { waterLook = v; }, 'waterlook'),
+    lookButton('Flow', 'Today\'s look: how moving water shows its flow: a ripples, b painted current lines, c drifting flecks (flowlook=)',
+      FLOW_LOOKS, () => flowLook, (v) => { flowLook = v; }, 'flowlook'),
+    lookButton('Evening', 'The water in the evening: a the glints turn gold, b and the warm sky mirrored evenly, c and the low sun\'s path in the view facing it (evening=)',
+      EVENINGS, () => evening, (v) => { evening = v; }, 'evening'));
 
   // The ground (#14): the snow lying, what the game would send.
   hudEl.append(slider('Lying', 0, 1, 0.01, () => ground.snow, (v) => { ground.snow = v; sendGround({ ...ground }); }, share, true));
