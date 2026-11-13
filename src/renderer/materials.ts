@@ -934,7 +934,6 @@ void main() {
   float speed = length(flow);
   // The ripples lie along the flow; still water lies along the map's x.
   float flowA = speed > 1e-4 ? atan(flow.y, flow.x) : 0.0;
-  vec2 dir = vec2(cos(flowA), sin(flowA));
   vec2 uv = gl_FragCoord.xy / uScreen;
   float beat = uTime / FLOW_CYCLE + snoise(p.xz * 0.11 + 3.0) * 0.5;
   float f1 = fract(beat), f2 = fract(beat + 0.5);
@@ -981,9 +980,12 @@ void main() {
   float bedDepth = texture(uUnderAux, uvBed).z;
   float path = bedDepth > 0.0 ? max(bedDepth - vViewDepth, 0.0) : 3.0;
   vec3 turns = flowTurns(flowA);
-  // How low and warm the sun is: 1 from a little above the horizon to the golden hour, none at noon or night (#19: the
-  // evening water was slate-blue, mirroring the upper sky, when it should glow warm).
-  float warmth = smoothstep(-0.03, 0.06, uSunDir.y) * (1.0 - smoothstep(0.3, 0.55, uSunDir.y));
+  // How warm the low sun's light is: 1 at the golden hour and sunset, none at noon or night (#19: the evening water was
+  // slate-blue, mirroring the upper sky, when it should glow warm). Read from the sun's colour, not its height: a winter's
+  // sun is low all day, but only gold at the day's ends; and an overcast sky greys it (overcast.ts), a storm's golden
+  // break golds it (storm.ts).
+  vec3 sunHue = uSunColor / max(max(uSunColor.r, uSunColor.g), 1e-3);
+  float warmth = smoothstep(0.2, 0.42, sunHue.r - sunHue.b) * smoothstep(-0.03, 0.06, uSunDir.y);
   vec3 waterLab = linToOklab(vColor);
   // Clear (#19, the developer's pick): little tint in the shallows, where the bed shows, a deep, saturated teal in the deep.
   vec3 scatter = oklabToLin(lchShift(waterLab, -0.02, 1.7, -0.1));
@@ -1024,6 +1026,9 @@ void main() {
   float depthy = 1.0 - (through.g * 0.5 + through.b * 0.5);
   // (Muddy water is opaque, but its silt is what shows, not a deep pool's mirror.)
   float fres = clamp(0.04 + depthy * 0.18 * (1.0 - 0.6 * mud) + ripple * 0.06, 0.0, 0.4);
+  // Under an overcast sky the water mirrors more of it, bright and even, and reads as pale steel among the dimmed land
+  // rather than murky (the bed, unlit by any sun, shows less). (#19)
+  fres = mix(fres, 0.32, overcastHere().x * 0.7 * (1.0 - 0.6 * mud));
   fres = mix(fres, 0.4, evenCrest * 0.4 * (1.0 - 0.6 * mud));
   vec3 col = mix(under, mirrored, fres);
   // The clouds in it (#8), along the mirrored ray and shaken by the ripples: their light over the sky's, alike over the
@@ -1093,21 +1098,23 @@ void main() {
     float fixedIce = smoothstep(order - 0.03, order + 0.03, reach);
     // How long it's been frozen here, 0 a new skin .. 1 old ice.
     float age = smoothstep(0.0, 0.3, reach - order);
-    // Along the flow and across it (still water: the map's x).
-    vec2 cr = vec2(dot(p.xz, dir), dot(p.xz, vec2(-dir.y, dir.x)));
+    // Along the flow and across it (still water: the map's x), at the two nearest of the fixed turns and blended (#19:
+    // turned by the flow's own angle, the leads and streaks sheared into swirls round a bend; see flowTurns).
+    vec2 d0 = turnDir(turns.x), d1 = turnDir(turns.y);
+    vec2 cr = vec2(dot(p.xz, d0), dot(p.xz, vec2(-d0.y, d0.x))), cr1 = vec2(dot(p.xz, d1), dot(p.xz, vec2(-d1.y, d1.x)));
     // The ice's edge against open water: a pale line, a pixel or two wide, as its rim catches the light.
     float edgeAt = reach - order - 0.012;
     // (No wider than a band of the rank, however steeply the ice changes between cells, and fading out as the ice does,
     // so nothing's left to cut off where there's next to none.)
     float rim = (1.0 - smoothstep(0.0, clamp(fwidth(edgeAt) * 1.5, 0.006, 0.04), abs(edgeAt))) * smoothstep(0.002, 0.03, iceAmt);
     // How fine a detail can be before it's under a pixel (taken here, before the branches).
-    float fine = 1.0 - smoothstep(0.1, 0.3, length(fwidth(cr * 9.0)));
+    float fine = 1.0 - smoothstep(0.1, 0.3, length(fwidth(p.xz * 9.0)));
     float cw = length(fwidth(p.xz * 0.6));
     if (iceAmt > 0.002) {
       float iceCover = fixedIce, floes = 0.0;
       if (thawing) {
         // Leads: dark lanes along the flow, opening as the ice goes.
-        float lane = abs(snoise(cr * vec2(0.12, 0.9) + 13.0));
+        float lane = abs(mix(snoise(cr * vec2(0.12, 0.9) + 13.0), snoise(cr1 * vec2(0.12, 0.9) + 13.0), turns.z));
         float lead = smoothstep(0.0, 0.03, lane - (1.0 - iceAmt) * 0.22);
         iceCover *= lead; rim *= lead;
         // Floes, carried by the flow as the ripples are (two copies, each carried a while and put back): each copy's floes
@@ -1142,7 +1149,8 @@ void main() {
         m = max(m * age, floes * 0.55);
         vec3 iceCol = black;
         if (m > 0.0) {
-          float streak = snoise(cr * vec2(0.35, 4.0) + 7.0) * 0.65 + snoise(cr * vec2(0.9, 9.0)) * 0.35 * fine;
+          float streak = mix(snoise(cr * vec2(0.35, 4.0) + 7.0) * 0.65 + snoise(cr * vec2(0.9, 9.0)) * 0.35 * fine,
+            snoise(cr1 * vec2(0.35, 4.0) + 7.0) * 0.65 + snoise(cr1 * vec2(0.9, 9.0)) * 0.35 * fine, turns.z);
           vec3 milky = snowPaint(lightI, 0.08, streak * 0.5) * vec3(0.74, 0.84, 0.96);
           iceCol = mix(black, mix(milky, black, 0.28 + 0.1 * streak), m);
         }
