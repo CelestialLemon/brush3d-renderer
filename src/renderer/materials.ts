@@ -990,15 +990,16 @@ void main() {
   // Clear (#19, the developer's pick): little tint in the shallows, where the bed shows, a deep, saturated teal in the deep.
   vec3 scatter = oklabToLin(lchShift(waterLab, -0.02, 1.7, -0.1));
   vec3 absorb = vec3(1.3, 0.45, 0.36);
-  // The bed honey-coloured in the evening light, and the light through the ripples on it.
+  float vis = sunVisibility(p, n, ripple);
+  // The bed honey-coloured in the evening light, and the light through the ripples on it: only where the sun reaches it,
+  // through shallow, clear water. (One copy, not carried by the flow: the web shimmers in place on its own.)
   bed *= mix(vec3(1.0), vec3(1.3, 1.08, 0.72), warmth * 0.6);
-  float caust = (caustic(q1) * w1 + caustic(q2) * w2) * norm;
-  bed += bed * caust * sunTint() * 1.8 * sunVisibility(p, n, 0.0) * (1.0 - gCloud) * exp(-path * 1.1);
+  float sunOnBed = vis * (1.0 - gCloud) * (1.0 - overcastHere().x) * exp(-path * 1.1) * (1.0 - mud);
+  if (sunOnBed > 0.01) bed += bed * caustic(p.xz) * sunTint() * 1.8 * sunOnBed;
   // Muddy water (#18, the developer's pick "brown"): silt makes it ochre brown and opaque, the bed lost a hand's depth down.
   scatter = mix(scatter, vec3(0.28, 0.15, 0.045), mud);
   absorb = mix(absorb, vec3(4.0, 4.4, 5.0), mud);
   vec3 through = exp(-absorb * path);
-  float vis = sunVisibility(p, n, ripple);
   // The body of the water is lit from above by the sky; the sun shows in its sparks.
   // The bed and the reflection are lit where they are already; the water's own light is exposed here (exposeHere).
   // (Silt is lit as the land is, by the sun as much as the sky.)
@@ -1019,8 +1020,12 @@ void main() {
   // swells: those smears, round one, the developer found ugly).
   float evenCrest = warmth * 0.3;
   float low = 0.25 + 0.6 * evenCrest;
-  vec3 glowLow = oklabToLin(lchShift(linToOklab(mix(uGapSkyBottom, sunColorHere() / max(max(sunColorHere().r, sunColorHere().g), 1e-3), 0.45)), 0.04, 1.3, 0.0));
-  vec3 sky = exposeHere(mix(mix(uGapSkyTop, uGapSkyBottom, 0.25), glowLow, evenCrest));
+  vec3 sky = mix(uGapSkyTop, uGapSkyBottom, 0.25);
+  if (evenCrest > 0.0) {
+    vec3 glowLow = oklabToLin(lchShift(linToOklab(mix(uGapSkyBottom, sunColorHere() / max(max(sunColorHere().r, sunColorHere().g), 1e-3), 0.45)), 0.04, 1.3, 0.0));
+    sky = mix(sky, glowLow, evenCrest);
+  }
+  sky = exposeHere(sky);
   vec3 mirrored = sky * (1.0 - refl.a) + refl.rgb;
   // Mostly see-through: the bed shows in the shallows, and the reflection grows only where the water is deep and dark.
   float depthy = 1.0 - (through.g * 0.5 + through.b * 0.5);
@@ -1046,14 +1051,16 @@ void main() {
   col += (clouded - sky) * (1.0 - solid) * film * 0.365 * (0.85 + 0.3 * ripple);
   col = mix(col, exposeHere(mix(uSkyBottom, vec3(1.0), 0.25)), smoothstep(0.5, 0.9, ripple) * 0.25 * depthy * (1.0 - 0.6 * mud));
   // Sparkle: glints of sun on the ripples' crests (sparkle), carried by the flow as the ripples are.
-  float spark = (sparkleT(q1, turns) * w1 + sparkleT(q2, turns) * w2) * crest(ripple);
+  // (Worked out only where one could show: on a crest, in the sun.)
+  float spark = crest(ripple) * vis * (1.0 - gCloud);
+  if (spark > 0.001) spark *= sparkleT(q1, turns) * w1 + sparkleT(q2, turns) * w2;
   // No glints under a cloud.
   // (The river's own glints dim a little in a paw, as it darkens.)
   // (In the evening the glints take the low sun's gold, #19: the developer's idea.)
-  vec3 sunGlow = exposeHere(oklabToLin(lchShift(linToOklab(sunColorHere()), 0.0, 1.5, 0.0)));
-  vec3 glintC = mix(exposeHere(mix(vec3(1.0), sunTint(), 0.5)), sunGlow * 1.2, warmth);
+  vec3 glintC = exposeHere(mix(vec3(1.0), sunTint(), 0.5));
+  if (warmth > 0.0) glintC = mix(glintC, exposeHere(oklabToLin(lchShift(linToOklab(sunColorHere()), 0.0, 1.5, 0.0))) * 1.2, warmth);
   col = mix(col, glintC,
-    spark * vis * (1.0 - gCloud) * (0.2 + depthy * 0.4) * (1.0 - paw * 0.28));
+    spark * (0.2 + depthy * 0.4) * (1.0 - paw * 0.28));
   // The paws: a little darker and cooler, as a roughened patch mirrors less of the bright sky, and glinting in fine points
   // that wink quickly, as many more tiny facets catch the sun. Only as bright as the sun is direct (uCloudStrength): none
   // under full cover or before dawn, faint by the moon. (gCloud is the cloud's shade already scaled by uCloudStrength, so
