@@ -362,6 +362,33 @@ On the MacBook Air (`?profile` on main after #63, 2026-11-13, uncapped, the farm
 farm's camera there shows little of the stream, so it says little. Still to read: the meadow's line (`?scene=meadow`, where
 the stream crosses the screen). The laptop: when there's time.
 
+### The water's look (#19)
+
+In the water's shader only: the clear water's colour and its light on the bed (two noise lookups, where the sun reaches
+a shallow, clear bed), the ripples and glints laid at fixed turns and the two nearest blended (twice the pattern work
+where a bend's angle falls between two turns), and in the evening the warm sky and gold glints. No pass of its own.
+
+RX 570, 1080p, the farm with its stream across the screen (`x=-14&z=20&zoom=40`), against main before #64, two runs:
+
+| | main pass | frame |
+|---|---:|---:|
+| Calm | +0.17 ms | +0.16 to +0.22 |
+| Storm | +0.17 ms | +0.19 to +0.24 |
+
+(At `zoom=64`, the stream filling more of the screen, +0.21.) A first version cost +0.19 at this camera (+0.26 at
+`zoom=64`): the light on the bed read the shadow map eight more times a pixel than it needed, and the warm sky and the
+sparkle were worked out where they couldn't show. Skipping the second turn where one takes it alone saved nothing on
+this GPU (neighbouring pixels run together, and take both whenever any of them does), so it was left out.
+
+It comes out of the spare: about 0.20 → 0.03 with the stream across the screen, the worst framing; less of the screen
+is water in most views. Full-size reflections, for sharper mirrors, would cost about 2.4 ms more and don't fit.
+
+Crawl (`AB=2 tools/motion.ts`, a 1 px pan over the farm's stream, `falling=0`): the water's share 0.133 → 0.123 at 11:00,
+0.135 → 0.145 at the golden hour facing the sun (the gold glints). Pops in a gale at the golden hour (`tools/pops.ts`):
+none, before or after.
+Still to read: the laptop and the MacBook (`?profile`, the meadow's line, where the stream crosses the screen), when
+there's time.
+
 ### Wet ground (#11)
 
 In the materials, from the ground's map, as the snow: each reads how wet and muddy it is where it is, less what shelters

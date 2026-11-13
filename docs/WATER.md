@@ -21,6 +21,14 @@ last. Freezing, it creeps out from the banks as a dark skin with a pale rim, and
 falling), dark leads open along the flow, the middle breaks into floes that drift downstream and shrink, and the ice
 along the banks goes last. Snow lying on the land dusts it.
 
+**The look** (#19, the developer's picks on #64): the water is **clear**. In the shallows you see the stream bed,
+honey-coloured at evening, with sunlight wobbling over it through the ripples; it deepens to a rich teal where it's
+deep, and mirrors more of the sky the deeper it is. The flow shows only in the soft ripples and the glints riding
+them ("flow A", the most understated that still says which way the water runs). In the evening the glints turn the low
+sun's gold and the whole surface takes a soft, even warmth from the glow low in the sky ("evening B", a third softer
+than first shown: fuller, it went pale; warm smears on the swells were tried and dropped). Under an overcast sky the
+water mirrors more of the bright grey sky and reads as pale steel among the dimmed land.
+
 ## The contract
 
 ```ts
@@ -97,6 +105,21 @@ cover only the cells within one of water (into one buffer per grid, with room fo
   on #14): milky by the banks (pale, lit as snow is, streaked along the flow), dark over the channel (the bed faint
   through it, a calm mirror, pale cracks).
 
+- **The look** (#19, `WATER_FRAG`): the water's colour is the bed seen through it (`through`, by how far the light
+  travels in the water), the water's own scattered light, and the mirror, mixed by depth (`fres`: little in the
+  shallows, more in the deep, more again under an overcast sky, `overcastHere().x`). On the bed, where the sun reaches a
+  shallow, clear bed, a web of light (`caustic`, one pattern shimmering in place). Patterns that lie along the current
+  (the ripples, the glints, fast water's streaks, the ice's leads and milky streaks) are laid at fixed 30° turns and the
+  two nearest blended (`flowTurns`, `paintStrokes`): turning a pattern by the flow's own angle, which changes round a
+  bend, sheared it more the further from the world's origin, into swirls across the current. The evening (`warmth`) is
+  read from the sun's colour, not its height (a winter's sun is low all day but only gold at the day's ends; an overcast
+  sky greys the sun, a storm's golden break golds it): the glints take the sun's gold and the mirrored sky the low
+  glow's warmth, evenly. The foam line at the shore is held to a few pixels (on a flood's flat meadow its height band
+  alone covered whole patches). Tried and not picked (#64): today's look as it was, painted bands, a watercolour wash;
+  painted current lines and drifting flecks for the flow; the warm sky in streaks on the swells, and the low sun's
+  glitter path in the view facing it, for the evening. Sharper, full-size reflections don't fit the budget: drawing the
+  reflection at full size instead of half would cost about 2.4 ms more at 1080p (as half size at 4K does).
+
 ## The demo
 
 The demo stands in for the game (`src/app/water.ts`): the scene describes its water (its usual level, its channel and
@@ -107,6 +130,9 @@ channel it runs at a quarter of the stream's speed.
 
 - `?water=usual|spate|flood`, then `rise` (m over the usual), `flow` (times the usual speed), `mud` and `ice` over it.
 - The Water, flow, mud and ice sliders (`?ice=`, #14).
+- `?scene=water`: the water's test patch (#19, `src/scenes/waterPatch.ts`): a still pond, a slow bend, a flooded
+  meadow with tussocks and grass standing in it, and a fast run over stones under a plank bridge, side by side.
+  `tools/video.ts patch` holds on each in turn (`QUERY="scene=water"`), `patch-glide` glides down it.
 - `?timeline&spell=flood`: a storm swells the stream, which runs fast and brown, spills over the floodplain, and drains
   under clearing skies (17 game hours, about a minute at 3x).
 - `?timeline&spell=freeze-thaw&season=winter` (#14): the stream freezes over from its banks, holds, and thaws (8 game
