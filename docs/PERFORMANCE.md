@@ -269,7 +269,9 @@ the white, the open snow steady; pops (`tools/pops.ts`): none.
 On the MacBook Air (`?profile` on #58's preview, uncapped): 19.47 → 24.17 ms, but that run warmed as it went: the rows
 before it, fog, dust and the heat wave (0.2, 0.3 and 0.05 ms here), read 3.0 to 3.6 ms over the storm there, and
 `no rain` read slower than the storm with the rain. So most of the 4.7 is the machine slowing, not the snow; its own
-share there is still to read. Still to read on the laptop: the `snow lying` line against `1080p storm`.
+share there is still to read. On the MacBook Air (`?profile` on main after #63, 2026-11-13, uncapped, the farm at 1080p): 20.10 → 20.87 ms with snow
+lying 0.6, about 0.8, at the edge of that run's noise (`no snow`, the storm with nothing to leave out, read 0.5 under
+the storm). The laptop can't be measured for now (2026-11-13).
 
 ### Falling snow and the blizzard (#14)
 
@@ -300,8 +302,9 @@ times, once for each corner of its quad.
 
 Crawl (`AB=2 tools/motion.ts`, winter, snow lying 0.6, `falling=0`, both scenes): the same as main to the third
 decimal, with each of the roof-shade candidates (A, as it was, was picked). Pops in a gale (`tools/pops.ts`): the same as main, none at the short step.
-Still to read on the laptop: `?profile` on the PR's preview, the `1080p blizzard` and `1080p heavy snow, calm` lines
-against `1080p storm, snow lying`.
+On the MacBook Air (`?profile` on main after #63, 2026-11-13, uncapped, the farm at 1080p): the blizzard 20.60 ms and heavy snow in still
+air 20.23 against 20.87 for the snow lying alone (both cases lay it too): the falling snow doesn't show above that run's
+noise, about 0.5. The laptop can't be measured for now (2026-11-13).
 
 ### Frost (#14)
 
@@ -323,7 +326,8 @@ the trees, 0.026 → 0.033); with the trees, 0.096 → 0.125 (the meadow 0.088 �
 with lying snow (0.108 → 0.193): with the branches' own rime turned off it reads the same. Pops in a gale
 (`tools/pops.ts`, with the glittering candidate, the most likely to pop; matte was picked): none at the short step, as
 without frost.
-Still to read on the laptop: the `1080p storm, frost` line against `1080p storm`.
+On the MacBook Air (`?profile` on main after #63, 2026-11-13, uncapped, the farm at 1080p): 20.10 → 20.63 ms with frost 0.6, about 0.5,
+within that run's noise. The laptop can't be measured for now (2026-11-13).
 
 ### Ice on the water (#14)
 
@@ -352,8 +356,9 @@ Crawl (`AB=2 tools/motion.ts`, a 1 px pan, winter at 11:00, `falling=0`, the far
 0.03 milky all over. The meadow 0.067 open, 0.072 frozen. Black ice mirrors the banks and trees whole, with no ripples to break up the reflection's
 half-size texels, so a little more of that resampling shows; its mirror is blurred a little wider than open water's to
 keep it down. Pops in a gale (`tools/pops.ts`): none new (2 at the short step, as with open water and without water).
-Still to read on the laptop: the `1080p storm, stream thawing` line against `1080p storm` (on the meadow, `?scene=meadow`,
-where the stream crosses the screen).
+On the MacBook Air (`?profile` on main after #63, 2026-11-13, uncapped, the farm at 1080p): 20.10 → 19.75 ms thawing, within that run's noise; but the
+farm's camera there shows little of the stream, so it says little. Still to read: the meadow's line (`?scene=meadow`, where
+the stream crosses the screen). The laptop can't be measured for now (2026-11-13).
 
 ### Wet ground (#11)
 
