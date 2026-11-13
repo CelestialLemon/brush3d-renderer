@@ -207,7 +207,7 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   screen readable (at most about 30% white) and lets the distance go white (up to 85%), in sheets that sweep with the
   gusts; low wisps blow off the lying snow in a gale. Within the rain's budget line (+0.84 ms in a blizzard on the
   RX 570). In `docs/GROUND.md` and `docs/PERFORMANCE.md`. On the MacBook Air the falling snow
-  doesn't show above the noise; the laptop can't be measured for now.
+  doesn't show above the noise; the laptop when there's time.
 
 - **Frost (#14, #62).** The ground map's `frost` is drawn: a matte rime (the developer's pick of three) the land's
   colours read through, on the ground, grass and crop tips, built tops, branches and crowns, the hollows and tips
@@ -215,14 +215,14 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   (`SunMemory`, by the game's clock; forgotten at nightfall), so it lingers in the shadows. +0.60 ms on the RX 570,
   of which 0.29 is the ground map's read it shares with the snow: double its aim, from the spare. To see it alone,
   no snow and the morning. Fallback if it reads too faint at the usual zoom: a version between matte and crisp. About 0.5 ms
-  on the MacBook Air; the laptop can't be measured for now.
+  on the MacBook Air; the laptop when there's time.
 
 - **Ice on the water (#14, #63).** The water's map gains `ice` (0 open, about 0.3 along the banks, 1 frozen over); the
   renderer tells freezing from thawing by which way it moves. It freezes from the banks and the slow water inward and
   thaws with dark leads and drifting floes, the bank ice last. The look is the developer's pick of three: milky along
   the banks, dark over the channel, a pale rim at its edge, lying snow dusting it. +0.21 ms with the stream across the
   screen. In `docs/WATER.md` and `docs/PERFORMANCE.md`. Still to read on the MacBook Air:
-  `1080p storm, stream thawing` on the meadow; the laptop can't be measured for now.
+  `1080p storm, stream thawing` on the meadow; the laptop when there's time.
 
 - **Lightning (#12, #55).** The game says where and when: `renderer.strike({ x, z })` and
   `renderer.flicker()` (distant lightning, the developer's call: the game calls each one, #12). The renderer draws a bolt, a

@@ -14,7 +14,9 @@ Decided with the developer on 2026-10-30 (#6). The game is played by the develop
 | A MacBook Air | Apple M4, 16 GB |
 
 - **At least 45 fps at 1080p on all three**, weather included. Below that isn't good enough.
-- **The laptop is the floor**: the weakest of the three, so its 22 ms a frame is the budget. Measured there with `?profile`.
+- **The laptop is the floor**: the weakest of the three, so its 22 ms a frame is the budget. Measured there with `?profile`
+  when the developer has the time (it's a work laptop, 2026-11-13): an occasional check on Windows and Intel graphics,
+  not a step any PR waits for. Day to day the RX 570 stands in for it, and the MacBook Air is read when convenient.
 - **The RX 570 stands in for it day to day.** A millisecond here costs up to 1.9 on the laptop (see "On integrated
   graphics"), so the laptop's 22 ms is about **12 ms here**.
 - **The MacBook Air** is faster than the laptop: the farm takes 15 ms at 1080p there (#27, Chrome; its GPU timers don't
@@ -271,7 +273,7 @@ before it, fog, dust and the heat wave (0.2, 0.3 and 0.05 ms here), read 3.0 to 
 `no rain` read slower than the storm with the rain. So most of the 4.7 is the machine slowing, not the snow; its own
 share there is still to read. On the MacBook Air (`?profile` on main after #63, 2026-11-13, uncapped, the farm at 1080p): 20.10 → 20.87 ms with snow
 lying 0.6, about 0.8, at the edge of that run's noise (`no snow`, the storm with nothing to leave out, read 0.5 under
-the storm). The laptop can't be measured for now (2026-11-13).
+the storm). The laptop: when there's time.
 
 ### Falling snow and the blizzard (#14)
 
@@ -304,7 +306,7 @@ Crawl (`AB=2 tools/motion.ts`, winter, snow lying 0.6, `falling=0`, both scenes)
 decimal, with each of the roof-shade candidates (A, as it was, was picked). Pops in a gale (`tools/pops.ts`): the same as main, none at the short step.
 On the MacBook Air (`?profile` on main after #63, 2026-11-13, uncapped, the farm at 1080p): the blizzard 20.60 ms and heavy snow in still
 air 20.23 against 20.87 for the snow lying alone (both cases lay it too): the falling snow doesn't show above that run's
-noise, about 0.5. The laptop can't be measured for now (2026-11-13).
+noise, about 0.5. The laptop: when there's time.
 
 ### Frost (#14)
 
@@ -327,7 +329,7 @@ with lying snow (0.108 → 0.193): with the branches' own rime turned off it rea
 (`tools/pops.ts`, with the glittering candidate, the most likely to pop; matte was picked): none at the short step, as
 without frost.
 On the MacBook Air (`?profile` on main after #63, 2026-11-13, uncapped, the farm at 1080p): 20.10 → 20.63 ms with frost 0.6, about 0.5,
-within that run's noise. The laptop can't be measured for now (2026-11-13).
+within that run's noise. The laptop: when there's time.
 
 ### Ice on the water (#14)
 
@@ -358,7 +360,7 @@ half-size texels, so a little more of that resampling shows; its mirror is blurr
 keep it down. Pops in a gale (`tools/pops.ts`): none new (2 at the short step, as with open water and without water).
 On the MacBook Air (`?profile` on main after #63, 2026-11-13, uncapped, the farm at 1080p): 20.10 → 19.75 ms thawing, within that run's noise; but the
 farm's camera there shows little of the stream, so it says little. Still to read: the meadow's line (`?scene=meadow`, where
-the stream crosses the screen). The laptop can't be measured for now (2026-11-13).
+the stream crosses the screen). The laptop: when there's time.
 
 ### Wet ground (#11)
 
