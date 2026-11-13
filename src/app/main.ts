@@ -41,7 +41,8 @@ import { WindView } from './windView';
 //     speed), mud (0..1), ice (how frozen, 0..1, the game's: 0.3 ice along the banks, 1 frozen over; #14)
 //   waterlook=today|clear|painted|wash (the water's look, #19's first round of candidates: today's, a clear stream,
 //     painted bands, a watercolour wash); for today's: flowlook=a|b|c (how moving water shows its flow: a ripples, b painted
-//     current lines, c drifting flecks) and evening=a|b (a the warm sky mirrored, b and the low sun's path)
+//     current lines, c drifting flecks); evening=a|b|c (the water in the evening, #19's second round: a the glints turn
+//     gold, b and the warm sky mirrored evenly, c and the low sun's path in the view facing it)
 //   lying (how deep the snow lies over the land, 0..1, the game's: 0.2 a dusting, 0.5 the grass covered, 1 deep; #14;
 //     0.4 by default where it snows)
 //   frost (how much frost, 0..1, the game's: 1 a hard frost everywhere in the open; where it lies and how the morning's
@@ -305,7 +306,7 @@ renderer.settings.fallingShare = num('fallingShare', 1);
 // The water's looks (#19): the first round of candidates, kept in the URL so a reload or a shared link keeps them.
 const WATER_LOOKS = ['today', 'clear', 'painted', 'wash'] as const;
 const FLOW_LOOKS = ['a', 'b', 'c'] as const;
-const EVENINGS = ['a', 'b'] as const;
+const EVENINGS = ['a', 'b', 'c'] as const;
 const pick = <T extends string>(list: readonly T[], key: string, d: T) => list.find((v) => v === params.get(key)) ?? d;
 let waterLook = pick(WATER_LOOKS, 'waterlook', 'today');
 let flowLook = pick(FLOW_LOOKS, 'flowlook', 'a');
@@ -525,7 +526,7 @@ function hud() {
       () => waterLook, (v) => { waterLook = v; }, 'waterlook'),
     lookButton('Flow', 'Today\'s look: how moving water shows its flow: a ripples, b painted current lines, c drifting flecks (flowlook=)',
       FLOW_LOOKS, () => flowLook, (v) => { flowLook = v; }, 'flowlook'),
-    lookButton('Evening', 'Today\'s look in the evening: a the warm sky mirrored, b and the low sun\'s path in the views facing it (evening=)',
+    lookButton('Evening', 'The water in the evening: a the glints turn gold, b and the warm sky mirrored evenly, c and the low sun\'s path in the view facing it (evening=)',
       EVENINGS, () => evening, (v) => { evening = v; }, 'evening'));
 
   // The ground (#14): the snow lying, what the game would send.
