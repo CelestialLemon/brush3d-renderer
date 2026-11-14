@@ -12,7 +12,7 @@ Only buildings and props are models. Trees, bushes and crops are painted kinds t
 - **The tour**: the ◀ name ▶ row in the demo's controls steps through the models, in the farm and in the gallery, keeping
   the hour, weather, season and view.
 - **One model**: `?focus=<name>` (say `?focus=bakery`, `?scene=gallery&focus=water_wheel&view=2`). The names are the files'
-  in `src/scenes/models/`.
+  in `src/models/`.
 - From all four sides: `view=0..3`, or the demo's turn buttons.
 
 ## The style
@@ -44,18 +44,18 @@ One small palette for the whole set (`Palette` in `tools/blender/kit.py`): lime 
 
 **One game tile is 4 metres.** People are real-world size (a door is about 2 m), so a 2×2 workshop is an 8 m plot and the
 3×3 farmhouse a 12 m one. Each model fits the game's footprint for that building, centred on the ground, its front
-towards +Z. `TILE` in `src/scenes/catalog.ts` and in the kit.
+towards +Z. `TILE` in `src/models/catalog.ts` and in the kit.
 
 Two models reach past their tile on purpose: the wind turbine's rotor, and the water wheel, whose wheel hangs off the
 front of its bank tile over the river and dips 0.87 m below the bank (the game puts it on a bank; its axle runs along the
 bank). The wheel's inner half turns inside its own tile, in a pit cut in the deck's front edge (1.8 m wide, from 1.6 m in
 front of the tile's middle to its front edge): whoever places it has to open the ground there down to the water, or
-the wheel turns in earth. `wheelRace` in `src/scenes/catalog.ts` is that strip's shape; the farm cuts it through a quay
+the wheel turns in earth. `wheelRace` in `src/models/catalog.ts` is that strip's shape; the farm cuts it through a quay
 to the stream, and the gallery, which has no water, cuts it as a dry pit so the whole wheel shows.
 
 ## What's in a file
 
-Each model is one `.glb` in `src/scenes/models/`, read by `src/scenes/model.ts`:
+Each model is one `.glb` in `src/models/`, read by `src/kit/model.ts`:
 
 - metres, Y up, front towards +Z, the footprint centred at the origin on the ground;
 - no textures: each face has one colour (a `_COLOR` attribute, linear), and UVs in metres for the finishes that have a grain;
@@ -83,8 +83,8 @@ Each model is one `.glb` in `src/scenes/models/`, read by `src/scenes/model.ts`:
 
   These follow the game's own conventions (`src/world/models.ts` there), so the files should drop in.
 
-`src/scenes/models/index.json` lists every model's title, group, footprint, triangle count, bounds and named pieces; the
-demo reads it (`src/scenes/catalog.ts`).
+`src/models/index.json` lists every model's title, group, footprint, triangle count, bounds and named pieces; the
+demo reads it (`src/models/catalog.ts`).
 
 ## Making and changing them
 
@@ -93,9 +93,9 @@ always gives the same file, and a change is a diff anyone can review.
 
 ```sh
 # all of them (Blender is a Flatpak here), about half a minute
-flatpak run org.blender.Blender -b --factory-startup --python-exit-code 1 --python $PWD/tools/blender/build.py -- $PWD/src/scenes/models
+flatpak run org.blender.Blender -b --factory-startup --python-exit-code 1 --python $PWD/tools/blender/build.py -- $PWD/src/models
 # or just some
-flatpak run org.blender.Blender -b --factory-startup --python-exit-code 1 --python $PWD/tools/blender/build.py -- $PWD/src/scenes/models bakery mill
+flatpak run org.blender.Blender -b --factory-startup --python-exit-code 1 --python $PWD/tools/blender/build.py -- $PWD/src/models bakery mill
 ```
 
 - `tools/blender/kit.py` is the shared kit: the palette, and the parts the set is built from (`hut`, `pillow` and `vault`
@@ -107,7 +107,7 @@ flatpak run org.blender.Blender -b --factory-startup --python-exit-code 1 --pyth
   model that fails stops the build, and the index is only written when all pass.
 - To add one: copy a script that's close, change it, build it, then look at it in the gallery from the front and the
   back (`node tools/shot.ts out "scene=gallery&focus=<name>" "scene=gallery&focus=<name>&view=2"`). It joins the gallery
-  and the tour by itself; to stand it on the farm, add a `place(...)` line to `BUILDINGS` in `src/scenes/farm.ts`.
+  and the tour by itself; to stand it on the farm, add a `place(...)` line to `BUILDINGS` in `src/demo/scenes/farm.ts`.
 
 ## The set
 
@@ -149,7 +149,7 @@ a scene.
 
 ## On the farm
 
-The farm valley (`src/scenes/farm.ts`, its `BUILDINGS` list and header) is laid out as a working solarpunk farm:
+The farm valley (`src/demo/scenes/farm.ts`, its `BUILDINGS` list and header) is laid out as a working solarpunk farm:
 
 - **The homestead**, right: bakery, the truck's garage, the farmhouse and the coop along a yard, with a rain tank,
   lanterns, a bench and crates.

@@ -1,14 +1,9 @@
 import * as THREE from 'three';
-import type { BrushRenderer } from '../renderer/renderer';
-import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
-import { ModelSet, loadModel } from './model';
-import { MODELS, TILE as GAME_TILE, blocksWind, wheelRace, type Stand } from './catalog';
 import {
-  C, MapLine, addFlowers, addMound, addReeds, addStone, addTuft, groundOf, smooth, treeWind, type Stream, type Tree,
-} from './kit';
-import { DRAG, type Obstacle } from '../wind/sim';
-import type { Season } from '../renderer/season';
-import { Grove, dressFor, type Dress } from './seasonTrees';
+  type BrushRenderer, MeshBuilder, noise2, rng, srgb, type Paint, ModelSet, loadModel, MODELS, TILE as GAME_TILE,
+  blocksWind, wheelRace, type Stand, C, MapLine, addFlowers, addMound, addReeds, addStone, addTuft, groundOf, smooth,
+  treeWind, type Stream, type Tree, DRAG, type Obstacle, type Season, Grove, dressFor, type Dress,
+} from '../../index';
 
 // A pastoral valley, about 176 m across, for trying the renderer's features on a big, full and varied scene. In its
 // middle, the working farm after the aerial shot in Dear Alice (0:37): a wheat field with a solar array standing in it, a

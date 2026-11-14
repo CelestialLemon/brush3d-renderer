@@ -1,5 +1,5 @@
 // Checks the water map (#18): how the renderer lays out the game's map (src/renderer/water.ts), the demo's stand-in for
-// the game's flood rule (src/app/water.ts), and the easing between maps. No browser needed.
+// the game's flood rule (src/demo/water.ts), and the easing between maps. No browser needed.
 //   npm run test:water
 // 1. Laying out: wet cells as sent; the sheet runs on flat for one cell past the last wet one, then dives under the land
 //    (DIVE a cell, at most MAX_DIVE), carrying the nearest water's flow and mud; with no water it lies far under everything.
@@ -8,8 +8,8 @@
 // 3. Easing: halfway through, the sheet is halfway between the two maps; a map sent mid-ease starts from what's drawn.
 // Exits with 1 if anything is off.
 import { DIVE, HIDDEN_DIVE, MAX_DIVE, REACH, WaterField, layWater, SHORE_MAX, shoreDistance, type WaterMap } from '../src/renderer/water.ts';
-import { DemoWater } from '../src/app/water.ts';
-import type { Stream } from '../src/scenes/kit.ts';
+import { DemoWater } from '../src/demo/water.ts';
+import type { Stream } from '../src/kit/kit.ts';
 
 let failed = false;
 function check(name: string, ok: boolean, detail = '') {

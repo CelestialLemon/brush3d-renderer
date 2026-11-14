@@ -1,9 +1,7 @@
 // The demo's lightning (#12), standing in for the game: a button and a shift-click to strike, random strikes and distant
 // flickers and the player's flash setting. The URL options:
 //   flashes=full|gentle|off (the player's setting)   strikes (random strikes on)   flicker (random flickers on)
-import type { BrushRenderer } from '../renderer/renderer';
-import type { FlashSetting } from '../renderer/lightning';
-import { PITCH } from '../renderer/camera';
+import { type BrushRenderer, type FlashSetting, PITCH } from '../index';
 
 const params = new URLSearchParams(location.search);
 

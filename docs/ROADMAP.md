@@ -4,6 +4,16 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 
 ## Now
 
+- **Into the game, epic CelestialLemon/Soil-n-Silo#212**: brush3d replaces the game's pixel3d renderer. The order is in
+  the epic: #199 → #200 (the move into the game) → #201 (first light) → #202–#210 and #213 → #211 (the swap), all
+  Soil-n-Silo issues.
+  1. Soil-n-Silo#199 the API and the split (done 2026-11-14, #67 and #68): `docs/API.md` is the renderer's API for the game, in
+     its terms (tiles, buildings, fields), each part marked today or with the task that adds it. `src/index.ts` is the
+     one door in: the demo (`src/demo`) imports nothing else, and the typecheck enforces it; `src/shared.ts` (the wind
+     simulation and the cloud recipe) loads in Node alone, for the rules' tests. The renderer, wind, painting kit
+     (`src/kit`) and models (`src/models`) stand apart from the demo; the demo's frames are unchanged. Open for later
+     tasks: the game's zoom at 4 m a tile is 4–24 px/m, under the 16–192 brush3d was tuned at (#201, #210); the wind
+     grid's 256 cells may need 2 m cells past the map (#208); moving obstacles and the sub-tick clock in wind saves (#208).
 - **Weather, epic #3** (planned 2026-10-30): season, weather and hour change the whole picture. The decisions are in #3; in
   short, the game owns the weather's state and logic and the renderer only draws it. The order:
   1. #6 performance: measure the frame and set the weather's budget (done 2026-10-30: the farm 17.5 ms on the laptop,
@@ -94,7 +104,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   - Woods along the edges, more hedges and drifts of wild flowers.
   - The first models (farmhouse, barn, hen house, well, glasshouse, windmill, hay wagon, rowing boat, scarecrow) were made
     in Blender by Sol. They were replaced on 2026-11-14 by the solarpunk set (see The models, above, and docs/MODELS.md),
-    and the farmstead, the windmill's knoll and the yard re-laid for it; the layout is `src/scenes/farm.ts`'s header.
+    and the farmstead, the windmill's knoll and the yard re-laid for it; the layout is `src/demo/scenes/farm.ts`'s header.
   - For the bigger land: the big meshes are cut into 24 m tiles, each drawn only when a pass can see it
     (`src/renderer/tiles.ts`), and the sun's shadow covers only the ground on screen (`shadowFollow`).
 
@@ -158,7 +168,7 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
 
 - **The handoff and the overcast look (#7, done 2026-10-31 in #29 and #30).** `renderer.setWeather` takes the game's
   weather (cloud, rain, snow, heat, haze); the cover is drawn exactly as given (#8's cloud shadows read it) and the light
-  that follows from it eases over about 1.5 s. Presets, URL params, sliders and a scripted timeline (`src/app/timeline.ts`)
+  that follows from it eases over about 1.5 s. Presets, URL params, sliders and a scripted timeline (`src/demo/timeline.ts`)
   stand in for the game; the tools take the weather, with `falling=0` to leave out what's in the air. Under cloud the light
   comes from the whole sky (tops lit, sides half, undersides shade), the sun's shadows fade to a soft darkening under
   things, and the tones close up with the colour kept (`src/renderer/overcast.ts`). The developer chose Slate, of three
@@ -295,7 +305,7 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   drabber). The developer's picks (2026-11-07): the look near the game's turf with a gentle light (not the bolder painted
   one), winter's grass a dormant straw-olive (not bleached pale, which read as frost). The demo's scenes stand in for the game's crops by
   season (young, ripe, stubble, ploughed; the wildflowers thinning out; the lavender in flower only in summer).
-  Part 3, the trees (`src/scenes/seasonTrees.ts`): each season builds its own tree models once, at level load, so nothing
+  Part 3, the trees (`src/kit/seasonTrees.ts`): each season builds its own tree models once, at level load, so nothing
   changes frame to frame and there's no hitch (the developer's pick, over recolouring summer's). Spring: blossom on the
   orchards, on a few wild trees and hedges, cream to peach (it stays a dusky rose at golden hour, where pink goes lavender),
   and fresh greens. Autumn: a patchwork, each tree and each of its branches turning at its own pace, green through gold

@@ -1,5 +1,4 @@
-import type { WaterMap } from '../renderer/water';
-import type { Stream } from '../scenes/kit';
+import type { WaterMap, Stream } from '../index';
 
 // A stand-in for the game's water (#18): the demo makes the map the game would send, from the scene's stream and a few
 // numbers the timeline or the controls set. The rule is the game's (Soil-n-Silo's flood.ts): the water stands at the

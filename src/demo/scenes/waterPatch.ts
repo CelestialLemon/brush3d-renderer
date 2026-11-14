@@ -1,9 +1,8 @@
 import * as THREE from 'three';
-import type { BrushRenderer } from '../renderer/renderer';
-import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
-import { C, MapLine, addFlowers, addReeds, addStone, addTuft, groundOf, smooth, treeWind, type Stream, type Tree } from './kit';
-import type { Season } from '../renderer/season';
-import { Grove, dressFor, type Dress } from './seasonTrees';
+import {
+  type BrushRenderer, MeshBuilder, noise2, rng, srgb, type Paint, C, MapLine, addFlowers, addReeds, addStone, addTuft,
+  groundOf, smooth, treeWind, type Stream, type Tree, type Season, Grove, dressFor, type Dress,
+} from '../../index';
 import type { Meadow } from './meadow';
 
 // The water's test patch (#19, ?scene=water): every kind of water the game makes, side by side, to judge a look on. A still

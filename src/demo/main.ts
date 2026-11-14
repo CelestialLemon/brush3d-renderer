@@ -1,27 +1,23 @@
-import { hoursOf, type HourName } from '../renderer/look';
-import { CHARACTERS, clockHour, SEASONS, type Character, type Season } from '../renderer/season';
-import { BrushRenderer, type DrawnKind } from '../renderer/renderer';
+import {
+  hoursOf, type HourName, CHARACTERS, clockHour, SEASONS, type Character, type Season, BrushRenderer, type DrawnKind,
+  TOUR, type Stand, MAX_ZOOM, MIN_ZOOM, cloudDriftSpeed, WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind,
+  type Weather, type WeatherName, steadyWind, WIND_SCALE, windName, type WindStrength, startWind, WIND_TICK,
+  type WindGoal, type WindSave,
+} from '../index';
 import { lightningHud, setupLightning, stormLightning } from './lightning';
-import { buildMeadow } from '../scenes/meadow';
-import { buildFarm } from '../scenes/farm';
-import { buildWaterPatch } from '../scenes/waterPatch';
-import { buildGallery } from '../scenes/gallery';
-import { TOUR, type Stand } from '../scenes/catalog';
-import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
-import { cloudDriftSpeed } from '../renderer/clouds';
-import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weather, type WeatherName } from '../renderer/weather';
-import { steadyWind, WIND_SCALE, windName, type WindStrength } from '../renderer/wind';
+import { buildMeadow } from './scenes/meadow';
+import { buildFarm } from './scenes/farm';
+import { buildWaterPatch } from './scenes/waterPatch';
+import { buildGallery } from './scenes/gallery';
 import { defaultCases, runProfile, table, type ProfileCase, type ProfileRow } from './profile';
 import { SPEEDS, SPELLS, TICK, timelineAt, timelineClock, timelineFrost, timelineLightning, timelineLying, timelinePhase, timelineWater, timelineWet, timelineWind, type SpellName } from './timeline';
 import { DemoWater, USUAL_WATER, type WaterState } from './water';
 import { DemoGround, type GroundState } from './ground';
-import { WindWorker } from '../wind/client';
-import { TICK as WIND_TICK, type WindGoal, type WindSave } from '../wind/sim';
 import { WindView } from './windView';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
 //   view=0..3  zoom=16..192 (screen px per metre)  x, z (camera target)  t (seconds: freeze the clock there)
-//   focus=<model> (farm and gallery: start at that model, e.g. focus=bakery; the names are the files' in src/scenes/models/;
+//   focus=<model> (farm and gallery: start at that model, e.g. focus=bakery; the names are the files' in src/models/;
 //     explicit camera parameters still take precedence)
 //   hour=0..24 (the game's clock), or dawn|noon|golden|sunset|night (that look in the season's day)
 //   season=spring|summer|autumn|winter (#13; none by default: the looks' own day, sun up 6 to 20)  character (the
@@ -213,8 +209,7 @@ const windGoal = (): WindGoal => ({ speed: wind.speed, direction: wind.direction
 const WARM = 10;
 const windSeed = num('windSeed', 1);
 function newWind() {
-  const w = new WindWorker(new Worker(new URL('../wind/worker.ts', import.meta.url), { type: 'module' }),
-    { nx: 200, nz: 200, cell: 1, x0: -100, z0: -100 }, scene.wind, windGoal(), { seed: windSeed });
+  const w = startWind({ nx: 200, nz: 200, cell: 1, x0: -100, z0: -100 }, scene.wind, windGoal(), { seed: windSeed });
   // Shot mode stops a tick short and steps it on to each frame's time from there (see windTo); the demo's still frame
   // (?t=) is run on to its time.
   w.advance(params.has('shot') ? WARM - WIND_TICK : WARM + (frozen ?? 0));
@@ -603,7 +598,7 @@ if (params.has('shot')) {
   let windAt = -WIND_TICK, windStart: Promise<WindSave> | null = null, windKey = JSON.stringify(windGoal());
   const windTo = async (time: number, goal: WindGoal, ease: boolean) => {
     const key = JSON.stringify(goal);
-    if (key !== windKey && !ease) { living.dispose(); living = newWind(); windStart = null; windAt = -WIND_TICK; renderer.wind.restart(); renderer.trees.restart(); renderer.dust.restart(); }
+    if (key !== windKey && !ease) { living.dispose(); living = newWind(); windStart = null; windAt = -WIND_TICK; renderer.restartWind(); }
     windKey = key;
     windStart ??= living.save();
     const start = await windStart;
@@ -652,7 +647,7 @@ if (params.has('shot')) {
     }
     if (options.water) Object.assign(water, options.water);
     // The water's clock is the renderer's: put it at the frame's time first, so an ease starts from there.
-    renderer.shared.uTime.value = time;
+    renderer.setTime(time);
     sendWater({ ...water }, !options.ease);
     if (options.ground) Object.assign(ground, options.ground);
     sendGround({ ...ground }, !options.ease);

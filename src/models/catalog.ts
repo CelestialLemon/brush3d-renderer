@@ -1,4 +1,4 @@
-import index from './models/index.json';
+import index from './index.json';
 
 // The models (docs/MODELS.md): what tools/blender/build.py wrote about each, and where its file is.
 
@@ -17,9 +17,9 @@ export interface ModelInfo {
   parts: string[];
 }
 
-const urls = import.meta.glob('./models/*.glb', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const urls = import.meta.glob('./*.glb', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 export const MODELS: Record<string, ModelInfo> = Object.fromEntries(Object.entries(index as unknown as Record<string, Omit<ModelInfo, 'name' | 'url'>>)
-  .map(([name, info]) => [name, { ...info, name, url: urls[`./models/${name}.glb`] }]));
+  .map(([name, info]) => [name, { ...info, name, url: urls[`./${name}.glb`] }]));
 
 export const GROUPS: ModelInfo['group'][] = ['logistics', 'farming', 'processing', 'power', 'home'];
 /** The models in the tour's order: by group, then by name. */

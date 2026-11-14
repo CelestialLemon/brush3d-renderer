@@ -7,7 +7,7 @@ import bmesh
 import bpy
 from mathutils import Matrix, Vector
 
-# The importer (src/scenes/model.ts) reads the finish from the material's name. `moss` is the one that isn't inked: living
+# The importer (src/kit/model.ts) reads the finish from the material's name. `moss` is the one that isn't inked: living
 # surfaces (a planted roof, a planter's greens) are painted, as everything that grows is (docs/DIRECTION.md).
 MATERIALS = ['plain', 'timber', 'glass', 'tin', 'moss']
 # One game tile, in this renderer's metres (docs/MODELS.md, "Scale").

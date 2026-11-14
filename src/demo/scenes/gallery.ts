@@ -1,10 +1,8 @@
 import * as THREE from 'three';
-import type { BrushRenderer } from '../renderer/renderer';
-import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
-import { C, addFlowers, addTuft, groundOf, smooth, type Stream } from './kit';
-import { ModelSet, loadModel } from './model';
-import { GROUPS, MODELS, TILE, blocksWind, wheelRace, type Stand } from './catalog';
-import type { Obstacle } from '../wind/sim';
+import {
+  type BrushRenderer, MeshBuilder, noise2, rng, srgb, type Paint, C, addFlowers, addTuft, groundOf, smooth,
+  type Stream, ModelSet, loadModel, GROUPS, MODELS, TILE, blocksWind, wheelRace, type Stand, type Obstacle,
+} from '../../index';
 
 // The gallery (docs/MODELS.md): every model on its own plot of a level meadow, a row for each group, for looking at each
 // one up close from all four sides, in any hour and weather. A pale pad under each shows its footprint in game tiles.

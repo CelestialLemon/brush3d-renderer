@@ -1,4 +1,4 @@
-import { WEATHER_PRESETS, type HazeKind, type Weather } from '../renderer/weather';
+import { WEATHER_PRESETS, type HazeKind, type Weather } from '../index';
 import type { WaterState } from './water';
 import { soakStep } from './ground';
 

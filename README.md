@@ -74,13 +74,20 @@ The farm's buildings and props are a set of 28 solarpunk models made for the gam
 
 ## Layout
 
+The game (and the demo) use the renderer through one door, `src/index.ts`; [docs/API.md](docs/API.md) has the API, in the
+game's terms, and what later tasks add to it.
+
+- `src/index.ts`: the API. The demo imports nothing else.
 - `src/renderer/`: the renderer (`renderer.ts`), its materials and GLSL, the camera, the time-of-day looks, and the tiles big
   meshes are cut into so each pass draws only what it sees (`tiles.ts`).
-- `src/scenes/`: demo scenes, built in TypeScript: `farm.ts` (the *Dear Alice* aerial, rebuilt and grown into a valley), `meadow.ts` (the first slice),
-  and `kit.ts`, the pieces both are made of (trees, stones, grass, reeds, lines on the map, water).
-  `gallery.ts` shows every model on its own plot; the models are `models/*.glb`, read by `model.ts` and listed by
-  `catalog.ts` (`docs/MODELS.md`).
-- `src/app/`: the demo viewer, and the scripted weather standing in for the game (`timeline.ts`).
+- `src/wind/`: the living wind's simulation, which the game's rules read too (`docs/WIND.md`).
+- `src/kit/`: the painting kit the scenes are built with: `MeshBuilder` (`builder.ts`), the pieces (`kit.ts`: trees,
+  stones, grass, reeds, lines on the map, water), the trees' season dress (`seasonTrees.ts`) and the models' importer
+  (`model.ts`).
+- `src/models/`: the models, `*.glb`, listed by `catalog.ts` (`docs/MODELS.md`).
+- `src/demo/`: the demo viewer, the scripted weather standing in for the game (`timeline.ts`), and its scenes in
+  `scenes/`: `farm.ts` (the *Dear Alice* aerial, rebuilt and grown into a valley), `meadow.ts` (the first slice),
+  `waterPatch.ts` (the water's test patch) and `gallery.ts` (every model on its own plot).
 - `tools/`: headless capture (`shot.ts`), motion measurement (`motion.ts`), pops in the wind (`pops.ts`), videos
   (`video.ts`) and the frame's cost (`profile.ts`), on `browser.ts`.
 - `tools/blender/`: the scripts that make the models (`build.py`, the shared `kit.py`, one script a model in `models/`).

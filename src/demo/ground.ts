@@ -1,6 +1,4 @@
-import type { GroundMap } from '../renderer/ground';
-import { noise2 } from '../scenes/builder';
-import type { Stream } from '../scenes/kit';
+import { type GroundMap, noise2, type Stream } from '../index';
 
 // A stand-in for the game's ground (#14, #11): the demo makes the map the game would send, of how deep the snow lies, how
 // much frost there is, how wet the land is and how muddy, from a number or two the controls or the timeline set. The game

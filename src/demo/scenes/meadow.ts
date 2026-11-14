@@ -1,10 +1,8 @@
 import * as THREE from 'three';
-import type { BrushRenderer } from '../renderer/renderer';
-import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
-import { C, addFlowers, addReeds, addStone, addTuft, groundOf, smooth, treeWind, type Stream, type Tree } from './kit';
-import type { Obstacle } from '../wind/sim';
-import type { Season } from '../renderer/season';
-import { Grove, dressFor, type Dress } from './seasonTrees';
+import {
+  type BrushRenderer, MeshBuilder, noise2, rng, srgb, type Paint, C, addFlowers, addReeds, addStone, addTuft,
+  groundOf, smooth, treeWind, type Stream, type Tree, type Obstacle, type Season, Grove, dressFor, type Dress,
+} from '../../index';
 
 // The first slice: a corner of a farm in a meadow. A stream, a field of wheat, three trees (two broadleaf, one with fruit,
 // and a blue-green cypress), long grass and wildflowers, and one solar panel, the only inked thing.
