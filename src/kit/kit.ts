@@ -408,7 +408,7 @@ export class MapLine {
 }
 
 /**
- * A scene's stream, as the demo's stand-in for the game reads it to make the water map (src/app/water.ts, #18): its usual
+ * A scene's stream, as the demo's stand-in for the game reads it to make the water map (src/demo/water.ts, #18): its usual
  * surface, the grid the map covers, whether a point is in its channel, and which way it flows there (in xz, against the
  * stream's speed: a unit vector in a stream, shorter in a pond).
  */

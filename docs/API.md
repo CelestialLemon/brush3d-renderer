@@ -27,7 +27,9 @@ plain code with no drawing in them, so the game's rules and tests can use them w
 ## One door in
 
 Everything the game uses comes from one file, `src/index.ts` (after the move, #200, from the renderer's folder in the game,
-say `src/render/index.ts`). The demo is just another user of it: it imports nothing else. Anything not exported there is
+say `src/render/index.ts`). The demo is just another user of it: it imports nothing else. One part of it also stands on
+its own: `src/shared.ts`, the wind simulation and the cloud recipe (below), which loads in Node with no bundler, for the
+rules' tests and bots (the rest needs Vite, for the models and the wind's worker). Anything not exported there is
 the renderer's own business and can change without notice: its shaders, materials, passes, uniforms and maps.
 
 ```ts
@@ -389,6 +391,7 @@ Not for the game's players, but kept public for the tools that judge renderer wo
 - `r.settings.falling` (leave out what's in the air), `prepass`, `waterScissor`, `equalDepth`, `shelterDebug`, `grain`.
 - `r.setTime(seconds)`: set the renderer's clock without drawing, so a map sent next starts its ease from
   there.
+- `r.lightning.clock`: the lightning's clock (real seconds by default), held still to time or film a flash at its height.
 - `r.gl`: the WebGL renderer, for the GPU's name and the like.
 
 ## The painting kit: the level below (today)
@@ -430,6 +433,7 @@ The game's pixel3d calls and what replaces each:
 | Folder | What | Whose |
 |---|---|---|
 | `src/index.ts` | The API: everything above that exists | the game's door in |
+| `src/shared.ts` | The wind simulation and the cloud recipe, loadable in Node on their own (the index exports them too) | shared with the rules |
 | `src/renderer/` | The renderer: its passes, materials, shaders and looks | the renderer's own |
 | `src/wind/` | The wind simulation (no drawing; a worker host) | shared with the rules |
 | `src/kit/` | The painting kit: `MeshBuilder`, trees, stones, tufts, the models' loader | below the API (see above) |

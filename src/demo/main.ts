@@ -17,7 +17,7 @@ import { WindView } from './windView';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
 //   view=0..3  zoom=16..192 (screen px per metre)  x, z (camera target)  t (seconds: freeze the clock there)
-//   focus=<model> (farm and gallery: start at that model, e.g. focus=bakery; the names are the files' in src/scenes/models/;
+//   focus=<model> (farm and gallery: start at that model, e.g. focus=bakery; the names are the files' in src/models/;
 //     explicit camera parameters still take precedence)
 //   hour=0..24 (the game's clock), or dawn|noon|golden|sunset|night (that look in the season's day)
 //   season=spring|summer|autumn|winter (#13; none by default: the looks' own day, sun up 6 to 20)  character (the

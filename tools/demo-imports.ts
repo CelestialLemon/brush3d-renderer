@@ -1,5 +1,5 @@
 // Checks that the demo uses the renderer only through its API (src/index.ts, docs/API.md): every import in src/demo is
-// the index, another demo file, or three. Run by `npm run typecheck`.
+// the index, another demo file, or three; and that src/shared.ts loads in Node. Run by `npm run typecheck`.
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
@@ -19,3 +19,10 @@ if (bad.length) {
   process.exit(1);
 }
 console.log(`ok   the demo's ${files.length} files import only the API`);
+
+// And the shared code loads in Node on its own, as the game's rules and tests will load it.
+const shared = await import('../src/shared.ts').catch((e: Error) => {
+  console.error(`src/shared.ts must load in Node with no bundler (docs/API.md):\n${e.message}`);
+  process.exit(1);
+});
+console.log(`ok   src/shared.ts loads in Node (${Object.keys(shared).length} exports)`);

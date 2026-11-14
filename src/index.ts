@@ -21,17 +21,11 @@ export { WATER_EASE, type WaterMap } from './renderer/water';
 export type { DustSource } from './renderer/dust';
 export type { FlashSetting, Flicker, Strike } from './renderer/lightning';
 
-// ---- The wind: the simulation the rules read, and the renderer's view of it (docs/WIND.md) ----
+// ---- The wind (docs/WIND.md) and the clouds: the simulation and recipe the rules share, and the renderer's view ----
 export { startWind } from './wind/start';
 export { WindWorker, type WindPort } from './wind/client';
-export {
-  DRAG, MAX_SPEED as MAX_WIND, SOLID_DRAG, TICK as WIND_TICK, WindSim, windAt, windBetween,
-  type Obstacle, type Shape, type WindGoal, type WindGrid, type WindOptions, type WindSave, type WindSnapshot,
-} from './wind/sim';
+export * from './shared';   // the simulation and the cloud recipe, which Node can load on their own
 export { steadyWind, WIND_SCALE, windName, type WindStrength } from './renderer/wind';
-
-// ---- The clouds: the recipe the rules share (a cloud's shadow on a solar panel) ----
-export { CLOUD_SHAPE, cloudDriftSpeed, cloudShade, type CloudField, type CloudLayer, type CloudShape } from './renderer/clouds';
 
 // ---- The models (docs/MODELS.md) ----
 export { blocksWind, GROUPS, MODELS, TILE, TOUR, wheelRace, type ModelInfo, type Stand } from './models/catalog';
