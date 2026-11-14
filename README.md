@@ -1,5 +1,11 @@
 # brush3d-renderer
 
+> **Moved.** brush3d now lives in the game's repo, [Soil n Silo](https://github.com/CelestialLemon/Soil-n-Silo), in its
+> [`brush3d/`](https://github.com/CelestialLemon/Soil-n-Silo/tree/dev/brush3d) folder, with this repo's history
+> (CelestialLemon/Soil-n-Silo#200), and is worked on there: its issues, pull requests, demo and previews too (the demo is in
+> each of the game's builds, [`dev/brush3d/`](https://celestiallemon.github.io/Soil-n-Silo/dev/brush3d/)). This repo is
+> archived and kept as it was when it moved.
+
 A painterly 3D renderer for three.js games: **painted worlds, inked things**. An experiment for
 [Soil n Silo](https://github.com/CelestialLemon/Soil-n-Silo), a solarpunk farming game, to find out whether it can look like
 the reference below instead of pixel art. Its pixel-art sibling is
