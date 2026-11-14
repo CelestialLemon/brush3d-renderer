@@ -96,7 +96,8 @@ export class ModelSet {
 
   addTo(r: Pick<BrushRenderer, 'add'>) {
     if (this.ink.vertexCount) r.add(this.ink.build(), 'ink');
-    if (this.paint.vertexCount) r.add(this.paint.build(), 'paint', { seasonal: true });
+    // A planted roof is a roof: rain and snow stop at it, as at an inked one (paint is no cover unless told).
+    if (this.paint.vertexCount) r.add(this.paint.build(), 'paint', { seasonal: true, cover: 'full' });
     if (this.leaves.vertexCount) r.add(this.leaves.build(), 'foliage', { cover: 'none', seasonal: true });
   }
 }

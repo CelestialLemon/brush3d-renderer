@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { BrushRenderer } from '../renderer/renderer';
 import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
 import { ModelSet, loadModel } from './model';
-import { MODELS, TILE as GAME_TILE, blocksWind, type Stand } from './catalog';
+import { MODELS, TILE as GAME_TILE, blocksWind, wheelRace, type Stand } from './catalog';
 import {
   C, MapLine, addFlowers, addMound, addReeds, addStone, addTuft, groundOf, smooth, treeWind, type Stream, type Tree,
 } from './kit';
@@ -193,15 +193,11 @@ function footprint(b: Building, u: number, v: number) {
   const [lx, lz] = local(b, u, v);
   return Math.hypot(Math.max(0, Math.abs(lx) - b.hx), Math.max(0, Math.abs(lz) - b.hz));
 }
-/**
- * The wheel race of a building on a quay (the water wheel): the strip its wheel turns in, from a pit in its own footprint
- * out over the stream. 1 in it, easing to 0 over `margin` round it. The wheel is 1.4 m wide and reaches from 1.2 m to 6.8 m
- * out from the building's middle (tools/blender/models/water_wheel.py).
- */
+/** The wheel race of a building on a quay (the water wheel; see `wheelRace`): 1 in it, easing to 0 over `margin`. */
 function race(b: Building, u: number, v: number, margin = 0.5) {
   if (!b.quay) return 0;
   const [lx, lz] = local(b, u, v);
-  return (1 - smooth(1, 1 + margin, Math.abs(lx))) * smooth(1.7 - margin, 1.7, lz) * (1 - smooth(8, 8 + margin, lz));
+  return wheelRace(lx, lz, margin);
 }
 /** Whether a map point is within `margin` of something built: a footprint, or a wheel's race. */
 const nearBuilding = (u: number, v: number, margin: number) => BUILDINGS.some((b) => footprint(b, u, v) < margin || race(b, u, v, margin) > 0);

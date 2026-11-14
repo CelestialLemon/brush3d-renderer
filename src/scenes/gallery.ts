@@ -3,7 +3,7 @@ import type { BrushRenderer } from '../renderer/renderer';
 import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
 import { C, addFlowers, addTuft, groundOf, smooth, type Stream } from './kit';
 import { ModelSet, loadModel } from './model';
-import { GROUPS, MODELS, TILE, blocksWind, type Stand } from './catalog';
+import { GROUPS, MODELS, TILE, blocksWind, wheelRace, type Stand } from './catalog';
 import type { Obstacle } from '../wind/sim';
 
 // The gallery (docs/MODELS.md): every model on its own plot of a level meadow, a row for each group, for looking at each
@@ -28,7 +28,18 @@ function pad(x: number, z: number) {
   return best;
 }
 
-const height = (x: number, z: number) => 0.25 * noise2(x * 0.03, z * 0.03) * smooth(-1, -6, pad(x, z));
+/** The water wheel's race (1 in it): a dry pit here, so the whole wheel shows, the arc that turns in the river too. */
+function pit(x: number, z: number, margin = 0.5) {
+  let most = 0;
+  for (const s of STANDS) {
+    if (s.model.name !== 'water_wheel') continue;
+    const dx = x - s.x, dz = z - s.z, c = Math.cos(s.yaw), sn = Math.sin(s.yaw);
+    most = Math.max(most, wheelRace(dx * c - dz * sn, dx * sn + dz * c, margin));
+  }
+  return most;
+}
+
+const height = (x: number, z: number) => 0.25 * noise2(x * 0.03, z * 0.03) * smooth(-1, -6, pad(x, z)) - 1.1 * pit(x, z);
 const ground = groundOf(height);
 const STREAM: Stream = { level: -3, grid: { nx: 8, nz: 8, cell: SIZE / 8, x0: -SIZE / 2, z0: -SIZE / 2 }, channel: () => false, along: () => [0, 0] };
 
@@ -55,13 +66,13 @@ export function buildGallery(r: BrushRenderer): Gallery {
   const g = new MeshBuilder('grass'), flowers = new MeshBuilder('foliage'), rand = rng(5);
   for (let k = 0; k < 9000; k++) {
     const x = (rand() * 2 - 1) * half, z = (rand() * 2 - 1) * half;
-    if (pad(x, z) > -0.4 || rand() > 0.25 + 0.75 * smooth(0.4, 0.8, noise2(x * 0.09 + 40, z * 0.09) * 0.5 + 0.5)) continue;
+    if (pad(x, z) > -0.4 || pit(x, z, 1) > 0 || rand() > 0.25 + 0.75 * smooth(0.4, 0.8, noise2(x * 0.09 + 40, z * 0.09) * 0.5 + 0.5)) continue;
     addTuft(g, ground, x, z, 0.2 + rand() * 0.25, C.meadow.clone().lerp(C.lime, rand() * 0.5), rand);
   }
   const palette = [srgb(0xf08bb0), srgb(0xf7f2e4), srgb(0xf5cf3e), srgb(0xa77ad8)];
   for (let d = 0; d < 90; d++) {
     addFlowers(flowers, ground, (rand() * 2 - 1) * half, (rand() * 2 - 1) * half, palette[Math.floor(rand() * palette.length)], 8 + Math.floor(rand() * 10),
-      rand, (x, z) => pad(x, z) < -0.5);
+      rand, (x, z) => pad(x, z) < -0.5 && pit(x, z, 1) === 0);
   }
   r.add(g.build(), 'grass', { castShadow: false });
   r.add(flowers.build(), 'foliage', { castShadow: false, cover: 'none' });

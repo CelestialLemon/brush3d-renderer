@@ -31,5 +31,16 @@ export const TOUR: ModelInfo[] = GROUPS.flatMap((g) => Object.values(MODELS).fil
  */
 export const blocksWind = (m: ModelInfo) => m.tiles[0] >= 2 && m.hi[1] > 1.5 && m.name !== 'solar_panel';
 
+/**
+ * The water wheel's race: the strip its wheel turns in, which a scene has to open in the ground (the wheel dips 0.87 m
+ * below its floor), from a pit in its own footprint out past its front. In the model's own frame (x along its front, z
+ * out through it): 1 in the race, easing to 0 over `margin` round it. The wheel is 1.4 m wide and reaches from 1.2 m to
+ * 6.8 m out from the model's middle (tools/blender/models/water_wheel.py).
+ */
+export function wheelRace(lx: number, lz: number, margin = 0.5) {
+  const ease = (a: number, b: number, v: number) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+  return (1 - ease(1, 1 + margin, Math.abs(lx))) * ease(1.7 - margin, 1.7, lz) * (1 - ease(8, 8 + margin, lz));
+}
+
 /** Where a scene shows a model: its place on the ground, and which way its front faces (radians about y). */
 export interface Stand { model: ModelInfo; x: number; y: number; z: number; yaw: number }

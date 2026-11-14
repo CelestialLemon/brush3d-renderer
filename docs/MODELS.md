@@ -49,8 +49,9 @@ towards +Z. `TILE` in `src/scenes/catalog.ts` and in the kit.
 Two models reach past their tile on purpose: the wind turbine's rotor, and the water wheel, whose wheel hangs off the
 front of its bank tile over the river and dips 0.87 m below the bank (the game puts it on a bank; its axle runs along the
 bank). The wheel's inner half turns inside its own tile, in a pit cut in the deck's front edge (1.8 m wide, from 1.6 m in
-front of the tile's middle to its front edge): whoever places it has to open the ground there down to the water, as
-the farm does (`race` in `src/scenes/farm.ts`), or the wheel turns in earth.
+front of the tile's middle to its front edge): whoever places it has to open the ground there down to the water, or
+the wheel turns in earth. `wheelRace` in `src/scenes/catalog.ts` is that strip's shape; the farm cuts it through a quay
+to the stream, and the gallery, which has no water, cuts it as a dry pit so the whole wheel shows.
 
 ## What's in a file
 
@@ -66,7 +67,7 @@ Each model is one `.glb` in `src/scenes/models/`, read by `src/scenes/model.ts`:
   | `timber` | inked, with a wood grain along the boards |
   | `glass` | solar glass: opaque, in half-metre cells, mirrors the sky |
   | `tin` | inked, corrugated |
-  | `moss` | **new**: a planted surface. Painted like the land, not inked, with no lines: what grows is painted |
+  | `moss` | **new**: a planted surface. Painted like the land, not inked, with no lines: what grows is painted. Rain and snow stop at it, as at an inked roof |
 
 - **Plants** are not modelled. A model marks where they grow with empty points named `plant_<kind>_<nn>` (kinds: `herb`,
   `flower`, `shrub`, `vine`), sized by the point's scale; the scene grows a painted clump there, as it does bushes.
