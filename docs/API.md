@@ -106,6 +106,9 @@ r.setLand({
   // in order: 4 × width × height values). Neighbours' corners needn't meet: where they don't, the edge between them is a
   // cliff face from one to the other. Where they do, the land runs on smoothly (a bank is a steep slope inside a tile).
   corners: Float32Array,
+  // The tiles drawn exactly at their corners' level, flat (width × height, 1 or 0): worked ground, a building's pad,
+  // water's edge. Elsewhere the land is drawn smoothed (below).
+  worked: Uint8Array,
   // What covers each tile, and what the ground is (width × height each): the paint (grass, bare soil, track, rock) and
   // its subtle tint (clay, sand, stony), as the game's map has them.
   cover: Uint8Array, ground: Uint8Array,
@@ -113,7 +116,7 @@ r.setLand({
   // a corner at (x0, z0), nx by nz cells of `cell` metres, x fastest.
   beyond: { nx, nz, cell, x0, z0, height: Float32Array },
 });
-r.updateLand({ x, y, width, height }, { corners, cover, ground });   // an earthwork: the new values for just these tiles
+r.updateLand({ x, y, width, height }, { corners, worked, cover, ground });   // an earthwork: the new values for just these tiles
 ```
 
 - The game's world layer gives its levels, cliffs and banks as the corners (it knows where a level drops, and keeps the
@@ -122,11 +125,16 @@ r.updateLand({ x, y, width, height }, { corners, cover, ground });   // an earth
 - The renderer copies what it's given: changing an array after the call does nothing until `updateLand` sends the new
   values for the tiles that changed. Only that patch is re-painted, without a hitch.
 - The grass grows where the cover says grass, round whatever stands on it (the renderer reads the things it's been given).
-- **The surface as drawn is the game's to query**, so a truck, a dropped good and the tile cursor sit on what the player
-  sees: `r.landAt(x, z)` gives the land's height there (metres), and `r.landHit(ray)` where a line of sight (from
-  `r.view.rayAt`) first meets it, or null, on the CPU with no wait for the GPU. Inside a tile the surface is fixed by
-  its four corners alone (two triangles, split along the same diagonal everywhere), so the game's own rules can work it
-  out the same way without asking.
+- **Two surfaces, as today.** The rules keep their own heights (the game's `relief.ts`: two triangles a tile, split
+  along the diagonal `splitsNwSe` picks), unchanged. The land as drawn is the game's smooth reading of them
+  (`src/world/surface.ts`: within half a level of the rules' height, exactly level on worked tiles and at the water,
+  sharp at cliffs), which #202 moves into the renderer as it is, so the hills look the same shape. The drawn land also
+  has the cuts that models need where they stand (the water wheel's race in its bank, `wheelRace` today); a thing that
+  needs one says so in its model, and the renderer cuts it.
+- **The drawn surface is the game's to query**, so a truck, a dropped good and the tile cursor sit on what the player
+  sees: `r.landAt(x, z)` gives the land's height there (metres, cuts included), and `r.landHit(ray)` where a line of
+  sight (from `r.view.rayAt`) first meets it, or null, on the CPU with no wait for the GPU. The rules go on asking
+  `relief.ts`, as now.
 
 ### Water (today; the game's river in #202, floods, ice and mud in #207)
 
@@ -312,7 +320,7 @@ const wind = startWind({ nx, nz, cell, x0, z0 }, obstacles, { speed, direction, 
 wind.setObstacles(obstacles);       // a building placed, a hedge planted, a tree cleared (#208)
 wind.setGoal(goal);                 // what the weather wants; eases there over a few seconds
 wind.advance(gameSeconds);          // each frame, by game time (nothing while paused)
-wind.onTick((snap) => rules.wind(snap.tick, snap));  // the rules: every tick, in order, the same on any machine
+wind.onTick((snap) => { if (snap.tick > rules.windTick) rules.wind(snap); });   // the rules: each new tick, in order
 windAt(snap, x, z, height);         // in the rules, at that tick: m/s along x and z for a turbine, a gale, shelter
 wind.at(x, z, height);              // between the last two ticks, as the frame sees it: for the picture only
 const save = await wind.save();     // with the game's save; wind.restore(save) carries on from that tick
@@ -334,7 +342,8 @@ r.restartWind();                    // a new wind, not a continuation (a level l
 
 - **The rules read whole ticks.** `wind.at` blends the last two snapshots by how far the frame is past the latest, and
   what has arrived from the worker depends on the machine, so it's for drawing only. The rules take each tick's
-  snapshot as `onTick` hands it over (every tick, in order, numbered by `snap.tick`), and query it with
+  snapshot as `onTick` hands it over (every tick, in order, numbered by `snap.tick`; it also hands over the first
+  snapshot, tick 0, and after a restore the saved tick again, which the guard above skips), and query it with
   `windAt(snap, ...)`: a turbine's output for tick n is the same on the Arc laptop as on the developer's machine, however
   far behind the worker runs. #208 ties the game's own rule clock to those ticks.
 - **A save is as of a tick.** `wind.save()` keeps the state as of the last tick due, and a restore carries on bit for bit
