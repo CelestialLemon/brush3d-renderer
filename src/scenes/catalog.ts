@@ -25,5 +25,11 @@ export const GROUPS: ModelInfo['group'][] = ['logistics', 'farming', 'processing
 /** The models in the tour's order: by group, then by name. */
 export const TOUR: ModelInfo[] = GROUPS.flatMap((g) => Object.values(MODELS).filter((m) => m.group === g));
 
+/**
+ * Whether a model shelters what's behind it from the wind (#36): a building with walls. Not a pole, a turbine, a prop, or
+ * a sheet of glass on two posts, which the wind passes.
+ */
+export const blocksWind = (m: ModelInfo) => m.tiles[0] >= 2 && m.hi[1] > 1.5 && m.name !== 'solar_panel';
+
 /** Where a scene shows a model: its place on the ground, and which way its front faces (radians about y). */
 export interface Stand { model: ModelInfo; x: number; y: number; z: number; yaw: number }

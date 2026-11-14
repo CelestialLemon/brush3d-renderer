@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { BrushRenderer } from '../renderer/renderer';
 import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
 import { ModelSet, loadModel } from './model';
-import { MODELS, TILE as GAME_TILE, type Stand } from './catalog';
+import { MODELS, TILE as GAME_TILE, blocksWind, type Stand } from './catalog';
 import {
   C, MapLine, addFlowers, addMound, addReeds, addStone, addTuft, groundOf, smooth, treeWind, type Stream, type Tree,
 } from './kit';
@@ -193,7 +193,18 @@ function footprint(b: Building, u: number, v: number) {
   const [lx, lz] = local(b, u, v);
   return Math.hypot(Math.max(0, Math.abs(lx) - b.hx), Math.max(0, Math.abs(lz) - b.hz));
 }
-const nearBuilding = (u: number, v: number, margin: number) => BUILDINGS.some((b) => footprint(b, u, v) < margin);
+/**
+ * The wheel race of a building on a quay (the water wheel): the strip its wheel turns in, from a pit in its own footprint
+ * out over the stream. 1 in it, easing to 0 over `margin` round it. The wheel is 1.4 m wide and reaches from 1.2 m to 6.8 m
+ * out from the building's middle (tools/blender/models/water_wheel.py).
+ */
+function race(b: Building, u: number, v: number, margin = 0.5) {
+  if (!b.quay) return 0;
+  const [lx, lz] = local(b, u, v);
+  return (1 - smooth(1, 1 + margin, Math.abs(lx))) * smooth(1.7 - margin, 1.7, lz) * (1 - smooth(8, 8 + margin, lz));
+}
+/** Whether a map point is within `margin` of something built: a footprint, or a wheel's race. */
+const nearBuilding = (u: number, v: number, margin: number) => BUILDINGS.some((b) => footprint(b, u, v) < margin || race(b, u, v, margin) > 0);
 
 // Trees placed by hand.
 const TREES: Tree[] = [
@@ -297,16 +308,9 @@ function bare(x: number, z: number) {
   return Math.max(track, 0.7 * plot(YARD), 0.5 * plot(WORKS), 0.9 * plot(PLOUGHED), 0.9 * fields);
 }
 
-function height(x: number, z: number) {
-  const [u, v] = M(x, z);
-  const ds = waterDistance(x, z);
+/** The land before anything is built on it: its natural lie, eased down to the water along the streams, worn by the tracks. */
+function unbuilt(x: number, z: number, u: number, v: number, ds: number) {
   let h = natural(u, v);
-  // Under each building the ground is levelled, easing back into the land round it.
-  for (const b of BUILDINGS) {
-    if (!b.pad) continue;
-    const d = footprint(b, u, v);
-    if (d < 3) h += (natural(b.u, b.v) - h) * (1 - smooth(0.4, 3, d));
-  }
   // Never below the water away from it: no dry hollows under the water's level.
   const floor = WATER_Y + 0.35;
   if (h < floor + 0.4) h = floor + 0.4 * Math.exp((h - floor - 0.4) / 0.4);
@@ -314,14 +318,40 @@ function height(x: number, z: number) {
   h += (WATER_Y + 0.28 - h) * (1 - smooth(2.2, 10, ds));
   // Tracks are worn a little into the land.
   h -= 0.07 * (1 - smooth(PATH_HALF - 0.2, PATH_HALF + 0.5, pathDistance(x, z)));
+  return h;
+}
+/** The level each building's ground is made: the land's at its middle (a quay's: a little above the water). */
+const LEVELS = new Map<Building, number>();
+function levelOf(b: Building) {
+  let y = LEVELS.get(b);
+  if (y === undefined) {
+    const [x, z] = W(b.u, b.v);
+    y = b.quay ? WATER_Y + QUAY : unbuilt(x, z, b.u, b.v, waterDistance(x, z));
+    LEVELS.set(b, y);
+  }
+  return y;
+}
+
+function height(x: number, z: number) {
+  const [u, v] = M(x, z);
+  const ds = waterDistance(x, z);
+  let h = unbuilt(x, z, u, v, ds);
+  // Under each building the ground is levelled (after the floodplain, which would bend it), easing back into the land.
+  for (const b of BUILDINGS) {
+    if (!b.pad || b.quay) continue;
+    const d = footprint(b, u, v);
+    if (d < 3) h += (levelOf(b) - h) * (1 - smooth(0.4, 3, d));
+  }
   // The pond deepens towards its middle.
   const bed = WATER_Y - 0.8 - 0.7 * smooth(0, 7, -pondShore(u, v));
   h = bed + (h - bed) * smooth(0.3, 2.3, ds);
-  // A quay: the bank built up level under a building that stands at the water's edge, dropping straight to the water.
+  // A quay: the bank built up level under a building that stands at the water's edge, dropping straight to the water. Its
+  // wheel's race is cut through it down to the stream's bed, so the wheel turns in water, not in the bank.
   for (const b of BUILDINGS) {
     if (!b.quay) continue;
     const d = footprint(b, u, v);
-    if (d < 0.7) h += (WATER_Y + QUAY - h) * (1 - smooth(0.1, 0.7, d));
+    if (d < 0.7) h += (levelOf(b) - h) * (1 - smooth(0.1, 0.7, d));
+    h = Math.min(h, h + (WATER_Y - 0.8 - h) * race(b, u, v));
   }
   return h;
 }
@@ -405,7 +435,7 @@ function windObstacles(): Obstacle[] {
     const a = wall.at(d), b = wall.at(Math.min(wall.length, d + 1));
     walls.push({ strip: { ax: a.x, az: a.z, bx: b.x, bz: b.z, width: 0.6 }, solid: true, height: 0.6 });
   }
-  const buildings: Obstacle[] = BUILDINGS.filter((b) => b.pad && b.height > 1.5 && b.hx > 2.5).map((b) => {
+  const buildings: Obstacle[] = BUILDINGS.filter((b) => blocksWind(MODELS[b.model])).map((b) => {
     const [x, z] = W(b.u, b.v);
     return { box: { x, z, hx: b.hx * 0.9, hz: b.hz * 0.9, turn: -(Math.PI / 4 + b.facing) }, solid: true, height: b.height };
   });
@@ -428,7 +458,8 @@ function standOf(b: Building): Stand {
     const px = lx * b.hx * 0.8, pz = lz * b.hz * 0.8;
     y += height(x + px * c + pz * s, z - px * s + pz * c); n++;
   }
-  return { model: MODELS[b.model], x, y: b.quay ? WATER_Y + QUAY : y / n, z, yaw };
+  // A building stands on its levelled ground; a small thing on the land as it lies, at its mean under it.
+  return { model: MODELS[b.model], x, y: b.pad ? levelOf(b) : y / n, z, yaw };
 }
 
 /** The models, once they have loaded (each file once, however many times it stands on the farm). */
@@ -1099,7 +1130,7 @@ function stones(r: Adder) {
       const p = stream.at(rand() * stream.length), off = (from + rand() * (to - from)) * WIDE;
       const side = rand() < 0.5 ? -1 : 1;
       const x = p.x - p.dz * off * side, z = p.z + p.dx * off * side, [u, v] = M(x, z);
-      if (!onLand(u, v, 1) || pondShore(u, v) < 0) continue;
+      if (!onLand(u, v, 1) || pondShore(u, v) < 0 || nearBuilding(u, v, 0.3 + size + spread)) continue;
       addStone(b, ground, x, z, size + rand() * spread, 0.4, rand, WATER_Y);
     }
   };
@@ -1143,7 +1174,7 @@ function stones(r: Adder) {
   for (const stream of STREAMS) for (let c = 0; c < 90 * stream.length / 70; c++) {
     const p = stream.at(rand() * stream.length), off = (rand() < 0.5 ? -1 : 1) * (1.45 + rand() * 0.5) * WIDE;
     const x = p.x - p.dz * off, z = p.z + p.dx * off, [u, v] = M(x, z);
-    if (!onLand(u, v, 1) || pondShore(u, v) < 0.5) continue;
+    if (!onLand(u, v, 1) || pondShore(u, v) < 0.5 || nearBuilding(u, v, 1)) continue;
     addReeds(reeds, ground, x, z, rand);
   }
   // Reed beds round the pond, thickest on its far side, where the stream comes in.

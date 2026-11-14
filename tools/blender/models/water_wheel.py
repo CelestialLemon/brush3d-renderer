@@ -8,10 +8,17 @@ ABOUT = 'A ten-paddle wheel hung over the river off the front of its bank, a cop
 # The wheel, its shaft and the dynamo hang past the tile's front edge, and the wheel dips below the bank into the river.
 FREE = ('move_spin_wheel', 'dynamo')
 AXLE = (0.0, 1.88, 3.92)
+# The wheel's pit in the deck: its half-width, and how far back from the tile's middle it starts (docs/MODELS.md).
+PIT = (0.9, 1.6)
 
 
 def build(m):
-    m.deck()
+    # The deck, with a pit cut in its front edge for the wheel: its inner half turns below the bank's level there.
+    deck = rrect(7.5, 7.5, 0.7, 3)
+    k = next(i for i in range(len(deck)) if abs(deck[i][1] - 3.75) < 1e-6 and abs(deck[(i + 1) % len(deck)][1] - 3.75) < 1e-6)
+    s = 1 if deck[k][0] > 0 else -1
+    deck[k + 1:k + 1] = [(s * PIT[0], 3.75), (s * PIT[0], PIT[1]), (-s * PIT[0], PIT[1]), (-s * PIT[0], 3.75)]
+    m.prism(deck, 0, 0.2, P.stone, top=0.985)
     cx, cz = 0.0, -1.55
     m.hut(rrect(6.6, 3.9, 1.0, 4, cx, cz), 0.2, 3.0)
     m.pillow(rrect(7.2, 4.5, 1.25, 4, cx, cz), 3.0, 1.0)

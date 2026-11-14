@@ -47,7 +47,10 @@ One small palette for the whole set (`Palette` in `tools/blender/kit.py`): lime 
 towards +Z. `TILE` in `src/scenes/catalog.ts` and in the kit.
 
 Two models reach past their tile on purpose: the wind turbine's rotor, and the water wheel, whose wheel hangs off the
-front of its bank tile over the river and dips below the bank (the game puts it on a bank; its axle runs along the bank).
+front of its bank tile over the river and dips 0.87 m below the bank (the game puts it on a bank; its axle runs along the
+bank). The wheel's inner half turns inside its own tile, in a pit cut in the deck's front edge (1.8 m wide, from 1.6 m in
+front of the tile's middle to its front edge): whoever places it has to open the ground there down to the water, as
+the farm does (`race` in `src/scenes/farm.ts`), or the wheel turns in earth.
 
 ## What's in a file
 
@@ -107,7 +110,7 @@ flatpak run org.blender.Blender -b --factory-startup --python-exit-code 1 --pyth
 
 ## The set
 
-28 models, 37 962 triangles in all. Tiles are the game's footprint (along the front × deep); height in metres.
+28 models, 37 978 triangles in all. Tiles are the game's footprint (along the front × deep); height in metres.
 
 | Model | Group | Tiles | Height | Triangles | Pieces for the game | Plants | What it is |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -131,7 +134,7 @@ flatpak run org.blender.Blender -b --factory-startup --python-exit-code 1 --pyth
 | `digester` | power | 2×2 | 7.0 | 1182 | `smoke_emitter` | 5 | A round tank under a planted dome: farm waste in at the hopper, gas to the copper bell, a small flare on its pipe. |
 | `pylon` | power | 1×1 | 5.7 | 422 | - | 0 | A slim timber pole with ceramic insulators, a copper cap and a small lamp. Quiet: a farm has many. |
 | `solar_panel` | power | 2×2 | 3.3 | 242 | - | 0 | One sheet of solar glass on two copper posts, low and quiet; the meadow grows under it. |
-| `water_wheel` | power | 2×2 | 4.6 | 1945 | `move_spin_wheel`, `dynamo`, `running_control_window` | 6 | A ten-paddle wheel hung over the river off the front of its bank, a copper dynamo on its shaft, a generator house behind. |
+| `water_wheel` | power | 2×2 | 4.6 | 1961 | `move_spin_wheel`, `dynamo`, `running_control_window` | 6 | A ten-paddle wheel hung over the river off the front of its bank, a copper dynamo on its shaft, a generator house behind. |
 | `wind_turbine` | power | 1×1 | 18.8 | 639 | `move_spin_rotor` | 0 | A slim ceramic tower, a rotor ten metres across with terracotta tips. The rotor is a separate piece, ready to turn. |
 | `bench` | home | 1×1 | 1.0 | 268 | - | 2 | A timber bench between two terracotta pots: somewhere to sit and look at the farm. |
 | `crates` | home | 1×1 | 1.6 | 994 | - | 0 | A stack of harvest crates with a sack and a jar: yard dressing. |
@@ -157,8 +160,10 @@ The farm valley (`src/scenes/farm.ts`, its `BUILDINGS` list and header) is laid 
   the tracks.
 - **In the fields**: beehives by the lavender and the big trees, sprinklers in the cabbages and the barley.
 
-The ground is levelled under each building's footprint. The water wheel stands on a small quay cut into the bank, half a
-metre above the water, turned so its wheel is over the stream.
+The ground is levelled under each building's footprint, after the land is shaped down to the streams, so a building near
+a bank still stands level. The water wheel stands on a small quay cut into the bank, half a metre above the water, turned
+so its wheel is over the stream, with a race cut through the quay for the wheel to turn in. Stones, reeds, grass and
+trees keep off footprints and the race.
 
 ## Cost
 

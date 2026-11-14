@@ -3,7 +3,7 @@ import type { BrushRenderer } from '../renderer/renderer';
 import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
 import { C, addFlowers, addTuft, groundOf, smooth, type Stream } from './kit';
 import { ModelSet, loadModel } from './model';
-import { GROUPS, MODELS, TILE, type Stand } from './catalog';
+import { GROUPS, MODELS, TILE, blocksWind, type Stand } from './catalog';
 import type { Obstacle } from '../wind/sim';
 
 // The gallery (docs/MODELS.md): every model on its own plot of a level meadow, a row for each group, for looking at each
@@ -73,8 +73,8 @@ export function buildGallery(r: BrushRenderer): Gallery {
       new THREE.Quaternion().setFromEuler(new THREE.Euler(0, s.yaw, 0)), new THREE.Vector3(1, 1, 1))));
     set.addTo(r);
   })();
-  const wind: Obstacle[] = STANDS.filter((s) => s.model.hi[1] > 2).map((s) => ({
-    box: { x: s.x, z: s.z, hx: (s.model.hi[0] - s.model.lo[0]) * 0.45, hz: (s.model.hi[2] - s.model.lo[2]) * 0.45, turn: -s.yaw }, solid: true, height: s.model.hi[1],
+  const wind: Obstacle[] = STANDS.filter((s) => blocksWind(s.model)).map((s) => ({
+    box: { x: s.x, z: s.z, hx: s.model.tiles[0] * TILE * 0.45, hz: s.model.tiles[1] * TILE * 0.45, turn: -s.yaw }, solid: true, height: s.model.hi[1],
   }));
   return { center: new THREE.Vector3(0, 0, 0), radius: half * Math.SQRT2, stream: STREAM, wind, ready, stands: STANDS, height, bare: () => 0 };
 }
