@@ -122,6 +122,11 @@ r.updateLand({ x, y, width, height }, { corners, cover, ground });   // an earth
 - The renderer copies what it's given: changing an array after the call does nothing until `updateLand` sends the new
   values for the tiles that changed. Only that patch is re-painted, without a hitch.
 - The grass grows where the cover says grass, round whatever stands on it (the renderer reads the things it's been given).
+- **The surface as drawn is the game's to query**, so a truck, a dropped good and the tile cursor sit on what the player
+  sees: `r.landAt(x, z)` gives the land's height there (metres), and `r.landHit(ray)` where a line of sight (from
+  `r.view.rayAt`) first meets it, or null, on the CPU with no wait for the GPU. Inside a tile the surface is fixed by
+  its four corners alone (two triangles, split along the same diagonal everywhere), so the game's own rules can work it
+  out the same way without asking.
 
 ### Water (today; the game's river in #202, floods, ice and mud in #207)
 
@@ -161,9 +166,12 @@ mill.remove();
 - **Placed on the land.** Leave `y` out and the thing stands on the land under its middle; give it for a thing on a
   bridge or a truck's bed. `pitch` tips it nose up (radians, after the yaw; a truck on a ramp), `scale` sizes it (1 by
   default; the goods the game fits into a bed).
-- **States** (#205), each telling the player something without a click: working (moving parts turning, running looks
-  and lights on), idle, no power, stopped by the weather, under construction. How each looks is the developer's pick;
-  the call is just the state.
+- **States** (#205), each telling the player something without a click: working, idle, no power, stopped by the
+  weather, under construction. How each looks is the developer's pick; the call is just the state.
+- **Who owns what.** Three calls, each with its own job, so none overrides another: `spin` alone turns the moving parts
+  (0 holds them still), `show` alone switches the running looks and the charge, and `status` only decorates (its tint,
+  its lights dimmed, its scaffold). So the game says each: a mill with no power gets `spin(0)`, `show({ running: false })`
+  and `status = 'unpowered'`; an anemometer turns in the wind whatever its power, because the game keeps its spin.
 - **Markers.** A building with a problem also gets a small marker over it, to spot from afar. The marker is the game's
   HUD (HTML, as now); the renderer says where it goes: `thing.anchor` is the point over the thing's model, in metres
   (#206), which `r.view.toScreen` puts on the page.
@@ -187,6 +195,9 @@ const rock = r.addRock({ x, z, size, seed }, { tag });
 crop.remove(); oak.remove(); rock.remove();
 ```
 
+- **Plants are handled as things are**: each has `highlight`, `tint`, `visible` and `preview` (a crop or a sapling
+  being planted, see-through, never picked), and picking one gives its tag. A field's tiles share the field's tag, so
+  the game highlights or tints a whole field by setting each of its tiles.
 - **Crops**: the game's five (wheat, beans, tomato, sunflower, flax), each at its four stages, readable at a glance, a
   flowering field showing its flowers (#213). One call per tile, centred on it. The field's bed and frame are inked: a
   thing (#203).
@@ -208,7 +219,7 @@ pointer, keeping the view over the map) and tells the renderer where it is each 
 | Where the camera is: the ground point in the middle of the screen, which way it looks from, how close (zoom in CSS pixels a metre, as the game's) | `r.view.place({ x, y, z, heading, zoom })` | #201 |
 | (The demo's own camera: target, `view` 0..3, `zoom`, `turn`, `pan`, `update`) | `r.view` (`ViewCamera`) | today |
 | Where a point of the world is on the page (for the HUD's markers, labels and the cursor) | `r.view.toScreen(x, y, z)` | #201 |
-| The line of sight under the pointer (to find the tile under it, with the land's heights) | `r.view.rayAt(clientX, clientY)` | #201 |
+| The line of sight under the pointer (to find the tile under it: `r.landHit(ray)`, above) | `r.view.rayAt(clientX, clientY)` | #201 |
 | The pitch, and the zoom range the demo uses | `PITCH`, `MIN_ZOOM`, `MAX_ZOOM` | today |
 
 - `heading` is where the camera looks from, radians: 45° + 90° × the view at rest, eased by the game in between.
@@ -241,8 +252,8 @@ the game wants shown.
 
 | What the game shows | Call |
 |---|---|
-| A thing under the pointer or selected | `thing.highlight = true` |
-| A thing tinted for what's in focus (a truck's stops, the buildings next door that would trade) | `thing.tint = { color, strength }` |
+| A thing or plant under the pointer or selected | `thing.highlight = true` (a field: each of its tiles) |
+| A thing or plant tinted for what's in focus (a truck's stops, the buildings next door that would trade) | `thing.tint = { color, strength }` |
 | The building being placed, see-through, green where it fits or red where it doesn't (never picked, casts no shadow) | `r.addThing(model, place, { preview: 'fits' })`, then `thing.preview = 'blocked'` |
 | A colour per tile washed over the land: fertility, ground, height, water, power, roads, bees | `r.setOverlay({ width, height, color: Uint32Array, strength })` (a colour per tile, sRGB; `NONE` leaves the tile clear) or `null` |
 | Routes on the ground, the power networks' wires between pylon tops (sagging), a range's dashed ring | `r.setLines([{ points: [{ x, y?, z }, ...], color, style: 'route' \| 'wire' \| 'dashed' }])`: a point with no `y` lies on the land |
@@ -301,8 +312,10 @@ const wind = startWind({ nx, nz, cell, x0, z0 }, obstacles, { speed, direction, 
 wind.setObstacles(obstacles);       // a building placed, a hedge planted, a tree cleared (#208)
 wind.setGoal(goal);                 // what the weather wants; eases there over a few seconds
 wind.advance(gameSeconds);          // each frame, by game time (nothing while paused)
-wind.at(x, z, height);              // the wind at a point, m/s along x and z: for a turbine, a gale's damage, shelter
-const save = await wind.save();     // with the game's save; wind.restore(save) carries on bit for bit
+wind.onTick((snap) => rules.wind(snap.tick, snap));  // the rules: every tick, in order, the same on any machine
+windAt(snap, x, z, height);         // in the rules, at that tick: m/s along x and z for a turbine, a gale, shelter
+wind.at(x, z, height);              // between the last two ticks, as the frame sees it: for the picture only
+const save = await wind.save();     // with the game's save; wind.restore(save) carries on from that tick
 if (wind.cur) r.setWind(wind.prev!, wind.cur, wind.alpha);
 r.restartWind();                    // a new wind, not a continuation (a level loading): the trees and dust start at rest
 ```
@@ -311,12 +324,22 @@ r.restartWind();                    // a new wind, not a continuation (a level l
 |---|---|
 | `WindWorker` (the simulation in a worker; today the caller makes the worker from `wind/worker.ts`) | today |
 | `startWind(...)`: the same, making its own worker, so the game never names the worker's file | #199's split |
+| `wind.onTick(f)`, `snap.tick`, `windAt(snap, ...)`: each tick for the rules | today |
 | `WindSim` and `windAt(snapshot, x, z, height)`: the same simulation with no worker, for the game's tests and bots | today |
 | Obstacles: a circle, a strip or a turned box in metres, `solid` with a height (a building) or with a `drag` (`DRAG.hedge`, `DRAG.crown`), given once at the start | today |
 | `steadyWind(speed, direction)`: one even wind, for a scene with no simulation | today |
 | `wind.setObstacles(list)`: the obstacles change in play; queued against the ticks like a goal (so the same calls replay the same wind) and kept in the save | #208 |
 | `r.restartWind()` | #199's split |
 | The game's turbines, gales and shelter reading it | #208 |
+
+- **The rules read whole ticks.** `wind.at` blends the last two snapshots by how far the frame is past the latest, and
+  what has arrived from the worker depends on the machine, so it's for drawing only. The rules take each tick's
+  snapshot as `onTick` hands it over (every tick, in order, numbered by `snap.tick`), and query it with
+  `windAt(snap, ...)`: a turbine's output for tick n is the same on the Arc laptop as on the developer's machine, however
+  far behind the worker runs. #208 ties the game's own rule clock to those ticks.
+- **A save is as of a tick.** `wind.save()` keeps the state as of the last tick due, and a restore carries on bit for bit
+  from it; the part of a tick the clock had run past it (under 0.1 s) isn't kept today, so a restored game's next tick
+  comes up to 0.1 s later than it would have. #208 puts that fraction in the save.
 
 The simulation covers up to 256 by 256 cells; at a metre a cell that's 256 m, a little more than a commission's map at
 4 m a tile, so the country past the edge may need 2 m cells (#208).
