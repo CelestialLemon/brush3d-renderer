@@ -82,7 +82,7 @@ cover only the cells within one of water (into one buffer per grid, with room fo
   sun as well as the sky, as silt is; things standing in water get a thin foam line where it meets them and a faint wet
   band above it ("foam line"). The waterline is drawn by everything but the water (`waterline` in `writeGBuffer`), only
   below the highest water, not along blades and leaves (no foam line on them), and not on things that float (the boat:
-  `addModel`'s `floats`). Left out: foam carried on fast water, milky mud with swirls of silt, the wet band alone.
+  `ModelSet.add`'s `floats`). Left out: foam carried on fast water, milky mud with swirls of silt, the wet band alone.
 
 - **Ice** (#14). `layWater` carries each wet cell's ice to the dry cells beyond it (as it does the mud), and works out how
   far each wet cell is from the nearest dry one (`shoreDistance`, metres, up to 8). `WaterField` keeps, per cell, the

@@ -56,9 +56,9 @@ solar panels' power); the looks ease over about a second and a half, hiding the 
 The renderer is only the presentation layer: the game owns the state and the logic of the wind, the water and the weather, and
 anything they cause, and the renderer draws what it's given. Weather is an epic, #3.
 
-The farm includes a detailed Blender-built wheat mill. Use the **Wheat mill** button or
-`?focus=mill` to visit it. See [the asset notes](docs/WHEAT_MILL.md) for its editable Blender
-source, export command and visual checks.
+The farm's buildings and props are a set of 28 solarpunk models made for the game by Blender scripts
+([docs/MODELS.md](docs/MODELS.md)). Step through them with the ◀ ▶ buttons in the demo's controls, open one with
+`?focus=<name>` (say `?focus=bakery`), or see them all side by side in the gallery (`?scene=gallery`).
 
 ## How it draws
 
@@ -78,7 +78,10 @@ source, export command and visual checks.
   meshes are cut into so each pass draws only what it sees (`tiles.ts`).
 - `src/scenes/`: demo scenes, built in TypeScript: `farm.ts` (the *Dear Alice* aerial, rebuilt and grown into a valley), `meadow.ts` (the first slice),
   and `kit.ts`, the pieces both are made of (trees, stones, grass, reeds, lines on the map, water).
+  `gallery.ts` shows every model on its own plot; the models are `models/*.glb`, read by `model.ts` and listed by
+  `catalog.ts` (`docs/MODELS.md`).
 - `src/app/`: the demo viewer, and the scripted weather standing in for the game (`timeline.ts`).
 - `tools/`: headless capture (`shot.ts`), motion measurement (`motion.ts`), pops in the wind (`pops.ts`), videos
   (`video.ts`) and the frame's cost (`profile.ts`), on `browser.ts`.
+- `tools/blender/`: the scripts that make the models (`build.py`, the shared `kit.py`, one script a model in `models/`).
 - `reference/`: how to pull frames from the reference film (kept out of git: they're copyrighted).
