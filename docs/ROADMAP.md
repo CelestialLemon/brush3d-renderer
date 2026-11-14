@@ -5,8 +5,9 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 ## Now
 
 - **Into the game, epic CelestialLemon/Soil-n-Silo#212**: brush3d replaces the game's pixel3d renderer. The order is in
-  the epic: #199 (here) → #200 (the move into the game) → #201 (first light) → #202–#210 and #213 → #211 (the swap).
-  1. #199 the API and the split (done 2026-11-14, #67 and #68): `docs/API.md` is the renderer's API for the game, in
+  the epic: #199 → #200 (the move into the game) → #201 (first light) → #202–#210 and #213 → #211 (the swap), all
+  Soil-n-Silo issues.
+  1. Soil-n-Silo#199 the API and the split (done 2026-11-14, #67 and #68): `docs/API.md` is the renderer's API for the game, in
      its terms (tiles, buildings, fields), each part marked today or with the task that adds it. `src/index.ts` is the
      one door in: the demo (`src/demo`) imports nothing else, and the typecheck enforces it; `src/shared.ts` (the wind
      simulation and the cloud recipe) loads in Node alone, for the rules' tests. The renderer, wind, painting kit
