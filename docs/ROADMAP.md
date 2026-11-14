@@ -26,7 +26,8 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   10. #13 seasons (parts 1 and 2, the hour following the game's sun and the season's look for the rest, merged 2026-11-07 as #51 and #52; part 3, the trees' look, in #54);
   11. #14 snow, frost and ice (done 2026-11-13: the lying snow #58, falling snow and the blizzard #61, frost #62, ice on
       the water #63: see Weather);
-  12. #19 the water's own look, chosen under every weather.
+  12. #19 the water's own look, chosen under every weather (done 2026-11-14: the picks #64, fitted to the weather #65:
+      see Water).
 - **The models: a solarpunk set** (2026-11-14, awaiting the developer's review): 28 new buildings and props for the game,
   made from scratch by Blender scripts (`tools/blender/`), replacing the first eleven. `docs/MODELS.md` has the style,
   the scale (one game tile is 4 m), the file's rules and the build. In short:
@@ -117,10 +118,16 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 
 ### Water (first pass shipped 2026-10-29; reviewed, these are known weak)
 
-- **Evening water is dull slate-blue.** At golden hour and sunset it should glow warm. Under part cover the clouds in it
-  now catch the evening's warm light (#37); a clear evening's water is still slate-blue, and may want a sun-glare streak.
-- **No change with the camera's tilt.** The water looks much the same at every angle (Fresnel is fixed by depth, not by the
-  view). Fine from the aerial camera, flat otherwise.
+- **The water's own look (#19, done 2026-11-14, #64 and #65):** chosen under every weather, in a test patch of its own
+  (`?scene=water`: a pond, a bend, a flooded meadow, a fast run). The developer's picks: **clear** water (the bed
+  showing in the shallows with sunlight wobbling over it, a deep teal in the deep), **flow A** (soft ripples and glints,
+  the most understated that still shows the flow) and **evening B** (gold glints and the low sky's warmth mirrored
+  evenly, a third softer than first shown). Under an overcast sky it mirrors more of the sky, as pale steel. Patterns
+  along the current no longer swirl round a bend (fixed turns, blended). Not picked: today's look as it was, painted
+  bands, a watercolour wash; painted current lines, drifting flecks; warm streaks on the swells, the low sun's glitter
+  path. Costs +0.17 ms at 1080p with the stream across the screen, most of what was spare (`docs/PERFORMANCE.md`).
+- **The camera's tilt is fixed** (30°, decided on #19), so the water needn't change with it: how much it mirrors follows
+  its depth, its ripples and the sky's cover instead.
 - **The stream is brook-sized.** A wider river or a pond would show the reflections off better. (#47's valley has a pond.)
 - **Dynamic water (#18, done 2026-11-03, #45 and #48):** the game sends the water as a map (`setWater`: the surface,
   flow and mud per tile, `docs/WATER.md`), eased in over 0.6 s, so a flood creeps over the land and drains. Reflections
@@ -129,7 +136,8 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   with a faint wet band above it; floating things (the boat) get none. Left out: foam on fast water, milky mud, the
   plain wet band. Known: laying out the farm's 250 × 250 map costs 9 to 20 ms per send (a dropped frame; move it to a
   worker if the game sends big maps often), and the demo's boat doesn't float up in a flood (the game's to move).
-- **Half-res reflections smear up close.** Soft by design, but edges blur at high zoom.
+- **Half-res reflections smear up close.** Soft by design, but edges blur at high zoom. Full size would cost about 2.4 ms
+  more at 1080p (#19): not within the budget.
 - **Cloud reflections** (#8, #37): the water and the solar glass mirror the clouds overhead, drifting with them. The
   developer's picks (2026-11-01): "lit" (each cloud bright on its sunward side, its thick middle a cooler grey, warm in
   the evening) at "clear" strength. The other looks (plain, painted) and strengths (faint, bold) were left out.
