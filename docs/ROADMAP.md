@@ -4,6 +4,15 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 
 ## Now
 
+- **Into the game, epic CelestialLemon/Soil-n-Silo#212**: brush3d replaces the game's pixel3d renderer. The order is in
+  the epic: #199 (here) → #200 (the move into the game) → #201 (first light) → #202–#210 and #213 → #211 (the swap).
+  1. #199 the API and the split (done 2026-11-14, #67 and #68): `docs/API.md` is the renderer's API for the game, in
+     its terms (tiles, buildings, fields), each part marked today or with the task that adds it. `src/index.ts` is the
+     one door in: the demo (`src/demo`) imports nothing else, and the typecheck enforces it; `src/shared.ts` (the wind
+     simulation and the cloud recipe) loads in Node alone, for the rules' tests. The renderer, wind, painting kit
+     (`src/kit`) and models (`src/models`) stand apart from the demo; the demo's frames are unchanged. Open for later
+     tasks: the game's zoom at 4 m a tile is 4–24 px/m, under the 16–192 brush3d was tuned at (#201, #210); the wind
+     grid's 256 cells may need 2 m cells past the map (#208); moving obstacles and the sub-tick clock in wind saves (#208).
 - **Weather, epic #3** (planned 2026-10-30): season, weather and hour change the whole picture. The decisions are in #3; in
   short, the game owns the weather's state and logic and the renderer only draws it. The order:
   1. #6 performance: measure the frame and set the weather's budget (done 2026-10-30: the farm 17.5 ms on the laptop,
