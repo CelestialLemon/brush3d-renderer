@@ -48,7 +48,9 @@ import { BrushRenderer, TILE, type Weather } from '../render';
 - **Colours** in calls are sRGB hex numbers (`0xcfd6d8`), as a designer would pick them.
 - **Two clocks.** `render(seconds)` takes the screen's clock: ripples, swaying, the looks easing. Anything the rules care
   about runs on the game's clock and reaches the renderer as values: the hour, the weather, the wind's ticks, the clouds'
-  drift. Paused, the game stops sending changes; the picture stays alive (water ripples, trees settle).
+  drift. Paused, the game stops sending changes and stops the clouds (it sends their drift with no speed, `vx` and `vz`
+  0, since the renderer carries the clouds on at the speed it was last given); the picture stays alive (water ripples,
+  trees settle).
 
 ## A frame
 
@@ -59,7 +61,7 @@ r.setSeason({ season: 'winter', character: 'hard' });             // once per le
 
 function frame(now: number) {
   game.step(dt);
-  r.setWind(wind.prev, wind.cur, wind.alpha);                     // every frame (today)
+  if (wind.cur) r.setWind(wind.prev!, wind.cur, wind.alpha);      // every frame, once the wind is up (today)
   r.setWeather(weatherFromGame(game));                            // when it changes (today; #207 maps the game's)
   r.setGround(groundFromGame(game));                              // when it changes (today; #207)
   r.setWater(waterFromGame(game));                                // when it changes (today; #202, #207)
@@ -70,8 +72,9 @@ function frame(now: number) {
 }
 ```
 
-Sending a map "when it changes" means comparing with what was last sent; the calls themselves are cheap to repeat but each
-starts a fresh ease.
+Send a map only when it has changed (compare with what was last sent): `setWater` lays its whole grid out again (about 9
+to 20 ms for a 250 by 250 grid, `docs/WATER.md`), and `setWater` and `setGround` start a fresh ease each time. `setWeather`
+is cheap: its looks ease towards whatever was asked last.
 
 ## Starting up, quality and the canvas
 
@@ -98,20 +101,27 @@ The game hands over its map instead, and the renderer paints it:
 
 ```ts
 r.setLand({
-  // A height grid over the map and the country past its edge: a corner at (x0, z0), nx by nz cells of `cell` metres
-  // (1 m: four a tile, so a bank or a cliff can be drawn inside a tile), heights in metres, x fastest.
-  nx, nz, cell, x0, z0, height: Float32Array,
-  // What covers each tile, and what the ground is, by tile: the paint (grass, bare soil, track, rock) and its subtle tint
-  // (clay, sand, stony), as the game's map has them.
-  tiles: { width, height, cover: Uint8Array, ground: Uint8Array },
+  width, height,                 // the map, in tiles
+  // Each tile's own four corners (metres; north-west, north-east, south-east, south-west, tile by tile along a row, rows
+  // in order: 4 × width × height values). Neighbours' corners needn't meet: where they don't, the edge between them is a
+  // cliff face from one to the other. Where they do, the land runs on smoothly (a bank is a steep slope inside a tile).
+  corners: Float32Array,
+  // What covers each tile, and what the ground is (width × height each): the paint (grass, bare soil, track, rock) and
+  // its subtle tint (clay, sand, stony), as the game's map has them.
+  cover: Uint8Array, ground: Uint8Array,
+  // The country past the map's edge (so the camera never sees the end of the world): a coarser height grid round it,
+  // a corner at (x0, z0), nx by nz cells of `cell` metres, x fastest.
+  beyond: { nx, nz, cell, x0, z0, height: Float32Array },
 });
-r.updateLand({ x, y, width, height });   // an earthwork: re-paint just these tiles, with no hitch
+r.updateLand({ x, y, width, height }, { corners, cover, ground });   // an earthwork: the new values for just these tiles
 ```
 
-- The game's world layer turns its levels, cliffs and banks into the heights (it knows where a level drops); the renderer
-  draws a steep drop as a cliff face, a gentle one as a bank. Their look is the developer's pick in #202.
+- The game's world layer gives its levels, cliffs and banks as the corners (it knows where a level drops, and keeps the
+  two heights of a cliff apart, as `src/world/ground.ts` does today); the renderer paints the cliff faces and the slopes.
+  Their look is the developer's pick in #202.
+- The renderer copies what it's given: changing an array after the call does nothing until `updateLand` sends the new
+  values for the tiles that changed. Only that patch is re-painted, without a hitch.
 - The grass grows where the cover says grass, round whatever stands on it (the renderer reads the things it's been given).
-- The country beyond the map's edge comes in the same grid, so the camera never sees the end of the world.
 
 ### Water (today; the game's river in #202, floods, ice and mud in #207)
 
@@ -133,6 +143,7 @@ changes how it looks, and takes it away. The renderer draws its model.
 const models = await loadModels();                       // the solarpunk set (#203; the catalogue is today's MODELS)
 const mill = r.addThing(models.mill, { x, z, yaw }, { tag: building.id });
 mill.place({ x, z, yaw });                               // moved: a truck every frame, cheaply
+truck.place({ x, y, z, yaw, pitch, scale });             // a truck tipped up a ramp; a good shrunk to fit a bed
 mill.show({ running: true });                            // its `running_*` look; also `charge` (0..4), `stage`, `variant`
 mill.spin(0.4);                                          // its `move_spin_*` parts, turns a second (#205)
 mill.status = 'working';                                 // 'working' | 'idle' | 'unpowered' | 'weather' | 'building' (#205)
@@ -148,10 +159,14 @@ mill.remove();
 - **The game's id goes with it** (`tag`): picking a thing gives the tag back, so the game never has to keep its own map
   from renderer objects to buildings (as it does with pixel3d today).
 - **Placed on the land.** Leave `y` out and the thing stands on the land under its middle; give it for a thing on a
-  bridge or a truck's bed.
+  bridge or a truck's bed. `pitch` tips it nose up (radians, after the yaw; a truck on a ramp), `scale` sizes it (1 by
+  default; the goods the game fits into a bed).
 - **States** (#205), each telling the player something without a click: working (moving parts turning, running looks
-  and lights on), idle, no power, stopped by the weather, under construction; a building with a problem also shows a
-  small marker. How each looks is the developer's pick; the call is just the state.
+  and lights on), idle, no power, stopped by the weather, under construction. How each looks is the developer's pick;
+  the call is just the state.
+- **Markers.** A building with a problem also gets a small marker over it, to spot from afar. The marker is the game's
+  HUD (HTML, as now); the renderer says where it goes: `thing.anchor` is the point over the thing's model, in metres
+  (#206), which `r.view.toScreen` puts on the page.
 - **Spinning parts** turn at the rate the game gives (it knows the wind at a turbine, the river's flow at the wheel); the
   renderer turns the part, its ink and its shadow smoothly.
 - **Goods** in a truck's bed are things too, placed by the game as the truck moves (a call per good per frame is cheap).
@@ -190,15 +205,18 @@ pointer, keeping the view over the map) and tells the renderer where it is each 
 
 | What the game does | Call | Stands |
 |---|---|---|
-| Where the camera is: the ground point in the middle of the screen, which way it looks from, how close | `r.view.place({ x, y, z, heading, zoom })` | #201 |
+| Where the camera is: the ground point in the middle of the screen, which way it looks from, how close (zoom in CSS pixels a metre, as the game's) | `r.view.place({ x, y, z, heading, zoom })` | #201 |
 | (The demo's own camera: target, `view` 0..3, `zoom`, `turn`, `pan`, `update`) | `r.view` (`ViewCamera`) | today |
 | Where a point of the world is on the page (for the HUD's markers, labels and the cursor) | `r.view.toScreen(x, y, z)` | #201 |
 | The line of sight under the pointer (to find the tile under it, with the land's heights) | `r.view.rayAt(clientX, clientY)` | #201 |
 | The pitch, and the zoom range the demo uses | `PITCH`, `MIN_ZOOM`, `MAX_ZOOM` | today |
 
 - `heading` is where the camera looks from, radians: 45° + 90° × the view at rest, eased by the game in between.
-- `zoom` is screen pixels per metre. **At 4 m a tile the game's zoom range becomes 4 to 24 px per metre** (16 to 96 px per
-  tile, starting at 8), well below the 16 to 192 brush3d was tuned at (the demo's views are 22 to 40). So the game's
+- `zoom` in `place` is **CSS pixels per metre**, as the game counts it, so a high-DPI screen (the MacBook) shows the same
+  tiles as any other. (Today's `r.view.zoom` counts the screen's device pixels; `place` converts, and `toScreen` and
+  `rayAt` take and give CSS pixels, as pointer events do.)
+- **At 4 m a tile the game's zoom range becomes 4 to 24 px per metre** (16 to 96 px per tile, starting at 8), well below
+  the 16 to 192 brush3d was tuned at (the demo's views are 22 to 40). So the game's
   widest view shows much more land than brush3d has drawn, with smaller brush marks and thinner lines on screen. #201
   checks how the paint holds there (the brush marks' size on screen, shimmer under a pan, the lines), and #210 what the
   extra land costs; anything that changes the look comes to the developer as options.
@@ -226,11 +244,11 @@ the game wants shown.
 | A thing under the pointer or selected | `thing.highlight = true` |
 | A thing tinted for what's in focus (a truck's stops, the buildings next door that would trade) | `thing.tint = { color, strength }` |
 | The building being placed, see-through, green where it fits or red where it doesn't (never picked, casts no shadow) | `r.addThing(model, place, { preview: 'fits' })`, then `thing.preview = 'blocked'` |
-| A colour per tile washed over the land: fertility, ground, height, water, power, roads, bees | `r.setOverlay({ width, height, color: Uint32Array, strength })` or `null` |
-| Routes and power lines on the ground | `r.setLines([{ points: [{ x, z }, ...], color, kind: 'route' \| 'power' }])` |
+| A colour per tile washed over the land: fertility, ground, height, water, power, roads, bees | `r.setOverlay({ width, height, color: Uint32Array, strength })` (a colour per tile, sRGB; `NONE` leaves the tile clear) or `null` |
+| Routes on the ground, the power networks' wires between pylon tops (sagging), a range's dashed ring | `r.setLines([{ points: [{ x, y?, z }, ...], color, style: 'route' \| 'wire' \| 'dashed' }])`: a point with no `y` lies on the land |
 | The tile grid and the contour lines while building or doing earthworks | `r.setGrid(true)` |
 | The tile cursor and the marks of an earthwork | the game's own canvas over the view, as now, placed with `r.view.toScreen` |
-| The HUD's markers, labels and tags | HTML, as now, placed with `r.view.toScreen` |
+| The HUD's markers, labels and tags | HTML, as now, placed with `r.view.toScreen` (a marker at `thing.anchor`) |
 
 ## The hour and the season (today)
 
@@ -278,11 +296,14 @@ snapshots. `docs/WIND.md` has the contract.
 
 ```ts
 const wind = startWind({ nx, nz, cell, x0, z0 }, obstacles, { speed, direction, gustiness, rhythm }, { seed });
+// Its first snapshot comes from the worker a moment later: wind.cur is null until then (wait with `await wind.idle()`,
+// or draw a steadyWind meanwhile).
+wind.setObstacles(obstacles);       // a building placed, a hedge planted, a tree cleared (#208)
 wind.setGoal(goal);                 // what the weather wants; eases there over a few seconds
 wind.advance(gameSeconds);          // each frame, by game time (nothing while paused)
 wind.at(x, z, height);              // the wind at a point, m/s along x and z: for a turbine, a gale's damage, shelter
 const save = await wind.save();     // with the game's save; wind.restore(save) carries on bit for bit
-r.setWind(wind.prev, wind.cur, wind.alpha);
+if (wind.cur) r.setWind(wind.prev!, wind.cur, wind.alpha);
 r.restartWind();                    // a new wind, not a continuation (a level loading): the trees and dust start at rest
 ```
 
@@ -291,8 +312,9 @@ r.restartWind();                    // a new wind, not a continuation (a level l
 | `WindWorker` (the simulation in a worker; today the caller makes the worker from `wind/worker.ts`) | today |
 | `startWind(...)`: the same, making its own worker, so the game never names the worker's file | #199's split |
 | `WindSim` and `windAt(snapshot, x, z, height)`: the same simulation with no worker, for the game's tests and bots | today |
-| Obstacles: a circle, a strip or a turned box in metres, `solid` with a height (a building) or with a `drag` (`DRAG.hedge`, `DRAG.crown`) | today |
+| Obstacles: a circle, a strip or a turned box in metres, `solid` with a height (a building) or with a `drag` (`DRAG.hedge`, `DRAG.crown`), given once at the start | today |
 | `steadyWind(speed, direction)`: one even wind, for a scene with no simulation | today |
+| `wind.setObstacles(list)`: the obstacles change in play; queued against the ticks like a goal (so the same calls replay the same wind) and kept in the save | #208 |
 | `r.restartWind()` | #199's split |
 | The game's turbines, gales and shelter reading it | #208 |
 
@@ -307,8 +329,9 @@ const speed = cloudDriftSpeed(windAloft);                                   // h
 ```
 
 `CLOUD_SHAPE` is the clouds' look, fixed for the game (the developer's pick). The game carries the clouds' drift on at
-`cloudDriftSpeed` and sends it with `setWeather({ cloud, drift, cloudSeed })`, so each panel sees the clouds exactly where
-they're drawn. The shaded share of the land matches the cover on average, so the solar balance holds.
+`cloudDriftSpeed` and sends it with `setWeather({ cloud, drift: { x, z, vx, vz }, cloudSeed })`: the position exactly, and
+the speed the renderer carries them on at between updates, so each panel sees the clouds exactly where they're drawn
+(paused, the speed is 0). The shaded share of the land matches the cover on average, so the solar balance holds.
 
 ## Settings (today; in the game's settings panel in #209)
 
