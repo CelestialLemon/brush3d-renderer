@@ -26,7 +26,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   10. #13 seasons (parts 1 and 2, the hour following the game's sun and the season's look for the rest, merged 2026-11-07 as #51 and #52; part 3, the trees' look, in #54);
   11. #14 snow, frost and ice (done 2026-11-13: the lying snow #58, falling snow and the blizzard #61, frost #62, ice on
       the water #63: see Weather);
-  12. #19 the water's own look, chosen under every weather (done 2026-11-14: the picks #64, fitted to the weather PRNUM:
+  12. #19 the water's own look, chosen under every weather (done 2026-11-14: the picks #64, fitted to the weather #65:
       see Water).
 - **The demo on GitHub Pages** (#15, shipped 2026-10-30): https://celestiallemon.github.io/brush3d-renderer/main/, and a preview
   of every open pull request from this repo at `.../pr-<number>/`, removed when it closes.
@@ -102,7 +102,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
 
 ### Water (first pass shipped 2026-10-29; reviewed, these are known weak)
 
-- **The water's own look (#19, done 2026-11-14, #64 and PRNUM):** chosen under every weather, in a test patch of its own
+- **The water's own look (#19, done 2026-11-14, #64 and #65):** chosen under every weather, in a test patch of its own
   (`?scene=water`: a pond, a bend, a flooded meadow, a fast run). The developer's picks: **clear** water (the bed
   showing in the shallows with sunlight wobbling over it, a deep teal in the deep), **flow A** (soft ripples and glints,
   the most understated that still shows the flow) and **evening B** (gold glints and the low sky's warmth mirrored
