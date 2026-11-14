@@ -4,3 +4,4 @@ out/
 .playwright-cli/
 # Stills from the reference film: copyrighted, kept local (see reference/README.md)
 reference/*.jpg
+__pycache__/
