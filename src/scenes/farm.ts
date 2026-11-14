@@ -139,19 +139,19 @@ function tree(kind: Tree['kind'], u: number, v: number, scale: number, seed: num
 
 /**
  * The models (docs/MODELS.md, made in tools/blender/): where each stands on the map, and which way its front faces (radians
- * from facing down the screen, towards the default view, turning towards +u). The ground is levelled under a building
- * (`pad`), over its footprint in game tiles; small things stand on the land as it is. `hx`, `hz`: the half-size of the
- * ground it takes, along its front and its depth; `height` is for the wind.
+ * from facing down the screen, towards the default view, turning towards +u; `cos`, `sin` are its). The ground is made
+ * level under each (`levelled`): under a building (`pad`) over its footprint in game tiles, under a small thing over the
+ * ground it covers. `hx`, `hz`: the half-size of that ground, along its front and its depth; `height` is for the wind.
  */
-interface Building { model: string; u: number; v: number; facing: number; hx: number; hz: number; height: number; pad: boolean; quay: boolean }
-/** Small things that stand on the land as it lies, taking only the ground they cover. */
+interface Building { model: string; u: number; v: number; facing: number; cos: number; sin: number; hx: number; hz: number; height: number; pad: boolean; quay: boolean }
+/** Small things, taking only the ground they cover (not a whole tile), and no part in the wind. */
 const LOOSE = new Set(['pylon', 'lantern', 'sprinkler', 'solar_panel', 'truck', 'bench', 'crates', 'planter', 'rain_tank']);
 function place(model: string, u: number, v: number, facing = 0, quay = false): Building {
   const info = MODELS[model];
   if (!info) throw new Error(`farm: no model called ${model}`);
   const loose = LOOSE.has(model);
   return {
-    model, u, v, facing, quay, pad: !loose, height: info.hi[1],
+    model, u, v, facing, cos: Math.cos(facing), sin: Math.sin(facing), quay, pad: !loose, height: info.hi[1],
     hx: loose ? Math.max(-info.lo[0], info.hi[0]) : info.tiles[0] * GAME_TILE / 2,
     hz: loose ? Math.max(-info.lo[2], info.hi[2]) : info.tiles[1] * GAME_TILE / 2,
   };
@@ -160,9 +160,9 @@ function place(model: string, u: number, v: number, facing = 0, quay = false): B
 const QUAY = 0.5;
 const BUILDINGS: Building[] = [
   // The homestead, along the top of the yard.
-  place('bakery', 40.5, 24.5), place('garage', 50, 23.5), place('truck', 51, 15.2, 0.45), place('farmhouse', 65, 23), place('coop', 80.5, 15.5),
+  place('bakery', 40.5, 24.5), place('garage', 50, 23.5), place('truck', 51, 15.2, 0.45), place('farmhouse', 65, 23), place('coop', 80.5, 17),
   place('rain_tank', 72.8, 18.6), place('lantern', 46.3, 12.6), place('lantern', 58.4, 13.2), place('bench', 72.3, 13.3, -0.3),
-  place('crates', 45.3, 17.8, 0.3),
+  place('crates', 44.6, 16.6, 0.3),
   // The market corner, below the track: the depot on its spur, the silo, the mill.
   place('depot', 34.5, -1), place('silo', 44.5, 2), place('mill', 51.5, -6.5), place('weather_station', 42, -10.8, 0.2), place('lantern', 39.8, -9),
   // The kitchen garden.
@@ -185,8 +185,8 @@ const JETTY = { from: [14, -55] as [number, number], to: [3.5, -55.8] as [number
 
 /** A map point in a building's own frame: x along its front, z out through its front. */
 function local(b: Building, u: number, v: number): [number, number] {
-  const du = u - b.u, dv = v - b.v, c = Math.cos(b.facing), s = Math.sin(b.facing);
-  return [du * c + dv * s, du * s - dv * c];
+  const du = u - b.u, dv = v - b.v;
+  return [du * b.cos + dv * b.sin, du * b.sin - dv * b.cos];
 }
 /** How far outside a building's footprint a map point is, metres (0 inside). */
 function footprint(b: Building, u: number, v: number) {
@@ -320,13 +320,38 @@ function unbuilt(x: number, z: number, u: number, v: number, ds: number) {
   h -= 0.07 * (1 - smooth(PATH_HALF - 0.2, PATH_HALF + 0.5, pathDistance(x, z)));
   return h;
 }
-/** The level each building's ground is made: the land's at its middle (a quay's: a little above the water). */
+/**
+ * The ground made level under what's built, easing back into the land round it (`from`: the land so far). Buildings ease
+ * over 3 m, small things over a metre. Where two reach the same ground the nearer counts for more, and inside a footprint
+ * only its own does, so neighbours in a row don't tilt each other's ground.
+ */
+function levelled(from: number, u: number, v: number, pads: boolean) {
+  let sum = 0, weight = 0, most = 0;
+  nearest = Infinity;
+  for (const b of BUILDINGS) {
+    if (b.pad !== pads || b.quay) continue;
+    const reach = pads ? 3 : 1.2, far = Math.max(b.hx, b.hz) * Math.SQRT2 + reach;
+    if (Math.abs(u - b.u) > far || Math.abs(v - b.v) > far) continue;
+    const d = footprint(b, u, v);
+    nearest = Math.min(nearest, d);
+    if (d >= reach) continue;
+    const w = 1 - smooth(pads ? 0.4 : 0.1, reach, d), k = w / Math.max(d, 1e-3) ** 2;
+    sum += k * levelOf(b); weight += k; most = Math.max(most, w);
+  }
+  return weight > 0 ? from + (sum / weight - from) * most : from;
+}
+/** How far the point `levelled` last looked at is from the nearest footprint it weighed (Infinity: none near). */
+let nearest = Infinity;
+/**
+ * The level the ground is made under each thing: the land's at its middle. A small thing's (a crate, a tank, a solar
+ * sheet) is taken after the buildings' ground is made, so it stands right beside one; a quay's is a little above the water.
+ */
 const LEVELS = new Map<Building, number>();
 function levelOf(b: Building) {
   let y = LEVELS.get(b);
   if (y === undefined) {
-    const [x, z] = W(b.u, b.v);
-    y = b.quay ? WATER_Y + QUAY : unbuilt(x, z, b.u, b.v, waterDistance(x, z));
+    const [x, z] = W(b.u, b.v), land = unbuilt(x, z, b.u, b.v, waterDistance(x, z));
+    y = b.quay ? WATER_Y + QUAY : b.pad ? land : levelled(land, b.u, b.v, true);
     LEVELS.set(b, y);
   }
   return y;
@@ -335,13 +360,12 @@ function levelOf(b: Building) {
 function height(x: number, z: number) {
   const [u, v] = M(x, z);
   const ds = waterDistance(x, z);
-  let h = unbuilt(x, z, u, v, ds);
-  // Under each building the ground is levelled (after the floodplain, which would bend it), easing back into the land.
-  for (const b of BUILDINGS) {
-    if (!b.pad || b.quay) continue;
-    const d = footprint(b, u, v);
-    if (d < 3) h += (levelOf(b) - h) * (1 - smooth(0.4, 3, d));
-  }
+  // The land is shaped down to the streams first (the floodplain would bend a pad), then levelled under what's built:
+  // the buildings, then the small things among them.
+  let h = levelled(unbuilt(x, z, u, v, ds), u, v, true);
+  // A small thing beside a building doesn't lift the building's own ground.
+  const free = smooth(0.1, 0.6, nearest);
+  if (free > 0) h += (levelled(h, u, v, false) - h) * free;
   // The pond deepens towards its middle.
   const bed = WATER_Y - 0.8 - 0.7 * smooth(0, 7, -pondShore(u, v));
   h = bed + (h - bed) * smooth(0.3, 2.3, ds);
@@ -450,16 +474,10 @@ function windObstacles(): Obstacle[] {
   ];
 }
 
-/** Where a model stands in the world: its floor at the ground's mean height round it (a quay's, at its own level). */
+/** Where a model stands in the world: on the ground made level for it. */
 function standOf(b: Building): Stand {
-  const yaw = Math.PI / 4 + b.facing, [x, z] = W(b.u, b.v), c = Math.cos(yaw), s = Math.sin(yaw);
-  let y = 0, n = 0;
-  for (const lx of [-1, 0, 1]) for (const lz of [-1, 0, 1]) {
-    const px = lx * b.hx * 0.8, pz = lz * b.hz * 0.8;
-    y += height(x + px * c + pz * s, z - px * s + pz * c); n++;
-  }
-  // A building stands on its levelled ground; a small thing on the land as it lies, at its mean under it.
-  return { model: MODELS[b.model], x, y: b.pad ? levelOf(b) : y / n, z, yaw };
+  const [x, z] = W(b.u, b.v);
+  return { model: MODELS[b.model], x, y: levelOf(b), z, yaw: Math.PI / 4 + b.facing };
 }
 
 /** The models, once they have loaded (each file once, however many times it stands on the farm). */
