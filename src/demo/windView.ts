@@ -1,5 +1,4 @@
-import type { WindSnapshot } from '../wind/sim';
-import type { WindWorker } from '../wind/client';
+import type { WindSnapshot, WindWorker } from '../index';
 
 // The wind from above (#36), for looking at the simulation itself: a panel in the corner showing the whole world's
 // ground wind, turned as the camera is, so up the panel is up the screen. Colour is how hard it blows, from still (deep

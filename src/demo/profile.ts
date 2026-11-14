@@ -7,10 +7,9 @@
 // of the canvas's size, not the canvas: on the MacBook the canvas held every frame to the screen's refresh, so the times
 // came out in steps of 16.7 ms.
 import * as THREE from 'three';
-import type { BrushRenderer, DrawnKind } from '../renderer/renderer';
-import { PassTimer } from '../renderer/timer';
-import { WEATHER_PRESETS, type Weather } from '../renderer/weather';
-import { steadyWind, WIND_SCALE } from '../renderer/wind';
+import {
+  type BrushRenderer, type DrawnKind, PassTimer, WEATHER_PRESETS, type Weather, steadyWind, WIND_SCALE,
+} from '../index';
 
 export interface ProfileCase {
   label: string; width: number; height: number; wind: number; hide?: DrawnKind[];

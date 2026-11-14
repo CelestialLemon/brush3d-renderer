@@ -94,7 +94,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   - Woods along the edges, more hedges and drifts of wild flowers.
   - The first models (farmhouse, barn, hen house, well, glasshouse, windmill, hay wagon, rowing boat, scarecrow) were made
     in Blender by Sol. They were replaced on 2026-11-14 by the solarpunk set (see The models, above, and docs/MODELS.md),
-    and the farmstead, the windmill's knoll and the yard re-laid for it; the layout is `src/scenes/farm.ts`'s header.
+    and the farmstead, the windmill's knoll and the yard re-laid for it; the layout is `src/demo/scenes/farm.ts`'s header.
   - For the bigger land: the big meshes are cut into 24 m tiles, each drawn only when a pass can see it
     (`src/renderer/tiles.ts`), and the sun's shadow covers only the ground on screen (`shadowFollow`).
 
@@ -158,7 +158,7 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
 
 - **The handoff and the overcast look (#7, done 2026-10-31 in #29 and #30).** `renderer.setWeather` takes the game's
   weather (cloud, rain, snow, heat, haze); the cover is drawn exactly as given (#8's cloud shadows read it) and the light
-  that follows from it eases over about 1.5 s. Presets, URL params, sliders and a scripted timeline (`src/app/timeline.ts`)
+  that follows from it eases over about 1.5 s. Presets, URL params, sliders and a scripted timeline (`src/demo/timeline.ts`)
   stand in for the game; the tools take the weather, with `falling=0` to leave out what's in the air. Under cloud the light
   comes from the whole sky (tops lit, sides half, undersides shade), the sun's shadows fade to a soft darkening under
   things, and the tones close up with the colour kept (`src/renderer/overcast.ts`). The developer chose Slate, of three
@@ -295,7 +295,7 @@ Planned 2026-10-30 as epic #3, with its tasks #6 to #14, #18 and #19 (see Now).
   drabber). The developer's picks (2026-11-07): the look near the game's turf with a gentle light (not the bolder painted
   one), winter's grass a dormant straw-olive (not bleached pale, which read as frost). The demo's scenes stand in for the game's crops by
   season (young, ripe, stubble, ploughed; the wildflowers thinning out; the lavender in flower only in summer).
-  Part 3, the trees (`src/scenes/seasonTrees.ts`): each season builds its own tree models once, at level load, so nothing
+  Part 3, the trees (`src/kit/seasonTrees.ts`): each season builds its own tree models once, at level load, so nothing
   changes frame to frame and there's no hitch (the developer's pick, over recolouring summer's). Spring: blossom on the
   orchards, on a few wild trees and hedges, cream to peach (it stays a dusky rose at golden hour, where pink goes lavender),
   and fresh greens. Autumn: a patchwork, each tree and each of its branches turning at its own pace, green through gold

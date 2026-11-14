@@ -320,6 +320,18 @@ export class BrushRenderer {
   }
 
   /**
+   * A new wind, not the last one carried on (a level loading, the demo starting a wind afresh): the drawn wind's own
+   * clock, the trees' springs and the fresh dust start again from rest at the next setWind.
+   */
+  restartWind() { this.wind.restart(); this.trees.restart(); this.dust.restart(); }
+
+  /**
+   * Sets the renderer's clock (seconds, render's `time`) without drawing: a map sent next (setWater, setGround) starts its
+   * ease from there. render sets it too.
+   */
+  setTime(time: number) { this.shared.uTime.value = time; }
+
+  /**
    * Where dust can lift (#36): the game's map of bare, dry ground (DustSource), sent again when the ground dries or wets.
    * In a dust storm (the weather's dust haze), a gust lifts dust there, which the wind carries off and which lingers a
    * few seconds. Null: none.

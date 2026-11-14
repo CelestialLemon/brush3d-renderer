@@ -55,7 +55,7 @@ interface Move {
   /** Lightning, standing in for the game (#12): strikes as [time, x, z] and distant flickers' times. */
   lightning?: { strikes?: [number, number, number][]; flickers?: number[] };
 }
-/** The game's updates: a few a second (src/app/timeline.ts), so the weather comes in steps the renderer eases over. */
+/** The game's updates: a few a second (src/demo/timeline.ts), so the weather comes in steps the renderer eases over. */
 const tick = (t: number) => Math.floor(t * 4) / 4;
 const STILL = { x: -1, z: 4, zoom: 48, view: 0 };
 const CLOUDS = { x: -1, z: 4, zoom: 24, view: 0 };

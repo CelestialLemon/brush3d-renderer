@@ -1,5 +1,5 @@
 # Builds the models (tools/blender/models/) into .glb files and writes their index. See docs/MODELS.md.
-#   flatpak run org.blender.Blender -b --factory-startup --python-exit-code 1 --python $PWD/tools/blender/build.py -- $PWD/src/scenes/models [name ...]
+#   flatpak run org.blender.Blender -b --factory-startup --python-exit-code 1 --python $PWD/tools/blender/build.py -- $PWD/src/models [name ...]
 # With no names, every model. Each is a deterministic generator: `build(m)` draws into a kit.Model.
 import importlib
 import json

@@ -137,7 +137,7 @@ renderer.setGround(null, ease);  // bare everywhere, eased out as any map is (at
   as the ground is added): its hue, from the earth's to the grass's. Not the colour the season has turned it to: a dry
   winter turns a yellow-green to a straw the dirt's own colour.
 
-`src/app/ground.ts` is the demo's stand-in for the game: the snow a little deeper in some places than others, from the
+`src/demo/ground.ts` is the demo's stand-in for the game: the snow a little deeper in some places than others, from the
 demo's `Lying` slider or `?lying=0..1`; the land wetting in rain and drying after, hollows last and rises first, from the
 `Wet` slider, `?wet=0..1` or the timeline's showers and storms; and the tracks and the yard (the scene's bare ground)
 muddy as they wet; the frost from the `Frost` slider, `?frost=0..1` or the timeline's `late-frost` (spring) and

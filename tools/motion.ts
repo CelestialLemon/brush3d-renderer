@@ -1,7 +1,7 @@
 // Measures how steady the picture is as the camera moves: the paint should stay on the world, not crawl or shimmer.
 //   node tools/motion.ts [out-dir] [query ...]      e.g.  node tools/motion.ts out "zoom=40" "scene=meadow&zoom=40"
 //
-// For each query (a demo URL, see src/app/main.ts) it draws a frame, pans the camera by a fraction of a pixel, draws again,
+// For each query (a demo URL, see src/demo/main.ts) it draws a frame, pans the camera by a fraction of a pixel, draws again,
 // shifts the first frame by the same amount and compares. An orthographic pan moves everything on screen by exactly that
 // amount, so whatever differs is the picture changing under motion. It reports the mean difference (0-255) and the share of
 // pixels that differ by more than 8, over the frame and with each kind of material left out (what drops is that kind's share),

@@ -122,7 +122,7 @@ cover only the cells within one of water (into one buffer per grid, with room fo
 
 ## The demo
 
-The demo stands in for the game (`src/app/water.ts`): the scene describes its water (its usual level, its channel and
+The demo stands in for the game (`src/demo/water.ts`): the scene describes its water (its usual level, its channel and
 which way and how fast it flows: on the farm, the stream, the pond it runs into and the brook out of it), and the demo
 makes the map with the game's rule: the water stands at the stream's level plus a
 rise and reaches every cell lower than that which it can get to over lower ground, never off the land. Out of the
@@ -130,7 +130,7 @@ channel it runs at a quarter of the stream's speed.
 
 - `?water=usual|spate|flood`, then `rise` (m over the usual), `flow` (times the usual speed), `mud` and `ice` over it.
 - The Water, flow, mud and ice sliders (`?ice=`, #14).
-- `?scene=water`: the water's test patch (#19, `src/scenes/waterPatch.ts`): a still pond, a slow bend, a flooded
+- `?scene=water`: the water's test patch (#19, `src/demo/scenes/waterPatch.ts`): a still pond, a slow bend, a flooded
   meadow with tussocks and grass standing in it, and a fast run over stones under a plank bridge, side by side.
   `tools/video.ts patch` holds on each in turn (`QUERY="scene=water"`), `patch-glide` glides down it.
 - `?timeline&spell=flood`: a storm swells the stream, which runs fast and brown, spills over the floodplain, and drains
