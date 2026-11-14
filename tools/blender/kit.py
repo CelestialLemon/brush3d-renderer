@@ -320,7 +320,7 @@ class Model:
             rings.append(at_y(outline, y0 + rise * math.sin(a), flat + (1 - flat) * math.cos(a), cx, cz))
         if flat < 1e-6:
             rings[-1] = [(cx, y0 + rise, cz)]
-        self.loft(rings, col, mat, cols=cols, mats=mats, cap1=flat > 1e-6)
+        self.loft(rings, col, mat, cols=cols, mats=mats, cap1=flat > 1e-6, cap_mat=mat)
 
     def tube(self, a, b, r, col, mat='plain', sides=10, r2=None, caps=True, cap_col=None):
         """A round bar from a to b (a cone if r2 differs)."""

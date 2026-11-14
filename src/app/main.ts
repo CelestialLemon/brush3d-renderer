@@ -195,7 +195,9 @@ function here() {
   next.set('ice', String(water.ice));
   next.set('lying', String(ground.snow)); next.set('frost', String(ground.frost)); next.set('wet', String(ground.wet));
   next.set('view', String(view.view)); next.set('zoom', view.zoom.toFixed(1));
-  next.set('x', view.target.x.toFixed(2)); next.set('z', view.target.z.toFixed(2));
+  next.set('x', view.target.x.toFixed(2)); next.set('y', view.target.y.toFixed(2)); next.set('z', view.target.z.toFixed(2));
+  // The tour's stop, so its name stays lit.
+  if (stop >= 0) next.set('focus', tour[stop].model.name); else next.delete('focus');
   next.set('hour', was ? Object.keys(HOUR_NAMES).find((k) => HOUR_NAMES[k] === was)! : hour.toFixed(2));
   return next;
 }
@@ -444,11 +446,11 @@ function hud() {
     const swap = Object.assign(document.createElement('button'), { textContent: gallery ? 'To the farm' : 'To the gallery',
       title: gallery ? 'See the models in the farm' : 'Every model on its own plot, to look at up close' });
     swap.onclick = () => {
-      const url = new URL(location.href);
-      if (gallery) url.searchParams.delete('scene'); else url.searchParams.set('scene', 'gallery');
-      for (const k of ['x', 'y', 'z', 'zoom']) url.searchParams.delete(k);
-      if (stop >= 0) url.searchParams.set('focus', tour[stop].model.name);
-      location.href = url.href;
+      // The other scene under the same hour, weather and view, at the same model (its place there, so not this camera's).
+      const next = here();
+      if (gallery) next.delete('scene'); else next.set('scene', 'gallery');
+      for (const k of ['x', 'y', 'z', 'zoom']) next.delete(k);
+      location.search = next.toString();
     };
     hudEl.append(row, swap);
   }

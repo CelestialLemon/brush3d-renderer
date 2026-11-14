@@ -1,5 +1,6 @@
 # The water wheel: a ten-paddle wheel hung off the front of its bank tile, over the river (its own piece, its axle along
 # the bank), a copper dynamo on its shaft, and a rounded generator house under a planted roof behind.
+import math
 from kit import P, lin, rrect
 
 TITLE, GROUP, TILES = 'Water wheel', 'power', (2, 2)
@@ -19,14 +20,13 @@ def build(m):
     front = cz + 1.95
     with m.at((2.2, 0.2, front)):
         m.door(1.05, 2.15)
-    # The control window: its glow is the game's `running_` look.
-    with m.at((-0.2, 1.75, front)):
+    # The control window, left of the wheel so it shows past it: its glow is the game's `running_` look.
+    with m.at((-1.75, 1.75, front)):
         m.porthole(0.48)
+        # Just proud of the glass, inside the copper ring.
         m.part('running_control_window')
-        m.lathe([(0.34, 0.0), (0.0, 0.0)], lin(0x7fe3c2), sides=12)
+        m.poly([(0.4 * math.cos(2 * math.pi * i / 14), 0.4 * math.sin(2 * math.pi * i / 14), 0.04) for i in range(14)], lin(0x7fe3c2))
         m.part()
-    with m.at((-0.2, 1.75, front + 0.045), pitch=90):
-        pass
     for x in (-1.6, 1.6):
         with m.at((x, 1.9, cz - 1.95), yaw=180):
             m.porthole(0.4)

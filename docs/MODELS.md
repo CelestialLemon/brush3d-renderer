@@ -89,9 +89,9 @@ always gives the same file, and a change is a diff anyone can review.
 
 ```sh
 # all of them (Blender is a Flatpak here), about half a minute
-flatpak run org.blender.Blender -b --factory-startup --python $PWD/tools/blender/build.py -- $PWD/src/scenes/models
+flatpak run org.blender.Blender -b --factory-startup --python-exit-code 1 --python $PWD/tools/blender/build.py -- $PWD/src/scenes/models
 # or just some
-flatpak run org.blender.Blender -b --factory-startup --python $PWD/tools/blender/build.py -- $PWD/src/scenes/models bakery mill
+flatpak run org.blender.Blender -b --factory-startup --python-exit-code 1 --python $PWD/tools/blender/build.py -- $PWD/src/scenes/models bakery mill
 ```
 
 - `tools/blender/kit.py` is the shared kit: the palette, and the parts the set is built from (`hut`, `pillow` and `vault`
