@@ -332,13 +332,13 @@ r.restartWind();                    // a new wind, not a continuation (a level l
 | Piece | Stands |
 |---|---|
 | `WindWorker` (the simulation in a worker; today the caller makes the worker from `wind/worker.ts`) | today |
-| `startWind(...)`: the same, making its own worker, so the game never names the worker's file | #199's split |
+| `startWind(...)`: the same, making its own worker, so the game never names the worker's file | today |
 | `wind.onTick(f)`, `snap.tick`, `windAt(snap, ...)`: each tick for the rules | today |
 | `WindSim` and `windAt(snapshot, x, z, height)`: the same simulation with no worker, for the game's tests and bots | today |
 | Obstacles: a circle, a strip or a turned box in metres, `solid` with a height (a building) or with a `drag` (`DRAG.hedge`, `DRAG.crown`), given once at the start | today |
 | `steadyWind(speed, direction)`: one even wind, for a scene with no simulation | today |
 | `wind.setObstacles(list)`: the obstacles change in play; queued against the ticks like a goal (so the same calls replay the same wind) and kept in the save | #208 |
-| `r.restartWind()` | #199's split |
+| `r.restartWind()` | today |
 | The game's turbines, gales and shelter reading it | #208 |
 
 - **The rules read whole ticks.** `wind.at` blends the last two snapshots by how far the frame is past the latest, and
@@ -387,7 +387,7 @@ Not for the game's players, but kept public for the tools that judge renderer wo
 - `r.output`: draw the frame into a target rather than the canvas (profiling).
 - `r.setVisible(kind, on)`: show or hide a kind (`'ground'`, `'ink'`, `'foliage'`, `'rain'`...), for A/B comparisons.
 - `r.settings.falling` (leave out what's in the air), `prepass`, `waterScissor`, `equalDepth`, `shelterDebug`, `grain`.
-- `r.setTime(seconds)` (#199's split): set the renderer's clock without drawing, so a map sent next starts its ease from
+- `r.setTime(seconds)`: set the renderer's clock without drawing, so a map sent next starts its ease from
   there.
 - `r.gl`: the WebGL renderer, for the GPU's name and the like.
 
@@ -425,7 +425,7 @@ The game's pixel3d calls and what replaces each:
 | `renderGeometry(time)`, `renderStyle(time)` | `render(seconds)` |
 | Art pixel size, supersampling, the palette size | gone: the picture is drawn at the screen's resolution |
 
-## Where the code is (after #199's split)
+## Where the code is
 
 | Folder | What | Whose |
 |---|---|---|
@@ -438,4 +438,4 @@ The game's pixel3d calls and what replaces each:
 | `tools/` | Stills, videos, profiles, the shimmer, pop and flash checks, the wind, cloud and water tests | the renderer's tests |
 
 The tools are tests of the renderer's insides, so they may reach past the API (the cloud test reads the cloud map back,
-the flash check watches the flash limiter); the demo may not.
+the flash check watches the flash limiter); the demo may not (`npm run typecheck` fails if it does).
