@@ -1,0 +1,748 @@
+{
+ "bakery": {
+  "title": "Bakery",
+  "group": "processing",
+  "about": "A domed clay oven with its chimney, a lime-white bakehouse under a planted roof, bread on the counter.",
+  "tiles": [
+   2,
+   2
+  ],
+  "triangles": 1639,
+  "lo": [
+   -3.75,
+   0.0,
+   -3.8
+  ],
+  "hi": [
+   3.75,
+   7.85,
+   3.75
+  ],
+  "parts": [
+   "plant_flower_01",
+   "plant_flower_02",
+   "plant_herb_00",
+   "plant_herb_03",
+   "plant_herb_05",
+   "plant_herb_06",
+   "plant_herb_07",
+   "plant_herb_08",
+   "plant_vine_09",
+   "running_glow",
+   "smoke_emitter"
+  ]
+ },
+ "battery": {
+  "title": "Battery",
+  "group": "power",
+  "about": "Four ceramic cells on a timber deck, joined by copper bars. The charge rings are separate pieces for the game to light.",
+  "tiles": [
+   2,
+   2
+  ],
+  "triangles": 2030,
+  "lo": [
+   -3.6,
+   0.0,
+   -3.6
+  ],
+  "hi": [
+   3.6,
+   4.52,
+   3.6
+  ],
+  "parts": [
+   "charge_0",
+   "charge_1",
+   "charge_2",
+   "charge_3"
+  ]
+ },
+ "beehive": {
+  "title": "Beehive",
+  "group": "farming",
+  "about": "Three stacked hives in soft colours on a timber stand, with a planter of flowers for the bees.",
+  "tiles": [
+   1,
+   1
+  ],
+  "triangles": 594,
+  "lo": [
+   -1.7,
+   0.0,
+   -0.95
+  ],
+  "hi": [
+   1.7,
+   2.29,
+   1.6
+  ],
+  "parts": [
+   "plant_flower_00",
+   "plant_flower_01",
+   "plant_flower_02",
+   "plant_flower_03"
+  ]
+ },
+ "bench": {
+  "title": "Bench",
+  "group": "home",
+  "about": "A timber bench between two terracotta pots: somewhere to sit and look at the farm.",
+  "tiles": [
+   1,
+   1
+  ],
+  "triangles": 268,
+  "lo": [
+   -1.98,
+   0.0,
+   -0.46
+  ],
+  "hi": [
+   1.98,
+   1.0,
+   0.26
+  ],
+  "parts": [
+   "plant_shrub_00",
+   "plant_shrub_01"
+  ]
+ },
+ "cannery": {
+  "title": "Cannery",
+  "group": "processing",
+  "about": "A big copper kettle on a tiled stove, steam off its pipe, red jars on a rack under a solar awning.",
+  "tiles": [
+   2,
+   2
+  ],
+  "triangles": 3119,
+  "lo": [
+   -3.75,
+   0.0,
+   -3.75
+  ],
+  "hi": [
+   3.85,
+   5.6,
+   3.75
+  ],
+  "parts": [
+   "plant_flower_01",
+   "plant_herb_00",
+   "running_glow",
+   "smoke_emitter"
+  ]
+ },
+ "composter": {
+  "title": "Composter",
+  "group": "farming",
+  "about": "Three slatted timber bins from fresh cuttings to dark compost, a ceramic tumbler on a frame, a barrow and sacks.",
+  "tiles": [
+   2,
+   2
+  ],
+  "triangles": 1096,
+  "lo": [
+   -3.67,
+   -0.0,
+   -3.68
+  ],
+  "hi": [
+   3.67,
+   3.68,
+   3.56
+  ],
+  "parts": [
+   "move_spin_drum",
+   "plant_flower_01",
+   "plant_herb_00"
+  ]
+ },
+ "coop": {
+  "title": "Coop",
+  "group": "farming",
+  "about": "A long rounded henhouse under a planted roof with a solar sheet, a pop-hole and ramp, and a run with an open gate arch.",
+  "tiles": [
+   3,
+   3
+  ],
+  "triangles": 2020,
+  "lo": [
+   -5.67,
+   0.0,
+   -5.85
+  ],
+  "hi": [
+   5.67,
+   5.05,
+   5.69
+  ],
+  "parts": [
+   "plant_flower_01",
+   "plant_herb_00",
+   "plant_herb_02",
+   "plant_herb_03",
+   "plant_vine_04"
+  ]
+ },
+ "crates": {
+  "title": "Crates",
+  "group": "home",
+  "about": "A stack of harvest crates with a sack and a jar: yard dressing.",
+  "tiles": [
+   1,
+   1
+  ],
+  "triangles": 994,
+  "lo": [
+   -1.5,
+   0.0,
+   -1.2
+  ],
+  "hi": [
+   1.26,
+   1.57,
+   1.26
+  ],
+  "parts": []
+ },
+ "depot": {
+  "title": "Depot",
+  "group": "logistics",
+  "about": "A stone platform with a rounded office and a cargo canopy, a ramp, a landing ring and a mooring mast for the airship.",
+  "tiles": [
+   3,
+   3
+  ],
+  "triangles": 3629,
+  "lo": [
+   -5.8,
+   0.0,
+   -5.8
+  ],
+  "hi": [
+   5.8,
+   10.17,
+   5.8
+  ],
+  "parts": [
+   "plant_flower_01",
+   "plant_flower_04",
+   "plant_flower_05",
+   "plant_herb_00",
+   "plant_herb_02",
+   "plant_herb_03",
+   "running_beacon"
+  ]
+ },
+ "digester": {
+  "title": "Digester",
+  "group": "power",
+  "about": "A round tank under a planted dome: farm waste in at the hopper, gas to the copper bell, a small flare on its pipe.",
+  "tiles": [
+   2,
+   2
+  ],
+  "triangles": 1182,
+  "lo": [
+   -3.78,
+   0.0,
+   -3.78
+  ],
+  "hi": [
+   3.78,
+   6.95,
+   3.78
+  ],
+  "parts": [
+   "plant_flower_00",
+   "plant_flower_03",
+   "plant_herb_01",
+   "plant_herb_02",
+   "plant_herb_04",
+   "smoke_emitter"
+  ]
+ },
+ "farmhouse": {
+  "title": "Farmhouse",
+  "group": "home",
+  "about": "A rounded two-storey house under a planted roof, a sunroom under solar glass, a vine pergola, a rain tank off the roof.",
+  "tiles": [
+   3,
+   3
+  ],
+  "triangles": 2749,
+  "lo": [
+   -5.8,
+   0.0,
+   -5.8
+  ],
+  "hi": [
+   5.8,
+   8.95,
+   5.8
+  ],
+  "parts": [
+   "plant_flower_01",
+   "plant_flower_03",
+   "plant_flower_06",
+   "plant_flower_07",
+   "plant_flower_08",
+   "plant_flower_09",
+   "plant_flower_14",
+   "plant_flower_15",
+   "plant_flower_16",
+   "plant_herb_00",
+   "plant_herb_02",
+   "plant_herb_12",
+   "plant_herb_13",
+   "plant_herb_17",
+   "plant_herb_18",
+   "plant_herb_19",
+   "plant_shrub_04",
+   "plant_vine_10",
+   "plant_vine_11",
+   "smoke_emitter"
+  ]
+ },
+ "garage": {
+  "title": "Garage",
+  "group": "logistics",
+  "about": "An open-fronted timber shelter for the truck: boarded walls, a barrel roof half planted and half solar, a charging post.",
+  "tiles": [
+   2,
+   2
+  ],
+  "triangles": 1174,
+  "lo": [
+   -3.78,
+   0.0,
+   -3.85
+  ],
+  "hi": [
+   3.78,
+   4.7,
+   3.75
+  ],
+  "parts": [
+   "plant_flower_01",
+   "plant_herb_00",
+   "plant_herb_02",
+   "plant_herb_03",
+   "plant_herb_04",
+   "plant_herb_05",
+   "plant_vine_06",
+   "running_lamp"
+  ]
+ },
+ "greenhouse": {
+  "title": "Greenhouse",
+  "group": "farming",
+  "about": "A long barrel of sea-glass panes on a low timber wall, timber ribs, a copper ridge with two vent hoods, a glazed door.",
+  "tiles": [
+   3,
+   3
+  ],
+  "triangles": 1911,
+  "lo": [
+   -5.5,
+   0.0,
+   -5.65
+  ],
+  "hi": [
+   5.64,
+   5.26,
+   5.96
+  ],
+  "parts": [
+   "plant_flower_06",
+   "plant_flower_07",
+   "plant_flower_08",
+   "plant_flower_09",
+   "plant_herb_02",
+   "plant_herb_03",
+   "plant_herb_04",
+   "plant_herb_05",
+   "plant_vine_00",
+   "plant_vine_01"
+  ]
+ },
+ "lantern": {
+  "title": "Lantern",
+  "group": "home",
+  "about": "A solar lantern on a timber post: a small solar cap, a copper arm, a globe for the game to light at dusk.",
+  "tiles": [
+   1,
+   1
+  ],
+  "triangles": 208,
+  "lo": [
+   -0.4,
+   0.0,
+   -0.3
+  ],
+  "hi": [
+   0.4,
+   3.31,
+   0.82
+  ],
+  "parts": [
+   "running_glow"
+  ]
+ },
+ "loom": {
+  "title": "Loom",
+  "group": "processing",
+  "about": "A big timber loom in the open, striped linen growing down it, bolts of cloth on a rack, a rounded store behind.",
+  "tiles": [
+   2,
+   2
+  ],
+  "triangles": 1435,
+  "lo": [
+   -3.75,
+   0.0,
+   -3.75
+  ],
+  "hi": [
+   3.75,
+   4.38,
+   3.75
+  ],
+  "parts": [
+   "plant_flower_01",
+   "plant_herb_00",
+   "plant_herb_02",
+   "plant_vine_03"
+  ]
+ },
+ "mill": {
+  "title": "Mill",
+  "group": "processing",
+  "about": "A hopper up a slim timber tower, millstones turning in the open at its foot, flour running into a sack.",
+  "tiles": [
+   2,
+   2
+  ],
+  "triangles": 1498,
+  "lo": [
+   -3.75,
+   0.0,
+   -3.75
+  ],
+  "hi": [
+   3.75,
+   7.75,
+   3.75
+  ],
+  "parts": [
+   "move_spin_stone",
+   "plant_herb_00",
+   "plant_herb_01",
+   "plant_herb_02",
+   "plant_herb_03",
+   "plant_herb_04",
+   "running_flour"
+  ]
+ },
+ "oil_press": {
+  "title": "Oil press",
+  "group": "processing",
+  "about": "A timber screw press with a copper handwheel, golden oil running to a jar, and a small store with a shelf of oil.",
+  "tiles": [
+   2,
+   2
+  ],
+  "triangles": 2811,
+  "lo": [
+   -3.83,
+   0.0,
+   -3.75
+  ],
+  "hi": [
+   3.75,
+   5.38,
+   3.75
+  ],
+  "parts": [
+   "move_spin_wheel",
+   "plant_flower_01",
+   "plant_flower_02",
+   "plant_flower_03",
+   "plant_flower_04",
+   "plant_herb_00"
+  ]
+ },
+ "planter": {
+  "title": "Planters",
+  "group": "home",
+  "about": "Two raised timber beds of herbs and flowers and a copper watering can: yard dressing.",
+  "tiles": [
+   1,
+   1
+  ],
+  "triangles": 148,
+  "lo": [
+   -1.7,
+   0.0,
+   -1.6
+  ],
+  "hi": [
+   1.78,
+   0.56,
+   1.4
+  ],
+  "parts": [
+   "plant_flower_04",
+   "plant_flower_05",
+   "plant_flower_06",
+   "plant_herb_00",
+   "plant_herb_01",
+   "plant_herb_02",
+   "plant_herb_03"
+  ]
+ },
+ "pylon": {
+  "title": "Pylon",
+  "group": "power",
+  "about": "A slim timber pole with ceramic insulators, a copper cap and a small lamp. Quiet: a farm has many.",
+  "tiles": [
+   1,
+   1
+  ],
+  "triangles": 422,
+  "lo": [
+   -1.0,
+   0.0,
+   -0.4
+  ],
+  "hi": [
+   1.0,
+   5.72,
+   0.88
+  ],
+  "parts": []
+ },
+ "rain_tank": {
+  "title": "Rain tank",
+  "group": "home",
+  "about": "A ceramic rain tank on stone feet, with a copper downpipe, a tap and a bucket.",
+  "tiles": [
+   1,
+   1
+  ],
+  "triangles": 536,
+  "lo": [
+   -1.21,
+   0.0,
+   -1.05
+  ],
+  "hi": [
+   1.05,
+   3.67,
+   1.55
+  ],
+  "parts": []
+ },
+ "silo": {
+  "title": "Silo",
+  "group": "logistics",
+  "about": "A ceramic grain store: copper hoops, a planted cap, a gauge window showing how full it is, and a filling pipe.",
+  "tiles": [
+   2,
+   2
+  ],
+  "triangles": 1013,
+  "lo": [
+   -3.75,
+   0.0,
+   -3.75
+  ],
+  "hi": [
+   3.75,
+   10.05,
+   3.75
+  ],
+  "parts": [
+   "plant_flower_01",
+   "plant_herb_00",
+   "plant_herb_02"
+  ]
+ },
+ "solar_panel": {
+  "title": "Solar panel",
+  "group": "power",
+  "about": "One sheet of solar glass on two copper posts, low and quiet; the meadow grows under it.",
+  "tiles": [
+   2,
+   2
+  ],
+  "triangles": 242,
+  "lo": [
+   -3.7,
+   0.0,
+   -2.04
+  ],
+  "hi": [
+   3.7,
+   3.3,
+   2.62
+  ],
+  "parts": []
+ },
+ "spinner": {
+  "title": "Spinner",
+  "group": "processing",
+  "about": "A great spinning wheel in the open, bobbins of dyed thread under a solar awning, a round wool store behind.",
+  "tiles": [
+   2,
+   2
+  ],
+  "triangles": 2257,
+  "lo": [
+   -3.75,
+   0.0,
+   -3.8
+  ],
+  "hi": [
+   3.75,
+   4.6,
+   3.75
+  ],
+  "parts": [
+   "move_spin_wheel",
+   "plant_flower_01",
+   "plant_flower_02",
+   "plant_flower_03",
+   "plant_herb_00"
+  ]
+ },
+ "sprinkler": {
+  "title": "Sprinkler",
+  "group": "farming",
+  "about": "A copper riser on a ceramic valve, taller than a person. The two-armed head is a separate piece, ready to spin.",
+  "tiles": [
+   1,
+   1
+  ],
+  "triangles": 504,
+  "lo": [
+   -1.85,
+   0.0,
+   -0.85
+  ],
+  "hi": [
+   1.44,
+   3.06,
+   0.85
+  ],
+  "parts": [
+   "move_spin_head"
+  ]
+ },
+ "truck": {
+  "title": "Truck",
+  "group": "logistics",
+  "about": "A small electric farm truck: a rounded ceramic cab with solar glass on its roof and an open timber bed.",
+  "tiles": [
+   1,
+   1
+  ],
+  "triangles": 920,
+  "lo": [
+   -1.07,
+   0.0,
+   -1.74
+  ],
+  "hi": [
+   1.07,
+   1.96,
+   1.75
+  ],
+  "parts": [
+   "move_spin_wheel_bl",
+   "move_spin_wheel_br",
+   "move_spin_wheel_fl",
+   "move_spin_wheel_fr"
+  ]
+ },
+ "water_wheel": {
+  "title": "Water wheel",
+  "group": "power",
+  "about": "A ten-paddle wheel hung over the river off the front of its bank, a copper dynamo on its shaft, a generator house behind.",
+  "tiles": [
+   2,
+   2
+  ],
+  "triangles": 1961,
+  "lo": [
+   -3.75,
+   -0.87,
+   -3.8
+  ],
+  "hi": [
+   3.75,
+   4.63,
+   6.79
+  ],
+  "parts": [
+   "dynamo",
+   "move_spin_wheel",
+   "plant_flower_01",
+   "plant_flower_03",
+   "plant_flower_04",
+   "plant_herb_00",
+   "plant_herb_02",
+   "plant_vine_05",
+   "running_control_window"
+  ]
+ },
+ "weather_station": {
+  "title": "Weather station",
+  "group": "farming",
+  "about": "A louvred white instrument box under a planted lid, a copper mast with vane and spinning cups, and a rain gauge.",
+  "tiles": [
+   1,
+   1
+  ],
+  "triangles": 979,
+  "lo": [
+   -1.54,
+   0.0,
+   -1.85
+  ],
+  "hi": [
+   1.91,
+   4.67,
+   1.52
+  ],
+  "parts": [
+   "move_spin_anemometer",
+   "plant_herb_00"
+  ]
+ },
+ "wind_turbine": {
+  "title": "Wind turbine",
+  "group": "power",
+  "about": "A slim ceramic tower, a rotor ten metres across with terracotta tips. The rotor is a separate piece, ready to turn.",
+  "tiles": [
+   1,
+   1
+  ],
+  "triangles": 639,
+  "lo": [
+   -2.58,
+   0.0,
+   -1.5
+  ],
+  "hi": [
+   4.95,
+   18.75,
+   1.57
+  ],
+  "parts": [
+   "move_spin_rotor"
+  ]
+ }
+}

@@ -5,6 +5,8 @@ import { lightningHud, setupLightning, stormLightning } from './lightning';
 import { buildMeadow } from '../scenes/meadow';
 import { buildFarm } from '../scenes/farm';
 import { buildWaterPatch } from '../scenes/waterPatch';
+import { buildGallery } from '../scenes/gallery';
+import { TOUR, type Stand } from '../scenes/catalog';
 import { MAX_ZOOM, MIN_ZOOM } from '../renderer/camera';
 import { cloudDriftSpeed } from '../renderer/clouds';
 import { WEATHER_PRESETS, type CloudDrift, type Haze, type HazeKind, type Weather, type WeatherName } from '../renderer/weather';
@@ -19,12 +21,13 @@ import { WindView } from './windView';
 
 // The demo viewer. URL parameters, for screenshots and comparisons:
 //   view=0..3  zoom=16..192 (screen px per metre)  x, z (camera target)  t (seconds: freeze the clock there)
-//   focus=mill (farm only: start at the wheat mill; explicit camera parameters still take precedence)
+//   focus=<model> (farm and gallery: start at that model, e.g. focus=bakery; the names are the files' in src/scenes/models/;
+//     explicit camera parameters still take precedence)
 //   hour=0..24 (the game's clock), or dawn|noon|golden|sunset|night (that look in the season's day)
 //   season=spring|summer|autumn|winter (#13; none by default: the looks' own day, sun up 6 to 20)  character (the
 //     game's: mild|wet|dry|hot|gales|stormy|hard|highRiver)  sunrise, sunset (the game's clock hours; the season's by default)
 //   The scene is built in the season (summer's with none): its crops, flowers and hay stand in for the game's.
-//   scene=farm|meadow|water (water: the water's test patch, #19: a pond, a slow bend, a fast run, a flooded meadow)  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
+//   scene=farm|gallery|meadow|water (gallery: every model on its own plot, docs/MODELS.md; water: the water's test patch, #19: a pond, a slow bend, a fast run, a flooded meadow)  lines=0  shadows=0  still (hide the buttons)  dpr (pixel ratio)
 //   wind (m/s, or calm|breeze|gale|storm|hurricane)  windDir (degrees the wind blows towards, from +x towards +z)  gust (0..1)
 //   rhythm (how the gusts come: 0 rare and strong, 1 frequent and mild)  windMap (the living wind from above, #36)
 //   windSeed (which gusts: a whole number)
@@ -60,9 +63,9 @@ const params = new URLSearchParams(location.search);
 const num = (k: string, d: number) => (params.has(k) ? Number(params.get(k)) : d);
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const sceneName = params.get('scene') ?? 'farm';
-const farm = sceneName === 'farm';
+const farm = sceneName === 'farm', gallery = sceneName === 'gallery';
 const renderer = new BrushRenderer(canvas, {
-  shadowRadius: 34, shadowFollow: farm, shadowMapSize: num('shadowMap', farm ? 4096 : 2048),
+  shadowRadius: 34, shadowFollow: farm || gallery, shadowMapSize: num('shadowMap', farm || gallery ? 4096 : 2048),
   pixelRatio: params.has('dpr') ? num('dpr', 1) : params.has('profile') ? 1 : undefined,
   samples: params.has('samples') ? num('samples', 4) : undefined,
   shelterSize: num('shelterSize', 1024),
@@ -81,9 +84,12 @@ if (season) {
   });
 }
 const farmScene = farm ? buildFarm(renderer, season ?? 'summer') : null;
-const scene = farmScene ?? (sceneName === 'water' ? buildWaterPatch : buildMeadow)(renderer, season ?? 'summer');
+const galleryScene = gallery ? buildGallery(renderer) : null;
+const scene = farmScene ?? galleryScene ?? (sceneName === 'water' ? buildWaterPatch : buildMeadow)(renderer, season ?? 'summer');
 /** Settles once the scene's models are in. */
-const loaded = farmScene?.ready ?? Promise.resolve();
+const loaded = (farmScene ?? galleryScene)?.ready ?? Promise.resolve();
+/** Where the scene shows each model (docs/MODELS.md): the tour's stops. */
+const stands: Stand[] = (farmScene ?? galleryScene)?.stands ?? [];
 let isLoaded = false;
 loaded.then(() => { isLoaded = true; });
 // The water (#18), standing in for the game's: a map made from the scene's stream and the water's state (a preset, the
@@ -127,14 +133,21 @@ function sendGround(g: GroundState, immediate = false) {
   renderer.setGround(demoGround.map(g), immediate ? 0 : undefined);
 }
 const view = renderer.view;
-const millView = { x: -80.5, z: -14.5, zoom: 38, view: 0.3 };
-// Zoom uses device pixels per metre. Fit the whole silhouette on small windows
-// and retain the same composition on Retina displays, independent of render resolution.
-const millZoom = () => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM,
-  millView.zoom * renderer.screenRatio * Math.min(canvas.clientHeight / 720, canvas.clientWidth / 800)));
-const focusMill = farm && params.get('focus') === 'mill';
-view.view = num('view', focusMill ? millView.view : 0); view.zoom = num('zoom', focusMill ? millZoom() : sceneName === 'water' ? 30 : 40);
-view.target.set(num('x', focusMill ? millView.x : farm ? 0 : sceneName === 'water' ? -3 : -1), 0, num('z', focusMill ? millView.z : sceneName === 'water' ? 2 : 0));
+/**
+ * The camera on a model: aimed at its middle, zoomed so the whole of it fits the window. Zoom is in device pixels per
+ * metre, so it follows the window's size and the screen's pixel density.
+ */
+function standView(s: Stand) {
+  const { lo, hi } = s.model, wide = Math.hypot(hi[0] - lo[0], hi[2] - lo[2]), tall = hi[1] * Math.cos(Math.PI / 6) + wide * 0.5;
+  const fit = Math.min(canvas.clientWidth * 0.8 / wide, canvas.clientHeight * 0.8 / tall) * renderer.screenRatio;
+  return { x: s.x, y: s.y + hi[1] * 0.42, z: s.z, zoom: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, fit)) };
+}
+/** The tour's stops in order, and the one the camera is on (none until one is picked). */
+const tour = TOUR.flatMap((m) => stands.filter((s) => s.model === m).slice(0, 1));
+let stop = tour.findIndex((s) => s.model.name === params.get('focus'));
+const focus = stop >= 0 ? standView(tour[stop]) : null;
+view.view = num('view', 0); view.zoom = num('zoom', focus ? focus.zoom : sceneName === 'water' ? 30 : gallery ? 22 : 40);
+view.target.set(num('x', focus ? focus.x : farm || gallery ? 0 : sceneName === 'water' ? -3 : -1), num('y', focus ? focus.y : 0), num('z', focus ? focus.z : sceneName === 'water' ? 2 : 0));
 view.update(0, true);
 renderer.settings.lines = num('lines', 1) !== 0;
 renderer.settings.shadows = num('shadows', 1) !== 0;
@@ -178,7 +191,9 @@ function here() {
   next.set('ice', String(water.ice));
   next.set('lying', String(ground.snow)); next.set('frost', String(ground.frost)); next.set('wet', String(ground.wet));
   next.set('view', String(view.view)); next.set('zoom', view.zoom.toFixed(1));
-  next.set('x', view.target.x.toFixed(2)); next.set('z', view.target.z.toFixed(2));
+  next.set('x', view.target.x.toFixed(2)); next.set('y', view.target.y.toFixed(2)); next.set('z', view.target.z.toFixed(2));
+  // The tour's stop, so its name stays lit.
+  if (stop >= 0) next.set('focus', tour[stop].model.name); else next.delete('focus');
   next.set('hour', was ? Object.keys(HOUR_NAMES).find((k) => HOUR_NAMES[k] === was)! : hour.toFixed(2));
   return next;
 }
@@ -380,16 +395,32 @@ function hud() {
   map.title = 'The living wind from above, turned as the camera is: how hard it blows (or the shelter), which way, and the obstacles';
   map.onclick = () => { windMap = !windMap; if (windMap) document.body.append(windView.el); else windView.el.remove(); hud(); };
   hudEl.append(map);
-  if (farm) {
-    const mill = document.createElement('button');
-    mill.textContent = 'Wheat mill';
-    mill.title = 'Visit the wheat mill on the northern knoll';
-    mill.onclick = () => {
-      view.target.set(millView.x, 0, millView.z); view.zoom = millZoom(); view.view = millView.view;
+  if (tour.length) {
+    // The tour (docs/MODELS.md): step through the models where the scene shows them, keeping the hour, weather and season.
+    const go = (to: number) => {
+      stop = (to + tour.length) % tour.length;
+      const v = standView(tour[stop]);
+      view.target.set(v.x, v.y, v.z); view.zoom = v.zoom;
       view.update(0, true);
-      for (const refresh of refreshers) refresh();
+      hud();
     };
-    hudEl.append(mill);
+    const row = document.createElement('span');
+    const prev = Object.assign(document.createElement('button'), { textContent: '◀', title: 'The model before' });
+    const name = Object.assign(document.createElement('button'), { textContent: stop >= 0 ? tour[stop].model.title : 'Tour the models',
+      title: stop >= 0 ? tour[stop].model.about : 'Visit each building and prop in turn', className: stop >= 0 ? 'on' : '' });
+    const next = Object.assign(document.createElement('button'), { textContent: '▶', title: 'The next model' });
+    prev.onclick = () => go(stop < 0 ? tour.length - 1 : stop - 1); name.onclick = () => go(Math.max(stop, 0)); next.onclick = () => go(stop + 1);
+    row.append(prev, name, next);
+    const swap = Object.assign(document.createElement('button'), { textContent: gallery ? 'To the farm' : 'To the gallery',
+      title: gallery ? 'See the models in the farm' : 'Every model on its own plot, to look at up close' });
+    swap.onclick = () => {
+      // The other scene under the same hour, weather and view, at the same model (its place there, so not this camera's).
+      const next = here();
+      if (gallery) next.delete('scene'); else next.set('scene', 'gallery');
+      for (const k of ['x', 'y', 'z', 'zoom']) next.delete(k);
+      location.search = next.toString();
+    };
+    hudEl.append(row, swap);
   }
   // The clouds' speed follows the wind's: sent at once, as the game would.
   const windSet = (f: (v: number) => void) => (v: number) => { f(v); living.setGoal(windGoal()); send(sent); };

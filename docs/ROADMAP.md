@@ -16,7 +16,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   4. #9 mist, fog, dust and heat haze (done 2026-10-31, #33 and #35: see Weather);
   5. #10 the shelter map, so rain and snow stop at roofs, and a test shed (done 2026-10-31, #31 and #32: two depth maps
      from above, roofs and crowns (a crown keeps off 60%), drawn only when cover changes, `?shelter` to see it; a
-     barn-red shed (the developer's pick of three) modelled by `tools/blender/shed.py`, the first model made in Blender);
+     barn-red shed (the developer's pick of three) modelled by a Blender script, the first model made in Blender; replaced by the solarpunk set, docs/MODELS.md);
   6. #36 wind: gusts and lulls as fronts sweeping the land, one gust field for the grass, trees, water and dust (with
      depth, a rolling head), and for the game to query. It grew out of #9: dust's gusts didn't read (done 2026-11-03,
      #41 to #44: see Wind);
@@ -28,6 +28,21 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
       the water #63: see Weather);
   12. #19 the water's own look, chosen under every weather (done 2026-11-14: the picks #64, fitted to the weather #65:
       see Water).
+- **The models: a solarpunk set** (done 2026-11-14, #66): 28 new buildings and props for the game,
+  made from scratch by Blender scripts (`tools/blender/`), replacing the first eleven. `docs/MODELS.md` has the style,
+  the scale (one game tile is 4 m), the file's rules and the build. In short:
+  - The game's 22 buildings and vehicles on its own footprints, plus a farmhouse and five yard props.
+  - Rounded lime-white huts under planted roofs, solar glass, copper and honey timber; each workshop's machine stands big
+    in the open beside its hut, because the camera can't see under a roof.
+  - A new finish, `moss`: planted surfaces are painted, not inked. Plants on a model are grown by the scene at points
+    the model marks, never modelled.
+  - Pieces the game will move or light are separate and named as the game expects (`move_spin_*`, `running_*`,
+    `charge_<n>`, `smoke_emitter`). Nothing moves in the renderer yet.
+  - The farm valley re-laid as a solarpunk farm round them (a homestead, a market corner, a workshop row, turbines on
+    the knoll, solar sheets over the wheat, a water wheel on the stream), and a gallery (`?scene=gallery`), a tour (◀ ▶)
+    and `?focus=<name>` to look at each.
+  - Still to do, when wanted: the moving parts turning and the `running_*` looks switching in the demo; the models going
+    into the game (the game repo's work).
 - **The demo on GitHub Pages** (#15, shipped 2026-10-30): https://celestiallemon.github.io/brush3d-renderer/main/, and a preview
   of every open pull request from this repo at `.../pr-<number>/`, removed when it closes.
 - **Wind, issue #2** (2026-10-30, shipped in #5): `renderer.setWind({ speed, direction, gust })`, eased, from calm to a
@@ -77,8 +92,9 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   - Below: the stream opens into a pond (willows, reeds, a jetty and a rowing boat) and leaves by an outflow; lavender
     with cypresses and hives, cabbages, an old orchard of standard fruit trees, a scarecrow.
   - Woods along the edges, more hedges and drifts of wild flowers.
-  - The models (farmhouse, barn, hen house, well, glasshouse, windmill, hay wagon, rowing boat, scarecrow) were made in
-    Blender by Sol (`tools/blender/`); the layout is `src/scenes/farm.ts`'s header.
+  - The first models (farmhouse, barn, hen house, well, glasshouse, windmill, hay wagon, rowing boat, scarecrow) were made
+    in Blender by Sol. They were replaced on 2026-11-14 by the solarpunk set (see The models, above, and docs/MODELS.md),
+    and the farmstead, the windmill's knoll and the yard re-laid for it; the layout is `src/scenes/farm.ts`'s header.
   - For the bigger land: the big meshes are cut into 24 m tiles, each drawn only when a pass can see it
     (`src/renderer/tiles.ts`), and the sun's shadow covers only the ground on screen (`shadowFollow`).
 
@@ -91,8 +107,8 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
   by 0.18 (was 0.15), all of it foliage (see Motion and stability).
 - Broadleaf crowns still read partly as repeated rounded clusters, and the water's reflections ripple more crisply than
   painted ones would.
-- The land stops at a square edge, with the sky beyond; the woods hide some of it, but panned to an edge it shows. No people or
-  machines: those are the game's.
+- The land stops at a square edge, with the sky beyond; the woods hide some of it, but panned to an edge it shows. No people: those
+  are the game's.
 - The valley costs more than the old farm: 13.9 ms at 1080p on the RX 570 in the default view (11.9 before), 23 at the widest
   zoom, and 3 to 5 ms of CPU (0.6 before: more draw calls, and 691 trees' springs). Most of the GPU's extra is trees
   throwing shadows. Not tuned yet, by choice (see docs/PERFORMANCE.md, The farm valley).

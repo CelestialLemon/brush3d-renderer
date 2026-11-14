@@ -1,17 +1,8 @@
 import * as THREE from 'three';
 import type { BrushRenderer } from '../renderer/renderer';
 import { MeshBuilder, noise2, rng, srgb, type Paint } from './builder';
-import { addModel, loadModel } from './model';
-import shedModel from './models/shed.glb?url';
-import farmhouseModel from './models/farmhouse.glb?url';
-import barnModel from './models/barn.glb?url';
-import coopModel from './models/coop.glb?url';
-import wellModel from './models/well.glb?url';
-import glasshouseModel from './models/glasshouse.glb?url';
-import wheatmillModel from './models/wheatmill.glb?url';
-import haywagonModel from './models/haywagon.glb?url';
-import rowboatModel from './models/rowboat.glb?url';
-import scarecrowModel from './models/scarecrow.glb?url';
+import { ModelSet, loadModel } from './model';
+import { MODELS, TILE as GAME_TILE, blocksWind, wheelRace, type Stand } from './catalog';
 import {
   C, MapLine, addFlowers, addMound, addReeds, addStone, addTuft, groundOf, smooth, treeWind, type Stream, type Tree,
 } from './kit';
@@ -20,19 +11,23 @@ import type { Season } from '../renderer/season';
 import { Grove, dressFor, type Dress } from './seasonTrees';
 
 // A pastoral valley, about 176 m across, for trying the renderer's features on a big, full and varied scene. In its
-// middle, the working farm after the aerial shot in Dear Alice (0:37): a wheat field with a solar array, a track along it
-// behind a rail fence, curved orchard rows with crates of apples, a dark clump of big trees over a picnic table, a stream
-// with a plank bridge, a fork in the track by a dry-stone wall, a nursery in rows and a barn-red shed.
+// middle, the working farm after the aerial shot in Dear Alice (0:37): a wheat field with a solar array standing in it, a
+// track along it behind a rail fence, curved orchard rows with crates of apples, a dark clump of big trees over a picnic
+// table, a stream with a plank bridge, a fork in the track by a dry-stone wall and a nursery in rows.
 //
-// Round it (decided with the developer, 2026-11-03: pastoral, no machines):
-// - right, the farmstead: a farmhouse and a hay barn round a yard with a well and a hay wagon, a hen house, and a kitchen
-//   garden of raised beds behind a paling fence with a glasshouse; an old orchard of fruit trees below it;
+// The valley is a solarpunk farm (decided with the developer, 2026-11-14, replacing "pastoral, no machines"): its
+// buildings are the game's own set (docs/MODELS.md), laid out as a farm would be:
+// - right, the homestead: a bakery, the truck's garage, the farmhouse and the hens' coop along a yard; below the track, the
+//   market corner (the depot with its airship mast, the silo and the mill) and a kitchen garden with the greenhouse, the
+//   composter and raised beds behind a paling fence; an old orchard of fruit trees below it;
+// - left, the workshop row along the road in: the cannery, the loom, the spinner and the oil press;
+// - power: wind turbines on the knoll at the top left, solar sheets over the wheat, a water wheel on the stream below the
+//   bridge with the battery beside it and a digester down the footpath, and pylons along the track;
 // - up the back slope, a patchwork of fields between hedgerows: sunflowers, a ploughed field, green barley, and a hay
 //   meadow being cut, with woods along the ridge;
-// - top left, a windmill on a knoll, a rocky outcrop, and the stream coming down out of the hills;
 // - left, pastures behind dry-stone walls with old trees standing alone in them;
-// - below, the stream opens into a pond with a jetty and a rowing boat, willows and reeds; a field of lavender with
-//   beehives; a cabbage field with a scarecrow; and woods along the near edge.
+// - below, the stream opens into a pond with a jetty, willows and reeds; a field of lavender with beehives; a cabbage
+//   field under sprinklers; and woods along the near edge.
 //
 // The layout is drawn on a map whose axes are the default view's screen: u to the right, v away up the screen. One unit is
 // one metre, as in the game.
@@ -82,13 +77,15 @@ const TRACK = line([[-92, 13], [-74, 11.5], [-56, 9], [-38, 7], [-24, 5.5], [-10
 const LANE = line([[-92, -38], [-70, -32], [-50, -27], [-38, -25], [-27, -20.5], [-18, -18.5], [-6, -16.5], [6, -14.5], [16, -11.5]]);
 const FORK_UP = line([[16, -11.5], [20, -5], [22.5, 1.5], [24.5, 7.5]]);
 const FORK_DOWN = line([[16, -11.5], [25, -14.5], [38, -17.5], [54, -20], [70, -21], [92, -23]]);
-/** Along the foot of the back fields, from the windmill's door to the far edge. */
+/** Along the foot of the back fields, from the turbines on the knoll to the far edge. */
 const BACK_TRACK = line([[-40, 49], [-35, 43], [-26, 38], [-10, 37], [10, 37.5], [30, 37], [54, 36.5], [80, 37], [92, 38]]);
-/** Up from the yard, between the barn and the house, to the back track. */
+/** Up from the yard, between the garage and the house, to the back track. */
 const FARM_LANE = line([[56, 10], [55.5, 22], [54, 36.5]]);
-/** A footpath from the shed's porch down to the pond's jetty. */
-const FOOTPATH = line([[-2, -25], [1.5, -35], [7, -45], [12.5, -53]]);
-const PATHS = [TRACK, LANE, FORK_UP, FORK_DOWN, BACK_TRACK, FARM_LANE, FOOTPATH];
+/** A footpath from the battery down past the digester to the pond's jetty. */
+const FOOTPATH = line([[3.2, -26.4], [3.8, -35], [7, -45], [12.5, -53]]);
+/** The depot's spur: from its ramp down to the lower fork. */
+const SPUR = line([[37.6, -7.4], [37.3, -12], [36.6, -17.3]]);
+const PATHS = [TRACK, LANE, FORK_UP, FORK_DOWN, BACK_TRACK, FARM_LANE, FOOTPATH, SPUR];
 const PATH_HALF = 1.05;
 
 /** Where the wheat starts: its lower edge follows the track a few metres above it (v for a u), and its left edge. */
@@ -118,11 +115,13 @@ const BARLEY: Plot = { u0: 37.5, u1: 72, v0: 41.5, v1: 58 };
 const HAY: Plot = { u0: -16, u1: 72, v0: 62.5, v1: 70.5 };
 const LAVENDER: Plot = { u0: 18, u1: 40, v0: -62, v1: -47 };
 const CABBAGES: Plot = { u0: -52, u1: -31, v0: -64, v1: -45 };
-/** The farmyard: earth worn bare between the barn, the house and the hen house. */
-const YARD: Plot = { u0: 42, u1: 70, v0: 3.5, v1: 15.5 };
+/** The farmyard: earth worn bare between the bakery, the garage, the house and the track. */
+const YARD: Plot = { u0: 37, u1: 73.5, v0: 6.5, v1: 19.8 };
+/** The workshop row's forecourt, worn along the road. */
+const WORKS: Plot = { u0: -61.5, u1: -25.5, v0: 9.4, v1: 12.2 };
 /** The kitchen garden, behind its paling fence. */
 const GARDEN: Plot = { u0: 56, u1: 80, v0: -16, v1: -1 };
-const PLOTS = [SUNFLOWERS, PLOUGHED, BARLEY, HAY, LAVENDER, CABBAGES, YARD, GARDEN];
+const PLOTS = [SUNFLOWERS, PLOUGHED, BARLEY, HAY, LAVENDER, CABBAGES, YARD, WORKS, GARDEN];
 const inPlot = (u: number, v: number, margin = 0) => PLOTS.some((p) => plotInside(p, u, v) > -margin);
 
 /** The orchard's rows: gentle arcs, a bush every metre and a half, worn alleys between. */
@@ -133,79 +132,93 @@ const NURSERY = Array.from({ length: 6 }, (_, k) => line([[12 + k * 0.4, -21 - k
 /** The old orchard below the garden: standard fruit trees in a loose grid. */
 const OLD_ORCHARD: Plot = { u0: 43, u1: 76, v0: -56, v1: -27 };
 
-const PANELS: [number, number][] = [
-  [-2, 14], [3, 14.3], [8, 14.6], [13, 14.9], [18, 15.2],
-  [0.5, 19.5], [5.5, 19.8], [10.5, 20.1], [15.5, 20.4], [20.5, 20.7],
-];
-
 function tree(kind: Tree['kind'], u: number, v: number, scale: number, seed: number, leaf?: THREE.Color): Tree {
   const [x, z] = W(u, v);
   return { kind, x, z, scale, seed, ...(leaf ? { leaf } : {}) };
 }
 
 /**
- * The buildings, modelled in Blender (tools/blender/): where each stands on the map, which way its front faces (radians
- * from facing down the screen, towards the default view, turning towards +u), the half-size of the ground levelled under
- * it (along its front and its depth), and how tall it is (for the wind). The shed is the test shed (#10).
+ * The models (docs/MODELS.md, made in tools/blender/): where each stands on the map, and which way its front faces (radians
+ * from facing down the screen, towards the default view, turning towards +u; `cos`, `sin` are its). The ground is made
+ * level under each (`levelled`): under a building (`pad`) over its footprint in game tiles, under a small thing over the
+ * ground it covers. `hx`, `hz`: the half-size of that ground, along its front and its depth; `height` is for the wind.
  */
-interface Building { url: string; u: number; v: number; facing: number; hx: number; hz: number; height: number; pad?: boolean; y?: number }
-const SHED: Building = { url: shedModel, u: -2.5, v: -20.5, facing: 0, hx: 2.3, hz: 2.6, height: 3 };
+interface Building { model: string; u: number; v: number; facing: number; cos: number; sin: number; hx: number; hz: number; height: number; pad: boolean; quay: boolean }
+/** Small things, taking only the ground they cover (not a whole tile), and no part in the wind. */
+const LOOSE = new Set(['pylon', 'lantern', 'sprinkler', 'solar_panel', 'truck', 'bench', 'crates', 'planter', 'rain_tank']);
+function place(model: string, u: number, v: number, facing = 0, quay = false): Building {
+  const info = MODELS[model];
+  if (!info) throw new Error(`farm: no model called ${model}`);
+  const loose = LOOSE.has(model);
+  return {
+    model, u, v, facing, cos: Math.cos(facing), sin: Math.sin(facing), quay, pad: !loose, height: info.hi[1],
+    hx: loose ? Math.max(-info.lo[0], info.hi[0]) : info.tiles[0] * GAME_TILE / 2,
+    hz: loose ? Math.max(-info.lo[2], info.hi[2]) : info.tiles[1] * GAME_TILE / 2,
+  };
+}
+/** How far above the water a quay stands (the water wheel's bank): the game's river lies about this far below its banks. */
+const QUAY = 0.5;
 const BUILDINGS: Building[] = [
-  SHED,
-  { url: farmhouseModel, u: 64, v: 21, facing: 0, hx: 6.8, hz: 4.6, height: 8, pad: true },
-  { url: barnModel, u: 42.5, v: 26, facing: 0, hx: 6.6, hz: 4.6, height: 8, pad: true },
-  { url: coopModel, u: 73.5, v: 8, facing: -Math.PI / 2, hx: 1.6, hz: 1.4, height: 1.9, pad: true },
-  { url: wellModel, u: 61, v: 7.5, facing: 0.3, hx: 0.9, hz: 0.9, height: 2.3, pad: true },
-  { url: glasshouseModel, u: 71, v: -4.5, facing: 0, hx: 3.9, hz: 2.2, height: 3.3, pad: true },
-  // Includes the milling house, loading deck and sack hoist; sails overhang this ground footprint.
-  { url: wheatmillModel, u: -40, v: 54, facing: 0, hx: 6.1, hz: 3.6, height: 14.4, pad: true },
-  { url: haywagonModel, u: 49, v: 16.5, facing: Math.PI / 2 + 0.25, hx: 2.2, hz: 1.2, height: 2.4 },
-  { url: scarecrowModel, u: -41, v: -54, facing: 0.4, hx: 0.4, hz: 0.4, height: 2 },
+  // The homestead, along the top of the yard.
+  place('bakery', 40.5, 24.5), place('garage', 50, 23.5), place('truck', 51, 15.2, 0.45), place('farmhouse', 65, 23), place('coop', 80.5, 17),
+  place('rain_tank', 72.8, 18.6), place('lantern', 46.3, 12.6), place('lantern', 58.4, 13.2), place('bench', 72.3, 13.3, -0.3),
+  place('crates', 44.6, 16.6, 0.3),
+  // The market corner, below the track: the depot on its spur, the silo, the mill.
+  place('depot', 34.5, -1), place('silo', 44.5, 2), place('mill', 51.5, -6.5), place('weather_station', 42, -10.8, 0.2), place('lantern', 39.8, -9),
+  // The kitchen garden.
+  place('greenhouse', 73.5, -8.4), place('composter', 61, -5.6), place('planter', 62.5, 3.2), place('bench', 67.3, 3.4),
+  // The workshop row, along the road in from the left.
+  place('cannery', -57, 15), place('loom', -48, 16), place('spinner', -39, 15.5), place('oil_press', -30, 16), place('lantern', -43.5, 10.9),
+  // Power: turbines on the knoll, solar sheets over the wheat (turned to the noon sun, as the old array was), the water
+  // wheel on the stream's left bank below the bridge (its wheel over the water), the battery, the digester.
+  place('wind_turbine', -47, 55, 0.25), place('wind_turbine', -40, 53, 0.25), place('wind_turbine', -31, 56.5, 0.25),
+  ...([[1, 14.5], [10.5, 14.8], [20, 15.1], [4, 22], [13.5, 22.3], [23, 22.6]] as const).map(([u, v]) => place('solar_panel', u, v, -Math.PI / 4)),
+  place('water_wheel', -6.8, -29.8, -1.39, true), place('battery', 3, -21.5), place('digester', -2.5, -40),
+  ...([[-52.5, 5.4], [-34.5, 3.9], [-19.5, 2.2], [4, 1.8], [27.5, 5.3], [57.5, 6.8], [74, 5.5], [-35, 23.5], [-37, 36], [-42.5, 45], [8.5, -17.5]] as const)
+    .map(([u, v]) => place('pylon', u, v)),
+  // Out in the fields: apiaries by the big trees and the lavender, sprinklers in the cabbages and the barley.
+  place('beehive', 22.3, -8.2, 0.2), place('beehive', 25, -44.3), place('beehive', 31, -44.3),
+  place('sprinkler', -46, -50), place('sprinkler', -37, -59), place('sprinkler', 50, 47), place('sprinkler', 62, 53),
 ];
-/** The rowing boat, moored by the jetty, floating at the water's level. */
-const BOAT: Building = { url: rowboatModel, u: 3, v: -58.3, facing: Math.PI / 2 + 0.12, hx: 1.9, hz: 0.8, height: 0.6 };
 /** The jetty: from the pond's right shore out into it, its deck's two ends on the map. */
 const JETTY = { from: [14, -55] as [number, number], to: [3.5, -55.8] as [number, number], width: 1.6 };
 
 /** A map point in a building's own frame: x along its front, z out through its front. */
 function local(b: Building, u: number, v: number): [number, number] {
-  const du = u - b.u, dv = v - b.v, c = Math.cos(b.facing), s = Math.sin(b.facing);
-  return [du * c + dv * s, du * s - dv * c];
+  const du = u - b.u, dv = v - b.v;
+  return [du * b.cos + dv * b.sin, du * b.sin - dv * b.cos];
 }
 /** How far outside a building's footprint a map point is, metres (0 inside). */
 function footprint(b: Building, u: number, v: number) {
   const [lx, lz] = local(b, u, v);
   return Math.hypot(Math.max(0, Math.abs(lx) - b.hx), Math.max(0, Math.abs(lz) - b.hz));
 }
-const nearBuilding = (u: number, v: number, margin: number) => [...BUILDINGS, BOAT].some((b) => footprint(b, u, v) < margin);
-/** The shed's own frame, in world coordinates (as before). */
-function shedLocal(x: number, z: number): [number, number] {
-  const [u, v] = M(x, z), [lx, lz] = local(SHED, u, v);
-  return [lx, lz];
+/** The wheel race of a building on a quay (the water wheel; see `wheelRace`): 1 in it, easing to 0 over `margin`. */
+function race(b: Building, u: number, v: number, margin = 0.5) {
+  if (!b.quay) return 0;
+  const [lx, lz] = local(b, u, v);
+  return wheelRace(lx, lz, margin);
 }
-/** Under the shed's roof (its walls, its porch), with a margin. */
-const underShed = (x: number, z: number, margin = 0) => {
-  const [lx, lz] = shedLocal(x, z);
-  return Math.abs(lx) < 2.3 + margin && lz > -1.7 - margin && lz < 3.6 + margin;
-};
+/** Whether a map point is within `margin` of something built: a footprint, or a wheel's race. */
+const nearBuilding = (u: number, v: number, margin: number) => BUILDINGS.some((b) => footprint(b, u, v) < margin || race(b, u, v, margin) > 0);
 
 // Trees placed by hand.
 const TREES: Tree[] = [
   // Cypresses, top left, and two by the orchard.
-  ...([[-27, 13, 1.3], [-22.5, 17, 1.5], [-18, 11.5, 1.2], [-13.5, 9.5, 1.45], [-31, 19.5, 1.1], [-16, 1, 1.65], [-12, -1.5, 1.25],
+  ...([[-21, 24.5, 1.3], [-22.5, 17, 1.5], [-18, 11.5, 1.2], [-13.5, 9.5, 1.45], [-24.5, 28, 1.1], [-16, 1, 1.65], [-12, -1.5, 1.25],
     [-25, 22, 1.3]] as const).map(([u, v, s], i) => tree('cypress', u, v, s, 100 + i)),
   // The big clump right of the orchard, its leaves deep.
   ...([[13, -1, 2.1], [17.5, 2.5, 1.85], [18.5, -3.5, 1.7], [14.5, -5.5, 1.45], [10.5, 2, 1.3]] as const)
     .map(([u, v, s], i) => tree('broadleaf', u, v, s, 200 + i, C.deepLeaf)),
   // Round trees along the stream and the lane.
-  ...([[-22, -3.5, 1.1], [-13, -13, 0.95], [-26, -13, 1.0], [-11, -22, 1.15], [-30, 1, 0.9], [4, -20, 1.2], [27, -6, 1.1],
-    [29, 2, 0.95]] as const).map(([u, v, s], i) => tree('broadleaf', u, v, s, 300 + i)),
+  ...([[-22, -3.5, 1.1], [-13, -13, 0.95], [-26, -13, 1.0], [-11, -21, 1.15], [-30, 1, 0.9], [8.6, -29, 1.2], [46, -15, 1.1],
+    [28.5, -14.6, 0.95]] as const).map(([u, v, s], i) => tree('broadleaf', u, v, s, 300 + i)),
   // A fruit tree by the crates.
   tree('fruit', -12.5, -8, 1.05, 400),
-  // Old trees round the farmhouse: one shading its back, one by the barn, one over the hen house.
-  tree('broadleaf', 75, 27, 2.2, 500, C.deepLeaf), tree('broadleaf', 33.5, 28, 1.6, 501), tree('broadleaf', 79, 10, 1.5, 502),
+  // Old trees round the homestead: one shading the house's back, one by the bakery, one past the hens' run.
+  tree('broadleaf', 75, 28, 2.2, 500, C.deepLeaf), tree('broadleaf', 33, 28.5, 1.6, 501), tree('broadleaf', 86, 3.5, 1.5, 502),
   tree('broadleaf', 48, 33, 1.3, 503),
-  // Old trees standing alone in the pastures, and one by the windmill.
+  // Old trees standing alone in the pastures, and one below the turbines.
   ...([[-70, -16, 2.1], [-64, 9, 1.8], [-80, 20, 1.9], [-62, -36, 1.7], [-78, -50, 2.0], [-30, 47, 1.4]] as const)
     .map(([u, v, s], i) => tree('broadleaf', u, v, s, 600 + i, C.leaf.clone().lerp(C.deepLeaf, 0.3 + 0.1 * i))),
   // Willows (round, pale) round the pond, and cypresses by the lavender.
@@ -225,16 +238,14 @@ const CRATES: [number, number, number][] = [[-9.4, -13.8, 0.3], [-7.4, -14.4, -0
 const EMPTY_CRATES: [number, number, number][] = [[-11.2, -12.4, 0.1], [-11.0, -13.6, -0.15]];
 const BASKETS: [number, number][] = [[-6.4, -12.6], [-5.8, -13.4], [-10.2, -10.9]];
 const BARROW: [number, number, number] = [-4.6, -10.8, 1.1];
-const HIVES: [number, number][] = [[20.5, -7.6], [22, -7.9], [23.5, -8.2], [25, -8.5], [24, -44.5], [26, -44.3], [28, -44.1], [30, -44.2], [32, -44.4]];
 /** Round bales: three on the old meadow, and a scatter on the hay meadow being cut. */
-const BALES: [number, number, number][] = [[-24, 9.6, 0.3], [-22.2, 10.8, 1.2], [-26, 11, 2.2],
+const BALES: [number, number, number][] = [[-24, 9.6, 0.3], [-22.2, 10.8, 1.2], [-20.3, 9.2, 2.2],
   [-6, 66, 0.2], [-3.5, 67.4, 1.4], [14, 64.5, 0.6], [22, 68, 2.4], [24, 65.5, 0.1], [40, 67, 1.0], [52, 64, 2.0], [55, 66.5, 0.4]];
 /** The hay meadow's being cut only in summer (#13); the old meadow's three bales stand all year. */
 const balesNow = () => (SEASON === 'summer' ? BALES : BALES.slice(0, 3));
-const BARRELS: [number, number][] = [[12.9, -6.2], [13.5, -6.9], [51, 5.5], [51.8, 4.8]];
+const BARRELS: [number, number][] = [[12.9, -6.2], [13.5, -6.9]];
 const TABLE: [number, number] = [11, -7.5];
-// The first clump moved aside for the shed (#10), to a place where every bush still grows, so the rest are unchanged.
-const SHRUBS: [number, number][] = [[-7.8, -23.6], [8, -19], [-30, -10], [-33, -20], [-24, -30], [30, -3], [2, -27], [-31, 3],
+const SHRUBS: [number, number][] = [[-9.5, -19.6], [12, -17], [-30, -10], [-33, -20], [-24, -30], [26, -4], [6.5, -31], [-31, 3],
   [-46, -14], [-58, 30], [-36, 30], [-48, 66], [-28, 62], [30, -32], [-26, -76], [44, -66], [84, -40], [-84, -12]];
 /** Dry-stone walls: by the fork, and round the pastures on the left. */
 const WALLS = [
@@ -261,7 +272,7 @@ function natural(u: number, v: number) {
   const swell = 0.6 * noise2(u * 0.04, v * 0.04) + 0.25 * noise2(u * 0.1 + 5, v * 0.1 - 3);
   const hills = 4.2 * smooth(38, 86, v) * (0.8 + 0.35 * noise2(u * 0.03 + 2, 1)) + 2.8 * smooth(-44, -88, u) * (0.8 + 0.3 * noise2(v * 0.035, 4))
     + 1.4 * smooth(62, 88, u) + 1.6 * smooth(-70, -90, v) + 1.0 * noise2(u * 0.025 - 9, v * 0.025 + 6) * smooth(40, 80, Math.max(Math.abs(u), Math.abs(v)));
-  // The windmill's knoll.
+  // The turbines' knoll.
   const knoll = 1.6 * Math.exp(-(((u + 40) / 13) ** 2 + ((v - 54) / 11) ** 2));
   return tilt + swell + hills + knoll;
 }
@@ -277,34 +288,25 @@ const WATER_Y = (() => {
 const pathDistance = (x: number, z: number) => Math.min(...PATHS.map((p) => p.distance(x, z)));
 
 /**
- * How bare the ground is at a point, 0..1: the tracks' wheel ruts (not the grass strip up the middle), the earth worn
- * bare under the shed's porch, the farmyard, the ploughed field, and the fields the season has left bare (the
+ * How bare the ground is at a point, 0..1: the tracks' wheel ruts (not the grass strip up the middle), the farmyard and
+ * the workshops' forecourt, the ploughed field, and the fields the season has left bare (the
  * sunflowers' in spring; in winter, the wheat's, the barley's and the sunflowers', ploughed). The demo's stand-in for the
  * game's map of where dust lifts (#36) and where wet earth turns to mud (#11).
  */
 function bare(x: number, z: number) {
   const dp = pathDistance(x, z);
   const track = (1 - smooth(PATH_HALF - 0.25, PATH_HALF + 0.15, dp)) * smooth(0.12, 0.3, dp);
-  const [lx, lz] = shedLocal(x, z);
-  const porch = (1 - smooth(1.7, 2.5, Math.abs(lx))) * smooth(1.2, 1.6, lz) * (1 - smooth(3.4, 4.6, lz));
   const [u, v] = M(x, z);
   const plot = (p: Plot) => smooth(-0.5, 1, plotInside(p, u, v));
   const stage = STAGE[SEASON];
   const fields = stage === 'bare' ? Math.max(smooth(-0.6, 0.2, wheatInside(u, v)), plot(BARLEY), plot(SUNFLOWERS))
     : stage === 'young' ? plot(SUNFLOWERS) : 0;
-  return Math.max(track, 0.8 * porch, 0.7 * plot(YARD), 0.9 * plot(PLOUGHED), 0.9 * fields);
+  return Math.max(track, 0.7 * plot(YARD), 0.5 * plot(WORKS), 0.9 * plot(PLOUGHED), 0.9 * fields);
 }
 
-function height(x: number, z: number) {
-  const [u, v] = M(x, z);
-  const ds = waterDistance(x, z);
+/** The land before anything is built on it: its natural lie, eased down to the water along the streams, worn by the tracks. */
+function unbuilt(x: number, z: number, u: number, v: number, ds: number) {
   let h = natural(u, v);
-  // Under each building the ground is levelled, easing back into the land round it.
-  for (const b of BUILDINGS) {
-    if (!b.pad) continue;
-    const d = footprint(b, u, v);
-    if (d < 3) h += (natural(b.u, b.v) - h) * (1 - smooth(0.4, 3, d));
-  }
   // Never below the water away from it: no dry hollows under the water's level.
   const floor = WATER_Y + 0.35;
   if (h < floor + 0.4) h = floor + 0.4 * Math.exp((h - floor - 0.4) / 0.4);
@@ -312,9 +314,66 @@ function height(x: number, z: number) {
   h += (WATER_Y + 0.28 - h) * (1 - smooth(2.2, 10, ds));
   // Tracks are worn a little into the land.
   h -= 0.07 * (1 - smooth(PATH_HALF - 0.2, PATH_HALF + 0.5, pathDistance(x, z)));
+  return h;
+}
+/**
+ * The ground made level under what's built, easing back into the land round it (`from`: the land so far). Buildings ease
+ * over 3 m, small things over a metre. Where two reach the same ground the nearer counts for more, and inside a footprint
+ * only its own does, so neighbours in a row don't tilt each other's ground.
+ */
+function levelled(from: number, u: number, v: number, pads: boolean) {
+  let sum = 0, weight = 0, most = 0;
+  nearest = Infinity;
+  for (const b of BUILDINGS) {
+    if (b.pad !== pads || b.quay) continue;
+    const reach = pads ? 3 : 1.2, far = Math.max(b.hx, b.hz) * Math.SQRT2 + reach;
+    if (Math.abs(u - b.u) > far || Math.abs(v - b.v) > far) continue;
+    const d = footprint(b, u, v);
+    nearest = Math.min(nearest, d);
+    if (d >= reach) continue;
+    const w = 1 - smooth(pads ? 0.4 : 0.1, reach, d), k = w / Math.max(d, 1e-3) ** 2;
+    sum += k * levelOf(b); weight += k; most = Math.max(most, w);
+  }
+  return weight > 0 ? from + (sum / weight - from) * most : from;
+}
+/** How far the point `levelled` last looked at is from the nearest footprint it weighed (Infinity: none near). */
+let nearest = Infinity;
+/**
+ * The level the ground is made under each thing: the land's at its middle. A small thing's (a crate, a tank, a solar
+ * sheet) is taken after the buildings' ground is made, so it stands right beside one; a quay's is a little above the water.
+ */
+const LEVELS = new Map<Building, number>();
+function levelOf(b: Building) {
+  let y = LEVELS.get(b);
+  if (y === undefined) {
+    const [x, z] = W(b.u, b.v), land = unbuilt(x, z, b.u, b.v, waterDistance(x, z));
+    y = b.quay ? WATER_Y + QUAY : b.pad ? land : levelled(land, b.u, b.v, true);
+    LEVELS.set(b, y);
+  }
+  return y;
+}
+
+function height(x: number, z: number) {
+  const [u, v] = M(x, z);
+  const ds = waterDistance(x, z);
+  // The land is shaped down to the streams first (the floodplain would bend a pad), then levelled under what's built:
+  // the buildings, then the small things among them.
+  let h = levelled(unbuilt(x, z, u, v, ds), u, v, true);
+  // A small thing beside a building doesn't lift the building's own ground.
+  const free = smooth(0.1, 0.6, nearest);
+  if (free > 0) h += (levelled(h, u, v, false) - h) * free;
   // The pond deepens towards its middle.
   const bed = WATER_Y - 0.8 - 0.7 * smooth(0, 7, -pondShore(u, v));
-  return bed + (h - bed) * smooth(0.3, 2.3, ds);
+  h = bed + (h - bed) * smooth(0.3, 2.3, ds);
+  // A quay: the bank built up level under a building that stands at the water's edge, dropping straight to the water. Its
+  // wheel's race is cut through it down to the stream's bed, so the wheel turns in water, not in the bank.
+  for (const b of BUILDINGS) {
+    if (!b.quay) continue;
+    const d = footprint(b, u, v);
+    if (d < 0.7) h += (levelOf(b) - h) * (1 - smooth(0.1, 0.7, d));
+    h = Math.min(h, h + (WATER_Y - 0.8 - h) * race(b, u, v));
+  }
+  return h;
 }
 const ground = groundOf(height);
 
@@ -326,6 +385,8 @@ export interface Farm {
   wind: Obstacle[];
   /** Settles once the models are loaded and in the scene. */
   ready: Promise<void>;
+  /** Where each model stands, for the tour. */
+  stands: Stand[];
   /** The land's height at a point, and how bare it is (0..1): where a gust can lift dust (#36). */
   height: (x: number, z: number) => number;
   bare: (x: number, z: number) => number;
@@ -358,7 +419,6 @@ export function buildFarm(renderer: BrushRenderer, season: Season = 'summer'): F
   const r: Adder = { add: (g, kind, o = {}) => renderer.add(g, kind, { ...o, tile: TILE }) };
   terrain(r);
   crops(r);
-  panels(r);
   fences(r);
   bridges(r);
   orchard(r);
@@ -368,7 +428,8 @@ export function buildFarm(renderer: BrushRenderer, season: Season = 'summer'): F
   goods(r);
   stones(r);
   grass(r);
-  return { center: new THREE.Vector3(0, 0, 0), radius: LAND * Math.SQRT2, stream: WATER, wind: windObstacles(), ready: models(r), height, bare };
+  const stands = BUILDINGS.map(standOf);
+  return { center: new THREE.Vector3(0, 0, 0), radius: LAND * Math.SQRT2, stream: WATER, wind: windObstacles(), ready: models(r, stands), stands, height, bare };
 }
 
 /** Strips of an obstacle along a line, every 2 m: a hedge or a row, `offset` to its left. */
@@ -384,8 +445,9 @@ function strips(path: MapLine, from: number, to: number, offset: number, width: 
 
 /**
  * What the wind meets (#36), from the layout rather than the meshes: the trees' crowns, the orchard's and the nursery's
- * rows, the hedges, the buildings and the dry-stone walls. The fences (rails, mostly gaps), the panels (up on posts) and
- * the stream's thickets and the meadow's shrubs (placed at random as they're grown) are left out for now.
+ * rows, the hedges, the buildings and the dry-stone walls. The fences (rails, mostly gaps), the slim things (the solar
+ * sheets up on posts, turbines, pylons, yard props) and the stream's thickets and the meadow's shrubs (placed at random as
+ * they're grown) are left out for now.
  */
 function windObstacles(): Obstacle[] {
   const walls: Obstacle[] = [];
@@ -393,7 +455,7 @@ function windObstacles(): Obstacle[] {
     const a = wall.at(d), b = wall.at(Math.min(wall.length, d + 1));
     walls.push({ strip: { ax: a.x, az: a.z, bx: b.x, bz: b.z, width: 0.6 }, solid: true, height: 0.6 });
   }
-  const buildings: Obstacle[] = BUILDINGS.filter((b) => b.height > 1.5 && b.hx > 1).map((b) => {
+  const buildings: Obstacle[] = BUILDINGS.filter((b) => blocksWind(MODELS[b.model])).map((b) => {
     const [x, z] = W(b.u, b.v);
     return { box: { x, z, hx: b.hx * 0.9, hz: b.hz * 0.9, turn: -(Math.PI / 4 + b.facing) }, solid: true, height: b.height };
   });
@@ -408,23 +470,22 @@ function windObstacles(): Obstacle[] {
   ];
 }
 
-/** The buildings, once their models have loaded. Each one's floor sits at the ground's mean height round it. */
-async function models(r: Adder) {
-  const b = new MeshBuilder('ink');
-  const loaded = await Promise.all([...BUILDINGS, BOAT].map((m) => loadModel(m.url)));
-  [...BUILDINGS, BOAT].forEach((m, i) => {
-    const yaw = Math.PI / 4 + m.facing;
-    const [x, z] = W(m.u, m.v);
-    let y = 0, n = 0;
-    for (const lx of [-1, 0, 1]) for (const lz of [-1, 0, 1]) {
-      const c = Math.cos(yaw), s = Math.sin(yaw), px = lx * m.hx * 0.8, pz = lz * m.hz * 0.8;
-      y += height(x + px * c + pz * s, z - px * s + pz * c); n++;
-    }
-    const place = new THREE.Matrix4().compose(new THREE.Vector3(x, m === BOAT ? WATER_Y : y / n, z),
-      new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)), new THREE.Vector3(1, 1, 1));
-    addModel(b, loaded[i], place, m === BOAT);
-  });
-  r.add(b.build(), 'ink');
+/** Where a model stands in the world: on the ground made level for it. */
+function standOf(b: Building): Stand {
+  const [x, z] = W(b.u, b.v);
+  return { model: MODELS[b.model], x, y: levelOf(b), z, yaw: Math.PI / 4 + b.facing };
+}
+
+/** The models, once they have loaded (each file once, however many times it stands on the farm). */
+async function models(r: Adder, stands: Stand[]) {
+  const set = new ModelSet();
+  const urls = [...new Set(stands.map((s) => s.model.url))];
+  const loaded = new Map(await Promise.all(urls.map(async (url) => [url, await loadModel(url)] as const)));
+  for (const s of stands) {
+    set.add(loaded.get(s.model.url)!, new THREE.Matrix4().compose(new THREE.Vector3(s.x, s.y, s.z),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(0, s.yaw, 0)), new THREE.Vector3(1, 1, 1)));
+  }
+  set.addTo(r);
 }
 
 /** How near a point is to the rows of the orchard and the nursery: 1 on a row, falling off over the alley. */
@@ -483,6 +544,7 @@ function terrain(r: Adder) {
     c.lerp(soil.clone().lerp(C.emerald, rows * 0.35), edge(CABBAGES) * 0.8);
     const edgeNoise = noise2(x * 0.6, z * 0.6) * 0.25 + noise2(x * 1.7 + 3, z * 1.7) * 0.1;
     c.lerp(C.dirt.clone().lerp(C.rut, 0.3 + 0.3 * k), smooth(-0.6, 0.8, plotInside(YARD, u, v) + edgeNoise * 2) * 0.85);
+    c.lerp(C.dirt.clone().lerp(C.meadow, 0.3), smooth(-0.6, 0.8, plotInside(WORKS, u, v) + edgeNoise * 2) * 0.7);
     c.lerp(C.dirt.clone().lerp(C.meadow, 0.35), edge(GARDEN) * 0.7);
     // Shade under the big trees stays deep.
     for (const t of TREES) if (t.scale && t.scale > 1.4 && t.kind === 'broadleaf' && Math.abs(x - t.x) < 6 && Math.abs(z - t.z) < 6) {
@@ -493,10 +555,6 @@ function terrain(r: Adder) {
     const rut = Math.exp(-(((dp - 0.5) / 0.2) ** 2));
     const mid = 1 - smooth(0.12, 0.3, dp + edgeNoise * 0.4);
     c.lerp(C.dirt.clone().lerp(C.rut, rut * 0.5).lerp(C.meadow, mid * 0.55), onPath * 0.92);
-    // The shed's porch: earth worn bare under it, fading out in front, the edges broken by the grass.
-    const [lx, lz] = shedLocal(x, z);
-    const worn = (1 - smooth(1.7, 2.5, Math.abs(lx) + edgeNoise)) * smooth(1.2, 1.6, lz) * (1 - smooth(3.4, 4.6, lz + edgeNoise * 1.5));
-    c.lerp(C.dirt.clone().lerp(C.meadow, 0.2), worn * 0.8);
     // Banks: moss, then wet earth, then the stream bed.
     c.lerp(C.moss, 1 - smooth(1.8, 3.4, ds)).lerp(C.mud, (1 - smooth(1.45, 1.9, ds)) * 0.8).lerp(C.bed, 1 - smooth(1.1, 1.5, ds));
     // Brushwork where the land does something: banks, track edges, the wheat's edge, slopes, tree feet. Quiet on open lawn.
@@ -681,41 +739,9 @@ function addDabAt(b: MeshBuilder, p: THREE.Vector3, n: THREE.Vector3, c: THREE.C
   b.quad(i0, i0 + 1, i0 + 2, i0 + 3);
 }
 
-/** The solar array: panels on single posts standing out of the wheat, turned to the noon sun. Inked. */
-function panels(r: Adder) {
-  const b = new MeshBuilder('ink');
-  // Tilted less than the camera looks down (30°), the glass shows from every view; facing along the map's axis (towards +z,
-  // the noon sun's side), no view is ever straight behind a panel: from the worst one it is still a quarter of its face.
-  const tilt = THREE.MathUtils.degToRad(22);
-  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt, 0, 0, 'YXZ'));
-  const paint: Paint = [1, 8, 4, 0];
-  const Wp = 4.0, Dp = 2.3;
-  for (const [u, v] of PANELS) {
-    const [x, z] = W(u, v);
-    const y0 = height(x, z);
-    const center = new THREE.Vector3(x, y0 + 1.6, z);
-    const frame = new THREE.Matrix4().compose(center, q, new THREE.Vector3(1, 1, 1));
-    b.addGeometry(new THREE.BoxGeometry(Wp, 0.1, Dp), frame, C.ceramic, [0, 1, 0, 0]);
-    const nUp = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
-    const corner = (cu: number, cv: number) => new THREE.Vector3(cu * (Wp / 2 - 0.07), 0.055, cv * (Dp / 2 - 0.07)).applyMatrix4(frame);
-    const g0 = b.vertex(corner(-1, -1), nUp, C.glass, paint, [0, 0]);
-    const g1 = b.vertex(corner(1, -1), nUp, C.glass, paint, [1, 0]);
-    const g2 = b.vertex(corner(1, 1), nUp, C.glass, paint, [1, 1]);
-    const g3 = b.vertex(corner(-1, 1), nUp, C.glass, paint, [0, 1]);
-    b.quad(g0, g3, g2, g1);
-    // Two brass posts and a cross-beam under the frame.
-    for (const side of [-1, 1]) {
-      const px = x + side * Wp * 0.3;
-      b.addGeometry(new THREE.CylinderGeometry(0.07, 0.09, 1.6, 8), new THREE.Matrix4().makeTranslation(px, y0 + 0.78, z), C.brass, [0, 1, 0, 0]);
-    }
-    b.addGeometry(new THREE.BoxGeometry(Wp * 0.75, 0.09, 0.12), new THREE.Matrix4().makeTranslation(x, y0 + 1.48, z), C.brass, [0, 1, 0, 0]);
-  }
-  r.add(b.build(), 'ink');
-}
-
 /**
  * Fences, inked: split-rail fences of posts every couple of metres and two rails, each a little askew, along the tracks;
- * the kitchen garden's white paling fence; the hens' run.
+ * the kitchen garden's white paling fence.
  */
 function fences(r: Adder) {
   const b = new MeshBuilder('ink');
@@ -768,8 +794,8 @@ function fences(r: Adder) {
     const posts: THREE.Vector3[] = [];
     for (let s = 0; s <= len + 0.01; s += 2) {
       const t = s / len, u = ua + (ub - ua) * t, v = va + (vb - va) * t;
-      // The gate: in the top side (towards the yard), over the farm lane's line.
-      if (side === 2 && Math.abs(u - 60.5) < 1.1) continue;
+      // The gate: in the top side (towards the yard), between the composter and the greenhouse.
+      if (side === 2 && Math.abs(u - 66.3) < 1.1) continue;
       const [x, z] = W(u, v);
       posts.push(new THREE.Vector3(x, height(x, z), z));
     }
@@ -784,17 +810,6 @@ function fences(r: Adder) {
           new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)), new THREE.Vector3(1, 1, 1)), white.clone().offsetHSL(0, 0, (rand() - 0.5) * 0.04), [0, 1, 0, 0]);
       }
     }
-  }
-  // The hens' run: a ring of posts with two rails round the hen house, on the yard's side.
-  {
-    const posts: THREE.Vector3[] = [];
-    const cu = 72.5, cv = 8, ru = 3.4, rv = 3.2;
-    for (let k = 0; k <= 10; k++) {
-      const a = (k / 10) * Math.PI * 2;
-      const [x, z] = W(cu + Math.cos(a) * ru, cv + Math.sin(a) * rv);
-      posts.push(new THREE.Vector3(x, height(x, z), z));
-    }
-    railFence(posts, C.fence.clone().lerp(C.timber, 0.3), [0.25, 0.55, 0.85], 0.95);
   }
   r.add(b.build(), 'ink');
 }
@@ -941,10 +956,10 @@ function trees(r: Adder) {
 /** Trees grown by chance (the woods), for the wind. */
 const TREES_GROWN: Tree[] = [];
 
-/** Places kept open: the crates, the table, the bales, the hives. */
+/** Places kept open: the crates, the table, the bales. */
 function clear(x: number, z: number) {
   const [u, v] = M(x, z);
-  return [...[...CRATES, ...EMPTY_CRATES, BARROW, ...balesNow()].map(([cu, cv]) => [cu, cv]), ...BASKETS, ...HIVES, ...BARRELS, TABLE]
+  return [...[...CRATES, ...EMPTY_CRATES, BARROW, ...balesNow()].map(([cu, cv]) => [cu, cv]), ...BASKETS, ...BARRELS, TABLE]
     .some(([cu, cv]) => Math.hypot(u - cu, v - cv) < 2.2);
 }
 
@@ -990,25 +1005,24 @@ function beds(r: Adder) {
     const p = at(u + (rand() - 0.5) * 0.08, v + (rand() - 0.5) * 0.08);
     addMound(leaves, p.x, p.y, p.z, 0.3 + rand() * 0.05, 0.28, cab.clone().lerp(cabDeep, rand() * 0.4), cabDeep, 10, rand);
   }
-  // The kitchen garden: two rows of raised beds, 1.2 m wide and 5 long, behind the glasshouse and below it.
+  // The kitchen garden: raised beds, 1.2 m wide and 5 long, below the composter.
   const timber = C.timber.clone().lerp(C.fence, 0.5);
   const greens = [srgb(0x6aa84a), srgb(0x4a8a5a), srgb(0x8ab84a), srgb(0x5a9a7a)];
   const bedsAt: [number, number][] = [];
-  for (let k = 0; k < 4; k++) { bedsAt.push([58.5 + k * 5.4, -13.5]); bedsAt.push([58.5 + k * 5.4, -10.3]); }
-  bedsAt.push([59, -5.5], [59, -2.7]);
+  bedsAt.push([59.4, -11.2], [59.4, -13.6], [64.6, -11.2], [64.6, -13.6]);
   bedsAt.forEach(([u, v], i) => {
-    const p = at(u, v), yaw = Math.PI / 4 + Math.PI / 2 * 0;
+    const p = at(u, v), yaw = Math.PI / 4;
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0));
     // The frame: four boards on edge, the soil inside.
-    for (const [lx, lz, sx, sz] of [[0, -0.6, 5, 0.08], [0, 0.6, 5, 0.08], [-2.5, 0, 0.08, 1.28], [2.5, 0, 0.08, 1.28]] as const) {
+    for (const [lx, lz, sx, sz] of [[0, -0.6, 4.6, 0.08], [0, 0.6, 4.6, 0.08], [-2.3, 0, 0.08, 1.28], [2.3, 0, 0.08, 1.28]] as const) {
       const o = new THREE.Vector3(lx, 0, lz).applyQuaternion(q);
       frames.addGeometry(new THREE.BoxGeometry(sx, 0.32, sz), new THREE.Matrix4().compose(new THREE.Vector3(p.x + o.x, p.y + 0.12, p.z + o.z), q,
         new THREE.Vector3(1, 1, 1)), timber.clone().offsetHSL(0, 0, (rand() - 0.5) * 0.06), [2, 1, 0, 0]);
     }
-    frames.addGeometry(new THREE.BoxGeometry(4.92, 0.05, 1.12), new THREE.Matrix4().compose(new THREE.Vector3(p.x, p.y + 0.24, p.z), q,
+    frames.addGeometry(new THREE.BoxGeometry(4.52, 0.05, 1.12), new THREE.Matrix4().compose(new THREE.Vector3(p.x, p.y + 0.24, p.z), q,
       new THREE.Vector3(1, 1, 1)), C.soil.clone().multiplyScalar(0.8), [0, 1, 0, 0]);
     const kind = i % 4;
-    for (let a = -2.2; a <= 2.2; a += kind === 1 ? 0.55 : 0.4) for (const b of kind === 3 ? [0] : [-0.28, 0.28]) {
+    for (let a = -2.0; a <= 2.0; a += kind === 1 ? 0.55 : 0.4) for (const b of kind === 3 ? [0] : [-0.28, 0.28]) {
       const o = new THREE.Vector3(a, 0, b).applyQuaternion(q), x = p.x + o.x, z = p.z + o.z;
       if (kind === 3) {
         // Tomatoes on canes: a cane, the plant a tall clump on it, red fruit.
@@ -1026,7 +1040,7 @@ function beds(r: Adder) {
   r.add(frames.build(), 'ink');
 }
 
-/** Crates of apples by the orchard, a picnic table under the big trees, beehives, bales and barrels. Inked. */
+/** Crates of apples by the orchard, a picnic table under the big trees, bales and barrels. Inked. */
 function goods(r: Adder) {
   const b = new MeshBuilder('ink');
   const rand = rng(97);
@@ -1079,33 +1093,19 @@ function goods(r: Adder) {
     b.addGeometry(new THREE.CylinderGeometry(0.24, 0.24, 0.08, 12).rotateX(Math.PI / 2).rotateY(yaw), new THREE.Matrix4().makeTranslation(...local(0.75, 0.24, 0).toArray()), C.bark, [0, 1, 0, 0]);
     for (let i = 0; i < 10; i++) ball(0.08, local((rand() - 0.5) * 0.8, 0.56 + rand() * 0.05, (rand() - 0.5) * 0.45), apple());
   }
-  // Beehives in rows by the flowers and the lavender: stacked boxes in faded pastels under a pitched lid, on a low stand.
-  const hiveColors = [srgb(0xf2e2b8), srgb(0x9cc8d8), srgb(0xf0b8a0), srgb(0xc8d89a)];
-  HIVES.forEach(([u, v], i) => {
-    const local = frameAt(u, v, 0.8 + (rand() - 0.5) * 0.2), yaw = 0.8, c = hiveColors[i % hiveColors.length];
-    box(0.62, 0.2, 0.62, local(0, 0.1, 0), yaw, C.timber.clone().multiplyScalar(0.8));
-    for (let k = 0; k < 2 + (i % 2); k++) box(0.55, 0.26, 0.55, local(0, 0.33 + k * 0.27, 0), yaw, c.clone().offsetHSL(0, 0, (k % 2) * 0.04));
-    const top = 0.33 + (2 + (i % 2)) * 0.27 - 0.08;
-    b.addGeometry(new THREE.ConeGeometry(0.48, 0.18, 4, 1).rotateY(Math.PI / 4 + yaw), new THREE.Matrix4().makeTranslation(...local(0, top + 0.09, 0).toArray()), C.ceramic, [0, 1, 0, 0]);
-  });
   // Round hay bales, lying on their sides on the cut meadow.
   for (const [u, v, yaw] of balesNow()) {
     const local = frameAt(u, v, yaw), r = 0.62, hay = srgb(0xe2bf6a).offsetHSL((rand() - 0.5) * 0.02, 0, (rand() - 0.5) * 0.06);
     b.addGeometry(new THREE.CylinderGeometry(r, r, 1.15, 18).rotateX(Math.PI / 2).rotateY(yaw), new THREE.Matrix4().makeTranslation(...local(0, r - 0.05, 0).toArray()), hay, [2, 1, 0, 0]);
   }
-  // Water barrels by the table and in the yard.
+  // Water barrels by the table.
   for (const [u, v] of BARRELS) {
     const local = frameAt(u, v, 0), p = local(0, 0, 0);
     b.addGeometry(new THREE.CylinderGeometry(0.3, 0.3, 0.85, 12), new THREE.Matrix4().makeTranslation(p.x, p.y + 0.42, p.z), C.crate.clone().multiplyScalar(0.9), [2, 1, 0, 0]);
     for (const h of [0.15, 0.7]) b.addGeometry(new THREE.CylinderGeometry(0.315, 0.315, 0.05, 12), new THREE.Matrix4().makeTranslation(p.x, p.y + h, p.z), C.brass.clone().multiplyScalar(0.7), [0, 1, 0, 0]);
   }
-  // A stack of firewood against the farmhouse's side, and a bench at the pond.
+  // A bench at the pond.
   {
-    const local = frameAt(56, 18, Math.PI / 4 + Math.PI / 2);
-    for (let k = 0; k < 4; k++) for (let i = 0; i < 9 - k; i++) {
-      b.addGeometry(new THREE.CylinderGeometry(0.1, 0.1, 0.6, 7).rotateX(Math.PI / 2).rotateY(Math.PI / 4 + Math.PI / 2),
-        new THREE.Matrix4().makeTranslation(...local(-0.9 + i * 0.2 + k * 0.1, 0.1 + k * 0.18, 0).toArray()), C.bark.clone().lerp(C.timber, 0.3 + rand() * 0.3), [2, 1, 0, 0]);
-    }
     const bench = frameAt(-10, -44.5, Math.PI / 4 + 0.2), yaw = Math.PI / 4 + 0.2;
     box(1.6, 0.06, 0.4, bench(0, 0.45, 0), yaw, C.timber);
     for (const lx of [-0.65, 0.65]) box(0.08, 0.45, 0.36, bench(lx, 0.22, 0), yaw, C.timber.clone().multiplyScalar(0.85));
@@ -1144,7 +1144,7 @@ function stones(r: Adder) {
       const p = stream.at(rand() * stream.length), off = (from + rand() * (to - from)) * WIDE;
       const side = rand() < 0.5 ? -1 : 1;
       const x = p.x - p.dz * off * side, z = p.z + p.dx * off * side, [u, v] = M(x, z);
-      if (!onLand(u, v, 1) || pondShore(u, v) < 0) continue;
+      if (!onLand(u, v, 1) || pondShore(u, v) < 0 || nearBuilding(u, v, 0.3 + size + spread)) continue;
       addStone(b, ground, x, z, size + rand() * spread, 0.4, rand, WATER_Y);
     }
   };
@@ -1159,7 +1159,7 @@ function stones(r: Adder) {
     addStone(b, ground, x, z, 0.08 + rand() * 0.2, 0.4, rand, WATER_Y);
   }
   // Rocks among the cypresses, and the outcrop in the hills: big boulders, half sunk, smaller ones round them.
-  for (const [u, v, n, s] of [[-33, 10, 3, 0.3], [-29, 6.8, 3, 0.3], [-20, 8, 3, 0.3], [-34, 15, 3, 0.3], [-58, 41, 9, 0.7], [-54, 46, 6, 0.6],
+  for (const [u, v, n, s] of [[-33, 10, 3, 0.3], [-29, 6.8, 3, 0.3], [-20, 8, 3, 0.3], [-22, 13.5, 3, 0.3], [-58, 41, 9, 0.7], [-54, 46, 6, 0.6],
     [-47, 60, 4, 0.45], [20, 74, 5, 0.6], [-70, -26, 4, 0.5]] as const) {
     for (let k = 0; k < n; k++) {
       const [x, z] = W(u + (rand() - 0.5) * (2 + n * 0.5), v + (rand() - 0.5) * (1.5 + n * 0.4));
@@ -1188,7 +1188,7 @@ function stones(r: Adder) {
   for (const stream of STREAMS) for (let c = 0; c < 90 * stream.length / 70; c++) {
     const p = stream.at(rand() * stream.length), off = (rand() < 0.5 ? -1 : 1) * (1.45 + rand() * 0.5) * WIDE;
     const x = p.x - p.dz * off, z = p.z + p.dx * off, [u, v] = M(x, z);
-    if (!onLand(u, v, 1) || pondShore(u, v) < 0.5) continue;
+    if (!onLand(u, v, 1) || pondShore(u, v) < 0.5 || nearBuilding(u, v, 1)) continue;
     addReeds(reeds, ground, x, z, rand);
   }
   // Reed beds round the pond, thickest on its far side, where the stream comes in.
@@ -1205,7 +1205,6 @@ function stones(r: Adder) {
 /** Long grass in tufts where a scythe wouldn't reach, and wildflowers in drifts on the open meadow. */
 function grass(r: Adder) {
   const g = new MeshBuilder('grass'), flowers = new MeshBuilder('foliage');
-  const dropped = new MeshBuilder('grass'), droppedFlowers = new MeshBuilder('foliage');
   const rand = rng(77);
   const blocked = (x: number, z: number) => {
     const [u, v] = M(x, z);
@@ -1237,18 +1236,17 @@ function grass(r: Adder) {
     const lush = Math.min(1, Math.max(near, smooth(0.55, 0.9, noise2(x * 0.09 + 40, z * 0.09) * 0.5 + 0.5) * 0.7));
     if (rand() > lush * 0.95 + 0.04) continue;
     placed++;
-    // Under the shed, into a builder that's thrown away.
-    addTuft(underShed(x, z) ? dropped : g, ground, x, z, 0.18 + lush * 0.32, tuftColor(x, z), rand);
+    addTuft(g, ground, x, z, 0.18 + lush * 0.32, tuftColor(x, z), rand);
   }
   const palette = [srgb(0xf08bb0), srgb(0xf7f2e4), srgb(0xf5cf3e), srgb(0xa77ad8), srgb(0xe8574a)];
   // Thinning out from summer's to none in winter (#13).
   const drifts = { spring: 300, summer: 380, autumn: 120, winter: 0 }[SEASON];
   for (let d = 0; d < drifts; d++) {
-    // Thicker round the windmill and in the pastures.
+    // Thicker round the turbines and in the pastures.
     let [cu, cv] = [(rand() * 2 - 1) * LAND, (rand() * 2 - 1) * LAND];
     if (d % 4 === 0) { cu = -40 + (rand() - 0.5) * 30; cv = 50 + (rand() - 0.5) * 24; }
     const [cx, cz] = W(cu, cv);
-    addFlowers(underShed(cx, cz, 1.4) ? droppedFlowers : flowers, ground, cx, cz, palette[Math.floor(rand() * palette.length)], 6 + Math.floor(rand() * 14), rand,
+    addFlowers(flowers, ground, cx, cz, palette[Math.floor(rand() * palette.length)], 6 + Math.floor(rand() * 14), rand,
       (x, z) => !blocked(x, z));
   }
   r.add(g.build(), 'grass', { castShadow: false });
