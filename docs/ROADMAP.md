@@ -28,7 +28,7 @@ Where the renderer stands and what is left, so nothing noticed in review is lost
       the water #63: see Weather);
   12. #19 the water's own look, chosen under every weather (done 2026-11-14: the picks #64, fitted to the weather #65:
       see Water).
-- **The models: a solarpunk set** (2026-11-14, awaiting the developer's review): 28 new buildings and props for the game,
+- **The models: a solarpunk set** (done 2026-11-14, #66): 28 new buildings and props for the game,
   made from scratch by Blender scripts (`tools/blender/`), replacing the first eleven. `docs/MODELS.md` has the style,
   the scale (one game tile is 4 m), the file's rules and the build. In short:
   - The game's 22 buildings and vehicles on its own footprints, plus a farmhouse and five yard props.
