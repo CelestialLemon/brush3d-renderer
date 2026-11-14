@@ -102,6 +102,7 @@ The game hands over its map instead, and the renderer paints it:
 ```ts
 r.setLand({
   width, height,                 // the map, in tiles
+  level,                         // how high one of the rules' levels stands, metres (the smooth fit strays under half one)
   // Each tile's own four corners (metres; north-west, north-east, south-east, south-west, tile by tile along a row, rows
   // in order: 4 × width × height values). Neighbours' corners needn't meet: where they don't, the edge between them is a
   // cliff face from one to the other. Where they do, the land runs on smoothly (a bank is a steep slope inside a tile).
