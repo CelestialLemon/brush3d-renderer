@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "vite --port 5190",
     "build": "vite build",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && node tools/demo-imports.ts",
     "shot": "node tools/shot.ts",
     "test:clouds": "node tools/clouds.ts",
     "build:wind": "node tools/wind-build.ts",
